@@ -1,0 +1,84 @@
+{% extends "me_base.html" %}{% block title %}{{ c.name.split(' ')[0] }} · My Cooked Coke{% endblock %}
+{% block body %}
+{% set st = s.status %}{% set led = s.ledger %}
+<header class="me-head">
+  <span class="brand">{% include "_logo.html" %}<span>My Cooked Coke</span></span>
+  <form method="post" action="{{ me_url('/logout') }}"><button type="submit">Sign out</button></form>
+</header>
+<main class="me-main">
+  <h1>Hi {{ c.name.split(' ')[0] }}</h1>
+
+  <div class="me-points">
+    <div class="k">Points</div>
+    <div class="v">{{ '{:,}'.format(s.points) }}</div>
+    <div class="sub">1 point for every cent you spend.</div>
+  </div>
+
+  {% if offers %}
+  <h2 class="me-h">Rewards</h2>
+  <div class="rewards-strip">
+    {% for o in offers %}{% set r = o.reward %}
+    <div class="offer {{ 'ready' if o.can_redeem }}">
+      <div><b>{{ r.name }}</b> <span class="muted">· {{ '{:,}'.format(r.points_cost) }} pts</span>
+        <div class="small muted">{% if o.can_redeem %}You can have this now - ask at the stall.
+          {% elif o.limit_hit %}You've used this one{% if r.per_customer_limit > 1 %} {{ o.used }} times{% endif %} - that's the limit.
+          {% else %}{{ '{:,}'.format(o.short) }} more points to go.{% endif %}</div>
+        {% if not o.can_redeem and not o.limit_hit %}<div class="meter"><i style="width:{{ (100 * (r.points_cost - o.short) / r.points_cost)|round|int }}%"></i></div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <h2 class="me-h">Tab</h2>
+  {% set unpaid = led.charges|selectattr('unpaid_cents')|list %}
+  {% set next_due = unpaid|map(attribute='due_at')|min if unpaid else None %}
+  <div class="panel me-tab">
+    {% if st.status == 'approved' %}
+      <p><b>{% if st.can_charge %}You can put up to {{ st.available_cents|money }} on your tab.{% else %}Your tab is full - pay some off to use it again.{% endif %}</b></p>
+    {% elif st.status == 'blocked_overdue' %}
+      <p><b class="red">Your tab is on hold: {{ led.overdue_cents|money }} is overdue.</b> Pay it at the stall and it unlocks straight away.</p>
+    {% elif st.status == 'paused' %}
+      <p><b>Tabs are paused for everyone right now.</b></p>
+    {% elif st.status == 'eligible' %}
+      <p><b>You've unlocked a tab!</b> Ask at the stall to get it switched on.</p>
+    {% elif st.status == 'locked' %}
+      <p><b>Spend {{ (st.unlock_spend_cents - st.spend_cents)|money }} more to unlock a tab.</b></p>
+      <div class="meter"><i style="width:{{ (100 * [st.spend_cents, 0]|max / st.unlock_spend_cents)|round|int }}%"></i></div>
+      <p class="hint">{{ st.spend_cents|money }} of {{ st.unlock_spend_cents|money }} spent.</p>
+    {% else %}
+      <p><b>Tabs aren't available on your account.</b> Ask at the stall if you have questions.</p>
+    {% endif %}
+    {% if led.owing_cents or led.charges %}
+    <div class="stats me-stats">
+      <div class="stat {{ 'alert' if led.has_overdue }}"><div class="k">You owe</div><div class="v">{{ led.owing_cents|money }}</div>
+        {% if next_due %}<div class="sub">{{ 'Was due' if led.has_overdue else 'Pay by' }} {{ next_due|local('%a %d %b') }}</div>{% endif %}</div>
+      <div class="stat"><div class="k">Tab limit</div><div class="v">{{ st.limit_cents|money }}</div><div class="sub">7 days to pay each time</div></div>
+    </div>
+    {% if led.balance_cents < 0 %}<p class="hint">You have {{ (-led.balance_cents)|money }} in credit - it's used up next time you put something on your tab.</p>{% endif %}
+    {% if led.late_count %}<p class="hint">{{ led.late_count }} late payment{{ '' if led.late_count == 1 else 's' }} on record.</p>{% endif %}
+    {% endif %}
+  </div>
+
+  <h2 class="me-h">Leaderboard</h2>
+  <p class="hint" style="margin:0 0 var(--s2)">Points earned - spending them on rewards doesn't count against you.</p>
+  <div class="me-boards">
+    {% for title, board, mine in boards %}
+    <div class="panel me-board"><h3>{{ title }}</h3>
+      {% if board %}<ol>{% for b in board %}<li class="{{ 'me-row' if b.me }}"><span class="rk">{{ b.rank }}</span><span class="nm">{{ b.name }}{% if b.me %} <span class="muted">(you)</span>{% endif %}</span><span class="pt">{{ '{:,}'.format(b.points) }}</span></li>{% endfor %}</ol>
+      {% if mine and mine.rank > board|length %}<p class="hint">You're #{{ mine.rank }} of {{ mine.of }} with {{ '{:,}'.format(mine.points) }}.</p>{% endif %}
+      {% else %}<p class="empty">No points yet{{ ' this month' if title == 'This month' }}.</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2 class="me-h">Recent activity</h2>
+  <div class="panel me-activity">
+    {% if activity %}<table>
+      {% for a in activity %}<tr><td class="muted small">{{ a.at|local('%d %b') }}</td><td>{{ a.what }}</td>
+        <td class="n">{% if a.points is not none %}{{ '{:+,}'.format(a.points) }} pts{% else %}{{ a.money|money }}{% endif %}</td></tr>{% endfor %}
+    </table>{% else %}<p class="empty">Nothing yet - buy something at the stall to start earning points.</p>{% endif %}
+  </div>
+  <p class="hint me-note">Something look wrong? Ask at the stall. Your passcode can only be changed there.</p>
+</main>
+{% endblock %}

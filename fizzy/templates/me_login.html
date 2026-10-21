@@ -1,0 +1,21 @@
+{% extends "me_base.html" %}
+{% block body %}
+<main class="login">
+  <div class="mark">{% include "_logo.html" %}<div><b>My Cooked Coke</b><span>Your points, rewards and tab</span></div></div>
+  {% if error %}<div class="flash err" role="alert">{{ error }}</div>{% endif %}
+  <form class="panel" method="post" action="{{ me_url('/login') }}">
+    <label for="who">Your full name or student number</label>
+    <input id="who" type="text" name="who" value="{{ who }}" autocomplete="username" autocapitalize="words" spellcheck="false" required {{ 'autofocus' if not who }}>
+    <label for="pc">Passcode</label>
+    <input id="pc" type="password" name="passcode" autocomplete="current-password" required {{ 'autofocus' if who }}>
+    <button class="primary" type="submit">See my stats</button>
+  </form>
+  {% if live %}
+  <h2 class="me-h">Rewards on now</h2>
+  <div class="rewards-strip">{% for r in live %}
+    <div class="offer"><div><b>{{ r.name }}</b> <span class="muted">· {{ '{:,}'.format(r.points_cost) }} points</span></div></div>{% endfor %}
+  </div>
+  {% endif %}
+  <p class="hint me-note">No passcode yet, or forgot it? Set a new one at the Cooked Coke stall - it only takes a second.</p>
+</main>
+{% endblock %}

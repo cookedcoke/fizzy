@@ -293,3 +293,40 @@ label.check > input { display: inline-block; margin-top: 0 }
 header nav.more-r { -webkit-mask-image: linear-gradient(90deg, #000 80%, transparent); mask-image: linear-gradient(90deg, #000 80%, transparent) }
 header nav.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%); mask-image: linear-gradient(90deg, transparent, #000 20%) }
 header nav.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent); mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent) }
+
+/* ---- student site (portal.py) ---- */
+body.me main.login { margin-top: 8vh; padding: 0 var(--s4) }
+body.me .login input { font-size: 16px }                     /* no zoom-on-focus on iPhone */
+.me-note { text-align: center; max-width: 360px; margin: var(--s4) auto 0 }
+.me-head { align-items: center; justify-content: space-between }
+.me-head form { margin: 0 }
+.me-head button { background: transparent; color: #fff; border-color: #3A3F48; height: 32px }
+.me-head button:hover { background: #2C3038 }
+.me-main { max-width: 560px }
+.me-main h1 { font-size: 24px; margin-bottom: var(--s4) }
+.me-h { margin: var(--s5) 0 var(--s2) }
+.me-points { background: var(--ink); color: #fff; border-radius: var(--r); padding: var(--s4) var(--s5); position: relative; overflow: hidden }
+.me-points::after { content: ""; position: absolute; right: -18px; top: 50%; width: 132px; height: 132px; transform: translateY(-50%);
+  background: url(logo.svg) center / contain no-repeat; opacity: .16 }
+.me-points .k { color: #8B919B; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em }
+.me-points .v { font-size: 44px; font-weight: 700; line-height: 1.1; letter-spacing: -.02em; margin: 4px 0 2px }
+.me-points .sub { color: #8B919B; font-size: 12.5px }
+.me-tab p { margin: 0 0 var(--s2) }
+.me-tab .meter { height: 6px; border-radius: 3px }
+.me-stats { margin-top: var(--s3) }
+.me .offer .meter { max-width: 220px }
+.me-activity { padding-top: 0 }
+.me-activity > table { width: calc(100% + 2 * var(--s4)) }
+.me-activity td { padding-top: 9px; padding-bottom: 9px }
+.me-boards { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3) }
+.me-board { margin: 0; padding: var(--s3) var(--s4) }
+.me-board h3 { margin: 0 0 var(--s2); font-size: 14px }
+.me-board ol { list-style: none; margin: 0; padding: 0 }
+.me-board li { display: flex; gap: var(--s2); padding: 5px 0; border-top: 1px solid var(--line); font-size: 13.5px }
+.me-board li:first-child { border-top: 0 }
+.me-board .rk { width: 20px; color: var(--faint); font-weight: 600 }
+.me-board li:nth-child(-n+3) .rk { color: var(--red) }
+.me-board .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.me-board .pt { font-weight: 600 }
+.me-board li.me-row { background: var(--ok-wash); margin: 0 -8px; padding: 5px 8px; border-radius: 3px }
+@media (max-width: 480px) { .me-boards { grid-template-columns: 1fr } }

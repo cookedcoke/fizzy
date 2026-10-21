@@ -17,7 +17,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import config, customers, db, devices, logic, rewards, square, tools
+from . import config, customers, db, devices, logic, portal, rewards, square, tools
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff
 
 log = logging.getLogger("fizzy")
@@ -101,7 +101,7 @@ def create_app(background=True):
     async def device_gate(request, call_next):
         """With FIZZY_ACCESS_HOST set: the main host only serves registered devices, and the
         Access host only serves requests carrying a valid Cloudflare Access token."""
-        if not devices.enabled() or request.url.path.startswith(GATE_EXEMPT):
+        if not devices.enabled() or request.url.path.startswith(GATE_EXEMPT) or getattr(request.state, "public", False):
             return await call_next(request)
         host = (request.headers.get("host") or "").split(":")[0].lower()
         if host == config.ACCESS_HOST.lower():
@@ -141,10 +141,29 @@ def create_app(background=True):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
+    @app.middleware("http")
+    async def public_host(request, call_next):
+        """The student site's host serves only the student pages (and static files): its paths
+        map onto /me, so no staff page is reachable there. With a student host set, /me isn't
+        served on the staff hosts. Added last, so it runs before the device gate."""
+        host = (request.headers.get("host") or "").split(":")[0].lower()
+        path = request.url.path
+        if config.PUBLIC_HOST and host == config.PUBLIC_HOST:
+            if path == "/robots.txt":
+                return PlainTextResponse("User-agent: *\nDisallow: /\n")
+            if not path.startswith("/static/"):
+                request.scope["path"] = "/me" + (path if path != "/" else "")
+            request.state.public = True
+            return await call_next(request)
+        if config.PUBLIC_HOST and (path == "/me" or path.startswith("/me/")):
+            return PlainTextResponse("Not found", status_code=404)
+        return await call_next(request)
+
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     register(app)
     app.include_router(tools.router)
     app.include_router(rewards.router)
+    app.include_router(portal.router)
     return app
 
 
@@ -369,7 +388,7 @@ def register(app):
         return render(request, "customer.html", s=s, c=c, points=points, payments=payments,
                       decisions=decisions, audit_rows=audit_rows,
                       offers=rewards.offers_for(conn, cid, s["points"]),
-                      recent_redemptions=rewards.recent_redemptions(conn, cid))
+                      recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST)
 
     @app.post("/customers/{cid}/repay")
     def repay(request: Request, cid: int, amount: str = Form(...), method: str = Form(...), note: str = Form(""),

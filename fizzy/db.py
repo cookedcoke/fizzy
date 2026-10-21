@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS customers (
     tab_decision_at TEXT,
     created_at TEXT NOT NULL,
     archived_at TEXT,
-    merged_into INTEGER REFERENCES customers(id)   -- set on the archived side of a merge
+    merged_into INTEGER REFERENCES customers(id),  -- set on the archived side of a merge
+    passcode_hash TEXT,                             -- student site sign-in (scrypt), set by staff at the stall
+    passcode_set_at TEXT
 );
 
 -- Extra Square profiles that belong to a customer (e.g. the duplicate's profile after a merge).
@@ -194,6 +196,8 @@ def connect(path=None):
 # table, so databases created before these existed get them added here on start-up.
 MIGRATIONS = [
     ("customers", "merged_into", "INTEGER REFERENCES customers(id)"),
+    ("customers", "passcode_hash", "TEXT"),
+    ("customers", "passcode_set_at", "TEXT"),
 ]
 
 

@@ -23,6 +23,9 @@ HOST = _env("FIZZY_HOST", "fizzy.cookedcoke.co")                 # counter: regi
 ACCESS_HOST = _env("FIZZY_ACCESS_HOST")                          # anyone else, behind Cloudflare Access
 CF_ACCESS_TEAM = _env("CF_ACCESS_TEAM_DOMAIN")                   # e.g. cookedcoke.cloudflareaccess.com
 CF_ACCESS_AUD = _env("CF_ACCESS_AUD")                            # the Access application's audience tag
+# Student site (see portal.py): students check their own points and tab. Only the student
+# pages are served on this host. Unset: the student pages are at /me on the staff site.
+PUBLIC_HOST = _env("FIZZY_PUBLIC_HOST").lower()                  # e.g. my.cookedcoke.co
 
 SQUARE_TOKEN = _env("SQUARE_ACCESS_TOKEN")
 SQUARE_ENV = _env("SQUARE_ENVIRONMENT", "production")

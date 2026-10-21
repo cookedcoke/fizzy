@@ -141,6 +141,16 @@
   <details data-key="l" data-key-label="Activity log"><summary>Activity log <kbd>L</kbd></summary>
     <table>{% for a in audit_rows %}<tr><td>{{ a.created_at|local }}</td><td>{{ a.staff }}</td><td>{{ a.action }}</td><td class="small">{{ a.details }}</td></tr>{% endfor %}</table>
   </details>
+  <details id="passcode"><summary>Student site passcode <span class="muted">({{ 'set ' ~ c.passcode_set_at|local('%d %b') if c.passcode_set_at else 'not set' }})</span></summary>
+    <form method="post" action="/customers/{{ c.id }}/passcode" style="max-width:420px" autocomplete="off">
+      <p class="hint" style="margin-top:0">Hand {{ c.name.split(' ')[0] }} the device so they type it themselves. They sign in at
+        <b>{{ public_host or '/me on this site' }}</b> with their name or student number. At least 6 characters. Setting a new one replaces the old one.</p>
+      <label for="pc-new">New passcode</label><input id="pc-new" type="password" name="passcode" autocomplete="new-password" minlength="6" maxlength="64">
+      <label for="pc-confirm">Type it again</label><input id="pc-confirm" type="password" name="confirm" autocomplete="new-password" minlength="6" maxlength="64">
+      <div class="actions"><button class="primary">Set passcode</button>
+        {% if c.passcode_set_at %}<button name="remove" value="1" formnovalidate data-confirm="Remove {{ c.name }}'s passcode? They won't be able to sign in until a new one is set.">Remove</button>{% endif %}</div>
+    </form>
+  </details>
   <details data-key="e" data-key-label="Edit customer"><summary>Edit customer <kbd>E</kbd></summary>
     <form method="post" action="/customers/{{ c.id }}/edit" style="max-width:420px">
       <label for="ed-name">Name</label><input id="ed-name" type="text" name="name" value="{{ c.name }}">

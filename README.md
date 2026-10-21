@@ -1,8 +1,9 @@
 # Fizzy
 
 Customer directory, points and pay-later tabs for **Cooked Coke Co.**, the student food and
-drink stall at Reddam House North Shore. Staff-only, served at **fizzy.cookedcoke.co** from a
-home PC through a Cloudflare Tunnel (no open ports at home).
+drink stall at Reddam House North Shore. Staff use it at **fizzy.cookedcoke.co**; students can
+check their own points, rewards and tab on a separate, read-only [student site](#6-student-site).
+It runs on a home PC through a Cloudflare Tunnel (no open ports at home).
 
 Square stays the till. Fizzy reads Square's sales, gives points, keeps track of who owes
 what, and answers the one question that matters at the counter: *can this person put it on
@@ -15,14 +16,15 @@ their tab?*
 3. [How Square and Fizzy fit together](#3-how-square-and-fizzy-fit-together)
 4. [Pages](#4-pages)
 5. [Rewards (points shop)](#5-rewards-points-shop)
-6. [Tools](#6-tools)
-7. [Search and keyboard shortcuts](#7-search-and-keyboard-shortcuts)
-8. [Setting up](#8-setting-up)
-9. [Running it](#9-running-it)
-10. [Configuration reference](#10-configuration-reference)
-11. [Data and privacy](#11-data-and-privacy)
-12. [Troubleshooting](#12-troubleshooting)
-13. [Development](#13-development)
+6. [Student site](#6-student-site)
+7. [Tools](#7-tools)
+8. [Search and keyboard shortcuts](#8-search-and-keyboard-shortcuts)
+9. [Setting up](#9-setting-up)
+10. [Running it](#10-running-it)
+11. [Configuration reference](#11-configuration-reference)
+12. [Data and privacy](#12-data-and-privacy)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Development](#14-development)
 
 ---
 
@@ -269,7 +271,45 @@ refuses a reward whose instructions mention it.
 many people) is kept. Redeeming doesn't count as spending, so it doesn't affect the $30 tab
 threshold. 1 point = 1 cent spent, so 1000 points = $10 spent.
 
-## 6. Tools
+## 6. Student site
+
+Students can check their own **points, rewards, tab and recent activity**, plus a
+**leaderboard**, on their phone. It's read-only: nothing they do there changes anything.
+
+**Setting a passcode (at the stall only).** On the customer's page, open **Student site
+passcode**, hand them the device, and they type a passcode twice (at least 6 characters; not
+too obvious, not their name or student number). That's how Fizzy knows the passcode belongs
+to them. To change it, they set a new one at the stall. **Remove** turns their sign-in off.
+There's no "forgot passcode" or sign-up online, on purpose: nobody can take over someone
+else's account from home.
+
+**Signing in.** On the student site they enter their **full name** (or student number) and
+passcode. Names must match exactly (no fuzzy search), and a wrong name and a wrong passcode
+get the same answer, so the site can't be used to find out who's a customer. After 5 wrong
+tries a name is locked for 15 minutes. Sessions last 12 hours; setting a new passcode or
+removing it signs them out everywhere.
+
+**What they see:**
+- points, and every live reward: ready now (*ask at the stall*) or how many points to go;
+- their tab: what they can put on it, what they owe and when it's due, or how much more to
+  spend to unlock one;
+- recent activity in plain words (staff notes and names are never shown);
+- **Leaderboard**, this month and all time, ranked by points *earned* (redeeming rewards
+  doesn't drop you down). Names are shortened to first name + last initial, e.g. *Nora F.*,
+  and it's only shown to signed-in students. Everyone also sees their own rank.
+
+Before signing in, anyone can see the list of rewards that are on, and nothing else.
+
+**Setting it up:**
+1. Cloudflare → your tunnel → add a public hostname, e.g. `my.cookedcoke.co` →
+   `http://fizzy:8000`. Don't put Cloudflare Access in front of it.
+2. Set `FIZZY_PUBLIC_HOST=my.cookedcoke.co` in `.env`, then `docker compose up -d`.
+
+That host only serves the student pages; every staff page is "not found" there, and it
+isn't affected by the device lock. Without `FIZZY_PUBLIC_HOST`, the student pages are at
+`/me` on the staff site (handy for trying it out, but behind the device lock if that's on).
+
+## 7. Tools
 
 **Tools** in the top bar holds the occasional jobs. Hover or tap **i** to see what a tool
 does, and click its name to open it. Tools in red change a lot at once or can't be undone,
@@ -307,7 +347,7 @@ says who you might mean, so a typo can't hit the wrong student.
 
 ---
 
-## 7. Search and keyboard shortcuts
+## 8. Search and keyboard shortcuts
 
 ### Search
 
@@ -361,27 +401,27 @@ you out of the box first. The key boxes are hidden on phones.
 
 ---
 
-## 8. Setting up
+## 9. Setting up
 
 Do these once, in order.
 
-### 8.1 Fizzy itself
+### 9.1 Fizzy itself
 
-See [Running it](#9-running-it). You'll need a `.env` file. Copy `.env.example` and fill in
+See [Running it](#10-running-it). You'll need a `.env` file. Copy `.env.example` and fill in
 at least `FIZZY_PASSWORD` and `FIZZY_SECRET_KEY`:
 
 ```sh
 python -c "import secrets; print(secrets.token_urlsafe(48))"   # makes a secret key
 ```
 
-### 8.2 Import the school list
+### 9.2 Import the school list
 
 **Import** page (or `python -m fizzy import directory.csv`). The CSV needs a name column
 (`Cleaned Name` or `Name`) and `Email`. Only those two are stored; every other column is
 ignored. Emails must look like `rns<digits>@reddamnorthshore.nsw.edu.au`. Re-importing a
 newer list adds new students and updates changed names, and never deletes anyone.
 
-### 8.3 Put everyone into Square
+### 9.3 Put everyone into Square
 
 1. **Customers → Square import CSV** downloads everyone in Square's customer-import format.
    Names are split into first and last at the first space; fix any odd ones in Square
@@ -389,7 +429,7 @@ newer list adds new students and updates changed names, and never deletes anyone
 2. Square Dashboard → Customers → Import customers → upload it.
 3. On the next sync, Fizzy links each Square profile back to its Fizzy customer.
 
-### 8.4 Square: the discount, the item, and payment types
+### 9.4 Square: the discount, the item, and payment types
 
 In the Square Dashboard → Items:
 
@@ -404,7 +444,7 @@ Square app → Settings → Checkout → Payment types:
 - **Other Payment Types**: not used by Fizzy. A sale paid with Other counts as a normal sale.
 - **House Account**: leave disabled ([why](#why-not-square-house-accounts)).
 
-### 8.5 Square API access
+### 9.5 Square API access
 
 [Square Developer Dashboard](https://developer.squareup.com/apps) → create an application →
 **Production**:
@@ -421,7 +461,7 @@ Fizzy never writes to Square.
 `SQUARE_SYNC_FROM=YYYY-MM-DD` sets how far back the **first** sync reaches. Use it to give
 points for sales made before Fizzy existed; otherwise it starts from the day before.
 
-### 8.6 Test before going live
+### 9.6 Test before going live
 
 Test this once on the real Terminal, with a real customer attached each time. After each step, open Fizzy's **Square** page and
 press **Sync now**.
@@ -445,7 +485,7 @@ subscribed. Polling catches it within 5 minutes regardless.
 
 ---
 
-## 9. Running it
+## 10. Running it
 
 ### Docker on the home PC (recommended)
 
@@ -473,7 +513,9 @@ never needs a manual database step.
 
 1. Cloudflare Zero Trust → Networks → Tunnels → **Create a tunnel** (cloudflared). Copy the
    token into `CLOUDFLARE_TUNNEL_TOKEN`.
-2. Add a public hostname: `fizzy.cookedcoke.co` → service `http://fizzy:8000`.
+2. Add a public hostname: `fizzy.cookedcoke.co` → service `http://fizzy:8000`. For the
+   [student site](#6-student-site), add a second one (e.g. `my.cookedcoke.co`) to the same
+   service.
 3. Optional: a Cloudflare WAF rate-limit rule on `/login`. Fizzy limits wrong passwords
    itself:
    - **Browsers that have signed in before** (like the counter) are only limited by their
@@ -587,7 +629,7 @@ docker compose exec -u fizzy fizzy python -m fizzy backup /backups
 
 ---
 
-## 10. Configuration reference
+## 11. Configuration reference
 
 All configuration is environment variables, in `.env`. Never commit `.env`. A setting left
 blank (`KEY=`) counts as not set and uses its default.
@@ -613,6 +655,7 @@ blank (`KEY=`) counts as not set and uses its default.
 | `SQUARE_REPAYMENT_ITEM` | `tab repayment` | Item name that marks part of a sale as a tab repayment |
 | `SQUARE_TAB_TENDERS` | *(off)* | Optional extra: payment types that also mean "on the tab", e.g. `EXTERNAL` (Other Payment Types) or `SQUARE_ACCOUNT` (House Account). Only if the discount can't be used |
 | `FIZZY_HOST` | `fizzy.cookedcoke.co` | Main address; used in device registration links |
+| `FIZZY_PUBLIC_HOST` | *(off)* | The student site's address, e.g. `my.cookedcoke.co`. Only student pages are served there |
 | `FIZZY_ACCESS_HOST` | *(off)* | Turns on the device lock. Unregistered devices are sent here (behind Cloudflare Access) |
 | `CF_ACCESS_TEAM_DOMAIN` | — | Your Access team domain, e.g. `cookedcoke.cloudflareaccess.com` |
 | `CF_ACCESS_AUD` | — | The Access application's Audience (AUD) tag |
@@ -623,7 +666,7 @@ The tab limit, days to pay and spend threshold live in the database and are chan
 
 ---
 
-## 11. Data and privacy
+## 12. Data and privacy
 
 Most customers are under 18, so Fizzy keeps the minimum:
 
@@ -631,19 +674,18 @@ Most customers are under 18, so Fizzy keeps the minimum:
   charges and repayments, points history, and Square payment and order details (amount,
   items, payment type, time).
 - **Not stored:** year group, phone numbers, addresses, or anything else in the school CSV.
-- **Who can see it:** only staff with the password. Optionally, only from registered devices
-  or through Cloudflare Access. There's no customer login.
+- **Who can see it:** staff with the password (optionally only from registered devices or
+  through Cloudflare Access). Each student can see their own points, tab and activity on the
+  student site, once staff set a passcode for them at the stall. Other students only ever
+  see them as *first name + last initial* with points earned, on the leaderboard.
+- **Passcodes** are stored hashed (scrypt), never in plain text, and never in the logs.
 - **Never committed to git:** `.env`, the database, backups and CSVs (see `.gitignore`).
 - **Leaving school:** archive them (Tools → Archive many). Their history stays for the
   records, hidden from search.
 
-**Customer view (later).** Not built. Customers are keyed by school email, so a future "my
-points / my tab" page could sign students in with their school Microsoft account and look
-them up by email. Nothing in the data model would need to change.
-
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 | Problem | Check |
 |---|---|
@@ -662,7 +704,7 @@ them up by email. Nothing in the data model would need to change.
 
 ---
 
-## 13. Development
+## 14. Development
 
 ```sh
 pip install -r requirements.txt pytest
