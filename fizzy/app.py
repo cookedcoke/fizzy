@@ -237,6 +237,8 @@ def register(app):
             last_sync=db.get_setting(conn, "square_last_sync"), sync_error=db.get_setting(conn, "square_last_error"),
             square_on=bool(config.SQUARE_TOKEN), notice=db.get_setting(conn, "notice", ""),
             tabs_paused=cfg["tabs_paused"],
+            people=conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
+            if unlinked_tabs else [],
         )
 
     @app.post("/breach/{charge_id}/ack")
@@ -400,6 +402,7 @@ def register(app):
             f"SELECT sp.*, c.name FROM square_payments sp LEFT JOIN customers c ON c.id = sp.customer_id {where} "
             "ORDER BY sp.created_at DESC LIMIT 200"
         ).fetchall()
+        people = conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
         unlinked_customers = conn.execute(
             "SELECT COUNT(*) FROM customers WHERE square_customer_id IS NULL AND archived_at IS NULL"
         ).fetchone()[0]
@@ -409,7 +412,7 @@ def register(app):
             cursor=db.get_setting(conn, "square_cursor"), unlinked_customers=unlinked_customers,
             tab_tenders=sorted(config.SQUARE_TAB_TENDERS), repay_item=config.SQUARE_REPAYMENT_ITEM,
             tab_discount=config.SQUARE_TAB_DISCOUNT,
-            webhook_on=bool(config.SQUARE_WEBHOOK_KEY),
+            webhook_on=bool(config.SQUARE_WEBHOOK_KEY), people=people,
         )
 
     @app.get("/square/payments/{pid}", response_class=PlainTextResponse)
@@ -425,6 +428,16 @@ def register(app):
         square.reclassify(conn, pid, kind, who)
         conn.commit()
         return back(request, request.headers.get("referer") or "/square", f"Payment marked as {kind}.")
+
+    @app.post("/square/payments/{pid}/assign")
+    def square_assign(request: Request, pid: str, customer: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+        try:
+            c = tools.resolve(conn, customer)
+            square.assign_customer(conn, pid, c, who)
+        except (tools.ToolError, ValueError) as e:
+            return back(request, request.headers.get("referer") or "/square", str(e))
+        conn.commit()
+        return back(request, request.headers.get("referer") or "/square", f"Assigned to {c['name']}.")
 
     @app.post("/square/sync")
     def square_sync_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):

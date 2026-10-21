@@ -117,7 +117,7 @@ a **$0 sale** (charged as $0 cash): the items, the customer, and a discount equa
 - **Inventory:** Square counts the stock as sold.
 - **Paying part now:** apply the discount to only some items. The discounted part goes on
   the tab, and what's paid is a normal sale with points.
-- **Customer names:** you name the discount, so nothing else in Square gets mistaken for a
+- **Your own name for it:** you name the discount, so nothing else in Square gets mistaken for a
   tab.
 
 Fizzy finds these sales through Square's order history, because a $0 sale has no payment.
@@ -188,8 +188,17 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 - **Forgot the discount**, so a tab sale was charged as a normal sale: refund it in Square
   and ring it up again with the discount. Or, if the money really wasn't paid, use
   **Tools → Add tab charge by hand**.
-- **Forgot to attach the customer:** the sale shows under **Needs attention**. Paste the
-  customer's Square ID into their **Edit customer** box, or use **Counted as**.
+- **Forgot to attach the customer (or attached the wrong one):** type the right person into
+  the **Assign to…** box next to the payment, then press `Enter`. Tab sales and repayments
+  with no customer show that box right on the dashboard under **Needs attention**; any
+  payment has it on the **Square** page (*Only unlinked*). Fizzy then does what it would
+  have done:
+  - a sale → points;
+  - a tab sale → added to their tab;
+  - a repayment → clears their tab.
+
+  If it was the wrong person, it's moved off them. If you'd already added the tab charge or
+  repayment by hand, Fizzy links to that instead of counting it twice.
 - **Repayment recorded twice:** Fizzy refuses a hand-entered repayment that matches one
   already rung up in Square in the last 24 hours. If it really is a second payment, tick
   *This is a separate payment*.
@@ -571,9 +580,9 @@ them up by email. Nothing in the data model would need to change.
 |---|---|
 | "Square isn't connected" on the dashboard | `SQUARE_ACCESS_TOKEN` is set in `.env`, then `docker compose up -d` |
 | "Last Square sync failed" | The error text is shown on the Square page. Usually an expired or wrong token, or the wrong `SQUARE_ENVIRONMENT` |
-| A sale didn't give points | Was the customer attached on the Terminal? Check the **Square** page → *Only unlinked* |
-| A tab sale isn't on their tab | Was the **Fizzy Tab** discount applied, and the customer attached? Check the **Square** page. See [Fixing a mistake](#fixing-a-mistake) |
-| A repayment didn't clear the tab | The item must be called exactly **Tab repayment**, with the customer attached |
+| A sale didn't give points | The customer probably wasn't attached on the Terminal. **Square** page → *Only unlinked* → **Assign to…** |
+| A tab sale isn't on their tab | No customer attached: it's under **Needs attention**, so assign it there. No discount: see [Fixing a mistake](#fixing-a-mistake) |
+| A repayment didn't clear the tab | No customer attached: assign it under **Needs attention**. Otherwise the item must be called exactly **Tab repayment** |
 | A customer shows "Not in Square yet" | Import the Square CSV (7.3), then sync. Or paste their Square customer ID into **Edit customer** |
 | Webhooks not arriving | `SQUARE_WEBHOOK_URL` must match Square's subscription URL exactly; no Cloudflare Access on `/square/webhook`. Polling still catches everything within 5 minutes |
 | Can't log in after an update | Check `FIZZY_SECURE_COOKIES=1` and that you're using `https://` |

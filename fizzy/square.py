@@ -188,7 +188,16 @@ def apply_payment_effects(conn, sp):
             (customer["id"], amt, amt, sp["items"] or "Purchase", pid, sp["created_at"]),
         )
     elif kind == "tab_charge":
-        logic.add_tab_charge(conn, customer, amt, sp["items"], sp["created_at"], None, pid)
+        # If staff already added this charge by hand (Tools), link to it rather than charge twice.
+        lo = (logic.parse_ts(sp["created_at"]) - timedelta(hours=24)).isoformat(timespec="seconds")
+        hi = (logic.parse_ts(sp["created_at"]) + timedelta(hours=24)).isoformat(timespec="seconds")
+        manual = conn.execute(
+            "SELECT id FROM tab_charges WHERE customer_id = ? AND amount_cents = ? AND square_payment_id IS NULL "
+            "AND charged_at BETWEEN ? AND ? ORDER BY charged_at LIMIT 1", (customer["id"], amt, lo, hi)).fetchone()
+        if manual:
+            conn.execute("UPDATE tab_charges SET square_payment_id = ? WHERE id = ?", (pid, manual["id"]))
+        else:
+            logic.add_tab_charge(conn, customer, amt, sp["items"], sp["created_at"], None, pid)
     elif kind == "tab_repayment":
         # If staff already recorded this repayment by hand in Fizzy, link to it rather than double-count.
         since = (logic.parse_ts(sp["created_at"]) - timedelta(hours=24)).isoformat(timespec="seconds")
@@ -215,7 +224,8 @@ def sp_raw(sp):
 def undo_payment_effects(conn, sp):
     pid = sp["square_payment_id"]
     conn.execute("DELETE FROM points_ledger WHERE square_payment_id = ? AND reason IN ('purchase', 'refund', 'tab_refund')", (pid,))
-    conn.execute("DELETE FROM tab_charges WHERE square_payment_id = ?", (pid,))
+    conn.execute("DELETE FROM tab_charges WHERE square_payment_id = ? AND staff IS NULL", (pid,))
+    conn.execute("UPDATE tab_charges SET square_payment_id = NULL WHERE square_payment_id = ?", (pid,))  # hand-entered: keep
     for r in conn.execute("SELECT id, note FROM tab_repayments WHERE square_payment_id = ?", (pid,)).fetchall():
         if r["note"] == "Recorded in Square" or r["note"] == "Square refund":
             conn.execute("DELETE FROM points_ledger WHERE repayment_id = ?", (r["id"],))
@@ -381,6 +391,24 @@ def reclassify(conn, square_payment_id, kind, staff):
     for rf in conn.execute("SELECT * FROM square_refunds WHERE square_payment_id = ?", (square_payment_id,)).fetchall():
         apply_refund_effects(conn, sp, rf["amount_cents"], rf["created_at"])
     audit(conn, staff, "reclassify", sp["customer_id"], f"{square_payment_id} -> {kind}")
+
+
+def assign_customer(conn, square_payment_id, customer, staff):
+    """Staff fix for a Square payment with the wrong (usually no) customer attached: move it,
+    and anything split from it, to `customer` and redo its points / tab charge / repayment."""
+    base = square_payment_id.removesuffix(":sale")
+    rows = conn.execute("SELECT * FROM square_payments WHERE square_payment_id IN (?, ?)", (base, f"{base}:sale")).fetchall()
+    if not rows:
+        raise ValueError("Fizzy hasn't seen that payment.")
+    for sp in rows:
+        if sp["customer_id"] is not None:
+            undo_payment_effects(conn, sp)
+        conn.execute("UPDATE square_payments SET customer_id = ? WHERE square_payment_id = ?", (customer["id"], sp["square_payment_id"]))
+        sp = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (sp["square_payment_id"],)).fetchone()
+        apply_payment_effects(conn, sp)
+        for rf in conn.execute("SELECT * FROM square_refunds WHERE square_payment_id = ?", (sp["square_payment_id"],)).fetchall():
+            apply_refund_effects(conn, sp, rf["amount_cents"], rf["created_at"])
+    audit(conn, staff, "assign_customer", customer["id"], f"{base} ({', '.join(r['kind'] for r in rows)})")
 
 
 def link_pending(conn):

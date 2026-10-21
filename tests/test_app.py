@@ -75,3 +75,20 @@ def test_repayment_already_rung_up_in_square_is_not_entered_twice(client):
     assert conn.execute("SELECT COUNT(*) FROM tab_repayments").fetchone()[0] == 2
     page = client.post("/tools/takings", data={"start": "2020-01-01", "end": "2030-01-01"}).text
     assert "Put on tabs" in page and "recorded without Square" in page
+
+
+def test_assign_from_dashboard_clears_needs_attention(client):
+    from fizzy import config, db, square
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Test Kid", "email": "rns9@reddamnorthshore.nsw.edu.au"})
+    conn = db.connect(config.DB_PATH)
+    now = db.now_iso()
+    square.process_order(conn, {"id": "o1", "state": "COMPLETED", "closed_at": now, "created_at": now,
+                                "line_items": [{"name": "Coke", "quantity": "1"}],
+                                "discounts": [{"name": "Fizzy Tab", "applied_money": {"amount": 300}}]})
+    conn.commit()
+    assert "with no customer attached" in client.get("/").text
+    r = client.post("/square/payments/order:o1/assign", data={"customer": "Test Kid"}, headers={"referer": "/"})
+    assert "Assigned to Test Kid" in r.text and "with no customer attached" not in r.text
+    r = client.post("/square/payments/order:o1/assign", data={"customer": "Nobody Here"}, headers={"referer": "/"})
+    assert "No customer matches" in r.text

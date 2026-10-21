@@ -229,3 +229,40 @@ def test_webhook_signature():
     sig = base64.b64encode(hmac.new(b"k", b"https://x/square/webhook" + body, hashlib.sha256).digest()).decode()
     assert square.verify_webhook(body, sig, "k", "https://x/square/webhook")
     assert not square.verify_webhook(body + b" ", sig, "k", "https://x/square/webhook")
+
+
+def test_assign_unlinked_sale_tab_and_repayment(conn, cust):
+    c = cust()
+    square.process_payment(conn, pay("s1", 300, cust=None), order("Coke"))
+    square.process_order(conn, tab_order("o1", 400, cust=None))
+    square.process_payment(conn, pay("r1", 250, cust=None, order_id="o2"), order(("Tab repayment", 250), oid="o2"))
+    assert logic.points_balance(conn, c["id"]) == 0
+    for pid in ("s1", "order:o1", "r1"):
+        square.assign_customer(conn, pid, c, "Bru")
+    led = logic.tab_ledger(conn, c["id"])
+    assert led["owing_cents"] == 150                       # 400 tab - 250 repaid
+    assert logic.points_balance(conn, c["id"]) == 300 + 250
+    assert conn.execute("SELECT COUNT(*) FROM square_payments WHERE customer_id IS NULL").fetchone()[0] == 0
+
+
+def test_assign_moves_split_payment_and_corrects_wrong_customer(conn, cust):
+    wrong, right = cust("Wrong Kid", "rns1@reddamnorthshore.nsw.edu.au", "SQW"), cust("Right Kid", "rns2@reddamnorthshore.nsw.edu.au", "SQR")
+    square.process_order(conn, tab_order("o1", 400, cust="SQR"))
+    # Repayment + drink in one sale, but rung up against the wrong person.
+    square.process_payment(conn, pay("p1", 700, cust="SQW", order_id="o2"), order(("Tab repayment", 400), ("Coke", 300), oid="o2"))
+    assert logic.points_balance(conn, wrong["id"]) == 300   # wrong kid got the drink's points (no tab to repay)
+    square.assign_customer(conn, "p1", right, "Bru")
+    assert logic.points_balance(conn, wrong["id"]) == 0
+    assert logic.tab_ledger(conn, wrong["id"])["balance_cents"] == 0
+    assert logic.tab_ledger(conn, right["id"])["owing_cents"] == 0
+    assert logic.points_balance(conn, right["id"]) == 700
+
+
+def test_assigning_a_tab_sale_matches_a_hand_added_charge(conn, cust):
+    c = cust()
+    logic.add_tab_charge(conn, c, 400, "added by hand", iso(), "Mike")
+    square.process_order(conn, tab_order("o1", 400, cust=None))
+    square.assign_customer(conn, "order:o1", c, "Bru")
+    charges = conn.execute("SELECT * FROM tab_charges").fetchall()
+    assert len(charges) == 1 and charges[0]["square_payment_id"] == "order:o1"
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 400

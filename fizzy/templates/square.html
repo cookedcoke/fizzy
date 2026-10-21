@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}Square{% endblock %}
 {% block body %}
+<datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>
 <div class="pagehead"><div><h1>Square</h1><div class="meta">Last sync {{ last_sync|local or 'never' }}</div></div>
   <form method="post" action="/square/sync"><button class="primary" {{ 'disabled' if not square_on }} data-key="u" data-key-label="Sync now">Sync now <kbd>U</kbd></button></form></div>
 {% if sync_error %}<div class="err">Last sync error: {{ sync_error }}</div>{% endif %}
@@ -22,7 +23,11 @@
     <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th>Tender</th><th class="hide-sm">Items</th><th title="Change this if Fizzy got it wrong">Counted as</th><th></th></tr>
     {% for p in rows %}<tr>
       <td>{{ p.created_at|local }}</td>
-      <td>{% if p.customer_id %}<a href="/customers/{{ p.customer_id }}">{{ p.name }}</a>{% else %}<span class="muted">None</span>{% endif %}</td>
+      <td>{% if p.customer_id %}<a href="/customers/{{ p.customer_id }}">{{ p.name }}</a>{% else %}
+        <form class="assign" method="post" action="/square/payments/{{ p.square_payment_id }}/assign">
+          <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required
+                 title="Type a name or student number, then Enter. Fizzy gives the points / adds the tab charge / clears the tab for them.">
+        </form>{% endif %}</td>
       <td class="n">{{ p.amount_cents|money }}</td><td class="small">{{ p.tender }}</td><td class="small hide-sm">{{ p['items'] }}</td>
       <td><form class="inline" method="post" action="/square/payments/{{ p.square_payment_id }}/kind">
         <select name="kind" style="height:28px;width:auto" onchange="if(confirm('Change how this payment is counted?'))this.form.submit()">

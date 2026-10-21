@@ -266,3 +266,5 @@ summary kbd, label kbd { margin-left: 6px; font-size: 10.5px; line-height: 14px 
 button.primary kbd { border-color: rgba(255,255,255,.45) }
 @media (max-width: 720px) { summary kbd, label kbd, .results kbd.num { display: none } }
 @media (max-width: 1200px) { header .brand small { display: none } }
+.assign input { height: 28px; font-size: 13px; min-width: 170px }
+.assign input:not(:focus) { border-style: dashed }

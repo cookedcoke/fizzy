@@ -1,6 +1,7 @@
 {% extends "base.html" %}{% block title %}Dashboard{% endblock %}
 {% block body %}
 {% include "_search.html" %}
+{% if unlinked_tabs %}<datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>{% endif %}
 
 {% if notice %}<div class="notice">{{ notice }}<a class="small" href="/tools#notice">Edit</a></div>{% endif %}
 {% if tabs_paused %}<div class="err">All tabs are paused. <a href="/tools#pause_tabs">Turn back on</a></div>{% endif %}
@@ -27,8 +28,10 @@
     {% endfor %}
     {% for u in unlinked_tabs %}
     <tr><td>{{ u.created_at|local }}</td><td class="muted">No customer attached</td><td class="n">{{ u.amount_cents|money }}</td>
-      <td>{{ 'Tab charge' if u.kind == 'tab_charge' else 'Tab repayment' }} in Square without a customer profile</td>
-      <td class="n"><a class="btn sm" href="/square?show=unlinked">Fix</a></td></tr>
+      <td>{{ 'Tab sale' if u.kind == 'tab_charge' else 'Tab repayment' }} with no customer attached{% if u['items'] %} · <span class="small">{{ u['items'] }}</span>{% endif %}</td>
+      <td class="n"><form class="assign" method="post" action="/square/payments/{{ u.square_payment_id }}/assign">
+        <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required
+               title="Type who it was for, then Enter"></form></td></tr>
     {% endfor %}
   </table></div>
 </div>
