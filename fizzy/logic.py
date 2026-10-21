@@ -15,6 +15,7 @@ STATUS_LABELS = {
     "rejected": "Rejected",
     "revoked": "Revoked",
     "blocked_overdue": "Blocked (overdue)",
+    "paused": "Paused (all tabs)",
 }
 
 
@@ -28,6 +29,7 @@ def settings(conn):
         "tab_limit_cents": int(get_setting(conn, "tab_limit_cents", 1000)),
         "tab_due_days": int(get_setting(conn, "tab_due_days", 7)),
         "unlock_spend_cents": int(get_setting(conn, "unlock_spend_cents", 3000)),
+        "tabs_paused": get_setting(conn, "tabs_paused", "0") == "1",
     }
 
 
@@ -111,6 +113,8 @@ def tab_status(conn, customer, ledger=None, cfg=None):
     decision = customer["tab_decision"]
     if decision == "approved":
         status = "blocked_overdue" if ledger["has_overdue"] else "approved"
+        if status == "approved" and cfg["tabs_paused"]:
+            status = "paused"
     elif decision in ("rejected", "revoked"):
         status = decision
     else:
@@ -177,7 +181,8 @@ def add_tab_charge(conn, customer, amount_cents, items, charged_at, staff=None, 
 
 
 def add_repayment(conn, customer_id, amount_cents, method, note, staff, square_payment_id=None, created_at=None):
-    """Record a repayment and award points for the part that paid off owed tab (not credit)."""
+    """Record a repayment and award points for the part that paid off owed tab (not credit).
+    method "writeoff" clears debt without money changing hands, so it earns nothing."""
     if amount_cents <= 0:
         raise ValueError("Repayment must be more than $0.")
     owing = tab_ledger(conn, customer_id)["owing_cents"]
@@ -189,7 +194,7 @@ def add_repayment(conn, customer_id, amount_cents, method, note, staff, square_p
     )
     rid = cur.lastrowid
     applied = min(amount_cents, owing)
-    if applied > 0:
+    if applied > 0 and method != "writeoff":
         conn.execute(
             "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, repayment_id, square_payment_id, staff, created_at) "
             "VALUES (?, ?, ?, 'tab_repaid', ?, ?, ?, ?, ?)",

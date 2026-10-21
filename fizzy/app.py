@@ -6,37 +6,16 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import config, customers, db, logic, square
+from . import config, customers, db, logic, square, tools
+from .web import HERE, LoginRequired, back, cents, get_conn, money, render, session_gen, staff
 
 log = logging.getLogger("fizzy")
-HERE = Path(__file__).parent
-templates = Jinja2Templates(directory=HERE / "templates")
-
-
-# ---- template helpers -----------------------------------------------------------------------
-
-def money(cents):
-    cents = cents or 0
-    return f"{'-' if cents < 0 else ''}${abs(cents) / 100:,.2f}"
-
-
-def local(ts, fmt="%a %d %b %H:%M"):
-    if not ts:
-        return ""
-    return logic.parse_ts(ts).astimezone(config.TZ).strftime(fmt)
-
-
-templates.env.filters["money"] = money
-templates.env.filters["local"] = local
-templates.env.globals["STATUS_LABELS"] = logic.STATUS_LABELS
 
 
 # ---- background jobs --------------------------------------------------------------------------
@@ -100,52 +79,13 @@ def create_app(background=True):
     )
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     register(app)
+    app.include_router(tools.router)
     return app
 
 
 # ---- auth -------------------------------------------------------------------------------------
 
-class LoginRequired(Exception):
-    pass
-
-
 _fails = {}
-
-
-def get_conn():
-    conn = db.connect()
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-
-def staff(request: Request):
-    name = request.session.get("staff")
-    if not request.session.get("auth") or not name:
-        raise LoginRequired()
-    return name
-
-
-def render(request, name, **ctx):
-    ctx.setdefault("staff", request.session.get("staff"))
-    ctx["staff_names"] = config.STAFF_NAMES
-    ctx["flash"] = request.session.pop("flash", None)
-    return templates.TemplateResponse(request, name, ctx)
-
-
-def back(request, url, msg=None):
-    if msg:
-        request.session["flash"] = msg
-    return RedirectResponse(url, status_code=303)
-
-
-def cents(value: str) -> int:
-    v = (value or "").replace("$", "").replace(",", "").strip()
-    try:
-        return round(float(v) * 100)
-    except ValueError:
-        raise HTTPException(400, f"'{value}' isn't a dollar amount")
 
 
 def register(app):
@@ -168,7 +108,11 @@ def register(app):
             time.sleep(1)
             return render(request, "login.html", next=next, error="Wrong password.")
         _fails.pop(ip, None)
-        request.session.update(auth=True, staff=who)
+        conn = db.connect()
+        try:
+            request.session.update(auth=True, staff=who, gen=session_gen(conn))
+        finally:
+            conn.close()
         return RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
 
     @app.post("/switch")
@@ -229,7 +173,8 @@ def register(app):
             request, "dashboard.html", total_owed=total_owed, total_overdue=total_overdue, overdue=overdue,
             due_soon=due_soon, eligible=eligible, top=top, breaches=breaches, unlinked_tabs=unlinked_tabs,
             last_sync=db.get_setting(conn, "square_last_sync"), sync_error=db.get_setting(conn, "square_last_error"),
-            square_on=bool(config.SQUARE_TOKEN),
+            square_on=bool(config.SQUARE_TOKEN), notice=db.get_setting(conn, "notice", ""),
+            tabs_paused=cfg["tabs_paused"],
         )
 
     @app.post("/breach/{charge_id}/ack")

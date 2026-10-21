@@ -5,6 +5,8 @@
   <div id="results"></div>
 </div>
 
+{% if notice %}<div class="notice">{{ notice }} <a class="small" href="/tools#notice">edit</a></div>{% endif %}
+{% if tabs_paused %}<div class="err">All tabs are paused. <a href="/tools#pause_tabs">Turn back on</a></div>{% endif %}
 {% if not square_on %}<div class="err">Square isn't connected yet - set SQUARE_ACCESS_TOKEN. Points and tabs won't update automatically.</div>
 {% elif sync_error %}<div class="err">Last Square sync failed: {{ sync_error }}</div>{% endif %}
 

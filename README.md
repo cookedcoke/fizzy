@@ -33,6 +33,24 @@ Customer directory, points and pay-later tabs for Cooked Coke Co. Staff-only, se
   over the limit or overdue is still recorded as owing. It's flagged in red on the dashboard
   for staff to deal with.
 
+## Tools
+
+**Tools** in the top bar holds the occasional jobs. Hover or tap ⓘ on a tool to see what it
+does; tap the name to open it. Tools shown in red change a lot at once or can't be undone.
+Some of these ask you to type a word (RESET, REVOKE, SIGN OUT) to confirm. Everything a tool
+changes is written to the activity log.
+
+| Section | Tools |
+|---|---|
+| Points | give points to many / everyone, bonus multiplier for a date range, move points, reset all |
+| Tabs | pause all tabs, approve all eligible, revoke all, add a charge by hand, write off a debt, give more time to pay |
+| Customers | add one, merge duplicates, archive many, restore archived |
+| Reports | takings summary, who to chase (with emails to copy), all balances, points leaderboard (all printable) |
+| Fun | random winner draw, optionally weighted by points |
+| Square | sync now, re-sync from a date, find a payment |
+| Data | CSV exports, download a database backup, health check |
+| Staff | dashboard noticeboard, sign everyone out |
+
 ## Square setup
 
 ### 1. Customers

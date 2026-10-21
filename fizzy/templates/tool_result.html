@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}{{ title }}{% endblock %}
+{% block body %}
+<p class="noprint"><a href="/tools">← Tools</a> · <a href="#" onclick="print();return false">Print</a></p>
+<h1>{{ title }}</h1>
+{% if note %}<p class="muted small">{{ note }}</p>{% endif %}
+<div class="panel scroll"><table>
+  <tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr>
+  {% for r in rows %}<tr>{% for cell in r %}<td>{% if cell is mapping %}<a href="{{ cell.href }}">{{ cell.text }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+  {% else %}<tr><td colspan="{{ headers|length }}" class="muted">Nothing to show.</td></tr>{% endfor %}
+</table></div>
+{% for label, text in copy or [] %}{% if text %}
+<div class="panel noprint"><label>{{ label }} - click to select, then copy</label>
+  <textarea rows="3" readonly onclick="this.select()">{{ text }}</textarea></div>
+{% endif %}{% endfor %}
+{% endblock %}

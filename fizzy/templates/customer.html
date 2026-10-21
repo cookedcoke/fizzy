@@ -16,6 +16,7 @@
 <div class="verdict {{ 'yes' if st.can_charge else 'no' }}">
   {% if st.can_charge %}CAN use tab - up to {{ st.available_cents|money }}. In Square: attach customer, pay with "Other → {{ 'Fizzy Tab' }}".
   {% elif st.status == 'approved' %}NO tab - at limit.
+  {% elif st.status == 'paused' %}NO tab - all tabs are paused right now.
   {% elif st.status == 'blocked_overdue' %}NO tab - overdue charge must be paid first.
   {% elif st.status == 'eligible' %}NO tab yet - eligible, needs staff approval.
   {% elif st.status == 'locked' %}NO tab - needs {{ (st.unlock_spend_cents - st.spend_cents)|money }} more spent first.

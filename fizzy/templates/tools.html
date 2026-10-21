@@ -1,0 +1,114 @@
+{% extends "base.html" %}{% block title %}Tools{% endblock %}
+{% set DANGER = ['reset_points', 'revoke_all', 'write_off', 'merge', 'sign_out_all', 'bulk_archive'] %}
+
+{% macro who(name='customer', label='Customer', list='people') -%}
+<label>{{ label }}</label><input type="text" name="{{ name }}" list="{{ list }}" placeholder="Start typing a name…" autocomplete="off" required>
+{%- endmacro %}
+{% macro dates(start=week_ago, end=today) -%}
+<div class="row"><div><label>From</label><input type="date" name="start" value="{{ start }}" required></div>
+<div><label>To</label><input type="date" name="end" value="{{ end }}" required></div></div>
+{%- endmacro %}
+{% macro note(label='Note (optional)', required=False) -%}
+<label>{{ label }}</label><input type="text" name="note" {{ 'required' if required }}>
+{%- endmacro %}
+{% macro confirm(word) -%}
+<label>Type <b>{{ word }}</b> to confirm</label><input type="text" name="confirm" autocomplete="off" required>
+{%- endmacro %}
+
+{% macro form(id) %}
+{% if id == 'export' %}
+  <p class="row">{% for e in exports %}<a class="btn" href="/tools/export/{{ e }}.csv">{{ e.replace('_', ' ') }}</a>{% endfor %}</p>
+{% elif id == 'download_backup' %}
+  <p><a class="btn" href="/tools/backup.db">Download fizzy.db</a></p>
+  <p class="muted small">Contains students' names and emails. Keep it somewhere private.</p>
+{% else %}
+<form method="post" action="/tools/{{ id }}">
+{% if id == 'bulk_points' %}
+  <div class="row"><div><label>Points (+ add / − take)</label><input type="number" name="delta" required></div></div>
+  {{ note('Reason (required)', True) }}
+  <label>People - one per line (names, emails or student numbers)</label><textarea name="people" rows="4"></textarea>
+  <label><input type="checkbox" name="everyone" value="1"> Everyone (all active customers) instead</label>
+{% elif id == 'bonus_points' %}
+  <div class="row"><div><label>Multiplier</label><input type="number" name="multiplier" value="2" min="1.1" step="0.1" required></div></div>
+  {{ dates(today, today) }}{{ note() }}
+{% elif id == 'transfer_points' %}
+  {{ who('from', 'From') }}{{ who('to', 'To') }}
+  <label>Points</label><input type="number" name="points" min="1" required>{{ note() }}
+{% elif id == 'reset_points' %}
+  {{ note('Reason', False) }}{{ confirm('RESET') }}
+{% elif id == 'pause_tabs' %}
+  <p>Tabs are currently <b class="{{ 'red' if cfg.tabs_paused }}">{{ 'PAUSED' if cfg.tabs_paused else 'on' }}</b>.</p>
+  <input type="hidden" name="paused" value="{{ '0' if cfg.tabs_paused else '1' }}">{{ note() }}
+  <p><button class="{{ 'primary' if cfg.tabs_paused else 'danger' }}">{{ 'Turn tabs back on' if cfg.tabs_paused else 'Pause all tabs' }}</button></p>
+{% elif id == 'approve_eligible' %}
+  {{ note() }}
+{% elif id == 'revoke_all' %}
+  {{ note('Reason') }}{{ confirm('REVOKE') }}
+{% elif id == 'manual_charge' %}
+  {{ who() }}<label>Amount ($)</label><input type="text" name="amount" inputmode="decimal" required>
+  <label>Items</label><input type="text" name="items">
+{% elif id == 'write_off' %}
+  {{ who() }}<label>Amount ($) - leave blank for everything owed</label><input type="text" name="amount" inputmode="decimal">
+  {{ note('Reason (required)', True) }}
+{% elif id == 'extend_due' %}
+  {{ who() }}<label>Extra days</label><input type="number" name="days" value="7" min="1" required>{{ note() }}
+{% elif id == 'add_customer' %}
+  <label>Name</label><input type="text" name="name" required>
+  <label>Email</label><input type="text" name="email" inputmode="email" required>
+{% elif id == 'merge' %}
+  {{ who('keep', 'Keep this one') }}{{ who('dup', 'Merge this duplicate into it') }}
+{% elif id == 'bulk_archive' %}
+  <label>People - one per line</label><textarea name="people" rows="4" required></textarea>{{ note() }}
+{% elif id == 'restore' %}
+  <label>People - one per line ({{ archived|length }} archived)</label><textarea name="people" rows="3"></textarea>
+  <label><input type="checkbox" name="all" value="1"> Restore everyone archived</label>
+{% elif id == 'takings' %}
+  {{ dates(today, today) }}
+{% elif id == 'chase' or id == 'balances' or id == 'integrity' %}
+{% elif id == 'leaderboard' %}
+  <label>How many</label><input type="number" name="n" value="10" min="1">
+{% elif id == 'raffle' %}
+  <label>Who's in the draw</label>
+  <select name="pool"><option value="bought">Bought something between these dates</option>
+    <option value="points">Anyone with points</option><option value="all">Every active customer</option></select>
+  {{ dates() }}
+  <div class="row"><div><label>Winners</label><input type="number" name="n" value="1" min="1"></div></div>
+  <label><input type="checkbox" name="weighted" value="1"> Weight by points</label>
+{% elif id == 'sync_now' %}
+  {% if not square_on %}<p class="red small">Square isn't configured.</p>{% endif %}
+{% elif id == 'resync' %}
+  <label>From</label><input type="date" name="start" value="{{ week_ago }}" required>
+{% elif id == 'find_payment' %}
+  <label>Square payment ID</label><input type="text" name="payment_id" required>
+{% elif id == 'notice' %}
+  <label>Message (empty to clear)</label><textarea name="notice" rows="3">{{ notice.split('\n— ')[0] if notice }}</textarea>
+{% elif id == 'sign_out_all' %}
+  {{ confirm('SIGN OUT') }}
+{% endif %}
+{% if id != 'pause_tabs' %}<p><button class="{{ 'danger' if id in DANGER else 'primary' }}">Run</button></p>{% endif %}
+</form>
+{% endif %}
+{% endmacro %}
+
+{% block body %}
+<h1>Tools <span class="muted small">hover or tap ⓘ to see what each does</span></h1>
+<datalist id="people">{% for p in people %}<option value="{{ p.name }} <{{ p.email }}>">{% endfor %}</datalist>
+<div class="toolgrid">
+{% for section, items in tools %}
+  <section class="panel">
+    <h2>{{ section }}</h2>
+    {% for id, label, tip in items %}
+    <details class="tool" id="{{ id }}">
+      <summary><span class="{{ 'red' if id in DANGER }}">{{ label }}</span>
+        <span class="tip" tabindex="0" data-tip="{{ tip }}" title="{{ tip }}" aria-label="{{ tip }}" onclick="event.preventDefault()">ⓘ</span></summary>
+      <div class="tool-body"><p class="muted small">{{ tip }}</p>{{ form(id) }}</div>
+    </details>
+    {% endfor %}
+  </section>
+{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}<script>
+// Re-open the tool you just used (redirects land on /tools#id).
+if (location.hash) { var d = document.querySelector(location.hash); if (d && d.tagName === "DETAILS") d.open = true; }
+</script>{% endblock %}
