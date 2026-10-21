@@ -10,7 +10,7 @@
   {% for s in results %}<tr>
     <td><a href="/customers/{{ s.customer.id }}">{{ s.customer.name }}</a></td>
     <td class="hide-sm mono muted">{{ s.customer.email.split('@')[0] }}</td>
-    <td><span class="tag {{ s.status.status }}">{{ s.status.label }}</span></td>
+    <td><span class="tag {{ s.status.status }}">{{ s.status.label }}</span>{% if s.customer.id in can_reward %} <span class="tag reward">Reward</span>{% endif %}</td>
     <td class="n">{{ s.ledger.owing_cents|money }}</td><td class="n">{{ '{:,}'.format(s.points) }}</td></tr>{% endfor %}
 </table></div></div>
 {% endif %}

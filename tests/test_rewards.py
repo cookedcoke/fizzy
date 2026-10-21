@@ -74,3 +74,96 @@ def test_rewards_pages_and_counter_flow(client):
     assert "can have this now" not in client.get("/customers/1").text
     assert client.post("/rewards", data={"name": "", "points": "10"}).status_code == 200   # message, not a crash
     assert client.post("/rewards", data={"name": "X", "points": "abc"}).status_code == 200
+
+
+def _race(fn, n=2):
+    import threading
+    barrier, errs = threading.Barrier(n), []
+
+    def run():
+        barrier.wait()
+        try:
+            fn()
+        except rewards.RewardError as e:
+            errs.append(str(e))
+    threads = [threading.Thread(target=run) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return errs
+
+
+def test_concurrent_redeems_cant_overspend_or_pass_the_limit(conn, cust, tmp_path):
+    c = cust()
+    rid = rewards.create(conn, "Free Coke", 1000, "", 1, "Will")
+    logic.adjust_points(conn, c["id"], 1500, "seed", "Will")
+    conn.commit()
+
+    def go():
+        other = db.connect(str(tmp_path / "t.db"))
+        try:
+            rewards.redeem(other, rid, c, "Will")
+            other.commit()
+        finally:
+            other.close()
+    errs = _race(go)
+    assert len(errs) == 1
+    assert logic.points_balance(conn, c["id"]) == 500
+    assert conn.execute("SELECT COUNT(*) FROM redemptions").fetchone()[0] == 1
+
+
+def test_concurrent_undos_give_points_back_once(conn, cust, tmp_path):
+    c = cust()
+    rid = rewards.create(conn, "Free Coke", 1000, "", None, "Will")
+    logic.adjust_points(conn, c["id"], 1500, "seed", "Will")
+    red = rewards.redeem(conn, rid, c, "Will")
+    conn.commit()
+
+    def go():
+        other = db.connect(str(tmp_path / "t.db"))
+        try:
+            rewards.undo(other, red, "Will")
+            other.commit()
+        finally:
+            other.close()
+    errs = _race(go)
+    assert errs == ["Already undone."]
+    assert logic.points_balance(conn, c["id"]) == 1500
+
+
+def test_merge_moves_redemptions(client):
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Kim Keep", "email": "rns7@reddamnorthshore.nsw.edu.au"})
+    client.post("/tools/add_customer", data={"name": "Kim Dup", "email": "rns8@reddamnorthshore.nsw.edu.au"})
+    client.post("/tools/bulk_points", data={"delta": "1000", "note": "seed", "people": "Kim Dup"})
+    client.post("/rewards", data={"name": "Free Coke", "points": "500", "limit": "1"})
+    client.post("/customers/2/redeem/1")
+    client.post("/tools/merge", data={"keep": "Kim Keep", "dup": "Kim Dup"})
+    page = client.get("/customers/1").text
+    assert "can have this now" not in page                             # limit carried over
+    client.post("/redemptions/1/undo")
+    conn = db.connect()
+    try:
+        assert logic.points_balance(conn, 1) == 1000                    # points back on the kept customer
+        assert logic.points_balance(conn, 2) == 0
+    finally:
+        conn.close()
+
+
+def test_huge_numbers_give_a_message_not_a_crash(client):
+    login(client)
+    for data in ({"name": "X", "points": "99999999999999999999999"},
+                 {"name": "X", "points": "10", "limit": "99999999999999999999999"}):
+        r = client.post("/rewards", data=data)
+        assert r.status_code == 200 and "must be between" in r.text
+
+
+def test_server_search_shows_reward_tag(client):
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Rich Kid", "email": "rns5@reddamnorthshore.nsw.edu.au"})
+    client.post("/tools/bulk_points", data={"delta": "1500", "note": "seed", "people": "Rich Kid"})
+    client.post("/tools/add_customer", data={"name": "Rich Kidd", "email": "rns6@reddamnorthshore.nsw.edu.au"})
+    client.post("/rewards", data={"name": "Free Coke", "points": "1000"})
+    page = client.get("/customers?q=rich").text                      # two matches: a results table
+    assert page.count('tag reward">Reward') == 1

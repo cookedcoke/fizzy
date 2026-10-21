@@ -416,7 +416,7 @@ def h_merge(request, conn, who, form):
     if keep["id"] == dup["id"]:
         raise ToolError("Pick two different customers.")
     for table in ("points_ledger", "tab_charges", "tab_repayments", "square_payments", "tab_decisions", "audit_log",
-                  "square_aliases"):
+                  "square_aliases", "redemptions"):
         conn.execute(f"UPDATE {table} SET customer_id = ? WHERE customer_id = ?", (keep["id"], dup["id"]))
     conn.execute("UPDATE customers SET merged_into = ? WHERE merged_into = ?", (keep["id"], dup["id"]))  # earlier merges
     # Square profiles: keep's stays primary; the duplicate's becomes an alias, so its future sales

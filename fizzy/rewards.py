@@ -20,6 +20,10 @@ class RewardError(ValueError):
     pass
 
 
+MAX_POINTS = 1_000_000
+MAX_LIMIT = 1_000
+
+
 def active(conn):
     return conn.execute("SELECT * FROM rewards WHERE ended_at IS NULL ORDER BY points_cost, id").fetchall()
 
@@ -60,10 +64,10 @@ def create(conn, name, points_cost, square_note, limit, staff_name):
     name = " ".join((name or "").split())
     if not name:
         raise RewardError("Give the reward a name, e.g. 'Free Coke'.")
-    if points_cost <= 0:
-        raise RewardError("Points must be more than 0.")
-    if limit is not None and limit <= 0:
-        raise RewardError("The limit per customer must be at least 1 (or leave it blank).")
+    if not 0 < points_cost <= MAX_POINTS:
+        raise RewardError(f"Points must be between 1 and {MAX_POINTS:,}.")
+    if limit is not None and not 0 < limit <= MAX_LIMIT:
+        raise RewardError(f"The limit per customer must be between 1 and {MAX_LIMIT:,} (or leave it blank).")
     if config.SQUARE_TAB_DISCOUNT and config.SQUARE_TAB_DISCOUNT.lower() in (square_note or "").lower():
         raise RewardError("Don't use the Fizzy Tab discount for rewards - it would put the sale on a tab.")
     cur = conn.execute(
@@ -81,7 +85,15 @@ def end(conn, reward_id, staff_name):
     audit(conn, staff_name, "reward_end", None, r["name"])
 
 
+def _write_lock(conn):
+    """Take SQLite's write lock before checking, so two tabs can't both pass the checks and
+    both write (double redeem past the limit, or below zero)."""
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+
+
 def redeem(conn, reward_id, customer, staff_name):
+    _write_lock(conn)
     r = conn.execute("SELECT * FROM rewards WHERE id = ?", (reward_id,)).fetchone()
     if r is None or r["ended_at"]:
         raise RewardError("That reward has ended.")
@@ -104,6 +116,7 @@ UNDO_HOURS = 12
 
 def undo(conn, redemption_id, staff_name):
     """Give the points back for a redemption made by mistake (same day only)."""
+    _write_lock(conn)
     red = conn.execute("SELECT d.*, r.name FROM redemptions d JOIN rewards r ON r.id = d.reward_id WHERE d.id = ?",
                        (redemption_id,)).fetchone()
     if red is None or red["undone_at"]:
@@ -111,7 +124,9 @@ def undo(conn, redemption_id, staff_name):
     if logic.parse_ts(red["created_at"]) < logic.parse_ts(now_iso()) - timedelta(hours=UNDO_HOURS):
         raise RewardError("Too old to undo here - use Adjust points instead.")
     ts = now_iso()
-    conn.execute("UPDATE redemptions SET undone_at = ?, undone_by = ? WHERE id = ?", (ts, staff_name, redemption_id))
+    if conn.execute("UPDATE redemptions SET undone_at = ?, undone_by = ? WHERE id = ? AND undone_at IS NULL",
+                    (ts, staff_name, redemption_id)).rowcount == 0:
+        raise RewardError("Already undone.")
     conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, note, staff, created_at) VALUES (?, ?, 'redeem_undo', ?, ?, ?)",
                  (red["customer_id"], red["points"], f"Undone: {red['name']}", staff_name, ts))
     audit(conn, staff_name, "redeem_undo", red["customer_id"], red["name"])
@@ -174,6 +189,7 @@ def customer_redeem(request: Request, cid: int, reward_id: int, who=Depends(staf
     try:
         redeem(conn, reward_id, c, who)
     except RewardError as e:
+        conn.rollback()
         return back(request, f"/customers/{cid}", str(e))
     conn.commit()
     r = conn.execute("SELECT * FROM rewards WHERE id = ?", (reward_id,)).fetchone()
@@ -186,6 +202,7 @@ def redemption_undo(request: Request, rid: int, who=Depends(staff), conn=Depends
     try:
         cid = undo(conn, rid, who)
     except RewardError as e:
+        conn.rollback()
         return back(request, request.headers.get("referer") or "/rewards", str(e))
     conn.commit()
     return back(request, f"/customers/{cid}", "Redemption undone - points given back.")

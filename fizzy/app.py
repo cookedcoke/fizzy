@@ -320,7 +320,8 @@ def register(app):
             rows = []
         results = [logic.customer_summary(conn, c, cfg) for c in rows]
         count = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL").fetchone()[0]
-        return render(request, "customers.html", q=q, results=results, count=count)
+        return render(request, "customers.html", q=q, results=results, count=count,
+                      can_reward=rewards.can_redeem_any(conn) if results else set())
 
     @app.get("/api/index")
     def api_index(who=Depends(staff), conn=Depends(get_conn)):
