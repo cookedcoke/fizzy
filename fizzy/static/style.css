@@ -265,7 +265,7 @@ dialog#keys .grid { grid-template-columns: 3fr 2fr }
 summary kbd, label kbd { margin-left: 6px; font-size: 10.5px; line-height: 14px }
 button.primary kbd { border-color: rgba(255,255,255,.45) }
 @media (max-width: 720px) { summary kbd, label kbd, .results kbd.num { display: none } }
-@media (max-width: 1200px) { header .brand small { display: none } }
+@media (max-width: 1400px) { header .brand small, header .who .label { display: none } }
 .assign input { height: 28px; font-size: 13px; min-width: 170px }
 .assign input:not(:focus) { border-style: dashed }
 label > input, label > select, label > textarea { display: block; margin-top: var(--s1); font-weight: 400; font-size: 14px }
@@ -275,3 +275,18 @@ label.check > input { display: inline-block; margin-top: 0 }
 /* Touch screens: 16px text in fields stops iPads/phones zooming in when a box is tapped. */
 @media (pointer: coarse) { label > input, label > select, label > textarea, .assign input, header .who select, .hsearch input,
   input[type=text], input[type=number], input[type=password], input[type=date], select, textarea { font-size: 16px } .search input { font-size: 18px } }
+
+/* ---- rewards ---- */
+.rewards-strip { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s4) }
+.offer { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: 10px var(--s4);
+  background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--line-strong); border-radius: var(--r) }
+.offer.ready { border-color: #B5DEC3; border-left-color: var(--ok); background: var(--ok-wash) }
+.offer.ready b { color: var(--ok) }
+.offer.done { border-left-color: var(--muted) }
+.offer form { flex: none }
+.tag.reward { color: var(--ok); border-color: #B5DEC3; background: var(--ok-wash) } .tag.reward::before { background: var(--ok) }
+
+/* The hidden attribute must win over component display rules (e.g. button { display: inline-flex }). */
+[hidden] { display: none !important }
+@media (max-width: 1240px) { header nav a { padding: 0 9px } .hsearch { flex-basis: 170px; min-width: 120px } }
+@media (max-width: 1100px) { header nav a { padding: 0 7px } .hsearch { flex-basis: 140px } header { gap: var(--s3) } }

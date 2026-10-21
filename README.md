@@ -14,14 +14,15 @@ their tab?*
 2. [Rules](#2-rules)
 3. [How Square and Fizzy fit together](#3-how-square-and-fizzy-fit-together)
 4. [Pages](#4-pages)
-5. [Tools](#5-tools)
-6. [Search and keyboard shortcuts](#6-search-and-keyboard-shortcuts)
-7. [Setting up](#7-setting-up)
-8. [Running it](#8-running-it)
-9. [Configuration reference](#9-configuration-reference)
-10. [Data and privacy](#10-data-and-privacy)
-11. [Troubleshooting](#11-troubleshooting)
-12. [Development](#12-development)
+5. [Rewards (points shop)](#5-rewards-points-shop)
+6. [Tools](#6-tools)
+7. [Search and keyboard shortcuts](#7-search-and-keyboard-shortcuts)
+8. [Setting up](#8-setting-up)
+9. [Running it](#9-running-it)
+10. [Configuration reference](#10-configuration-reference)
+11. [Data and privacy](#11-data-and-privacy)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Development](#13-development)
 
 ---
 
@@ -226,6 +227,7 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 | **Dashboard** | Search; noticeboard; warnings (Square not connected, tabs paused); totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers; people waiting for tab approval |
 | **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend (with a progress bar to $30); record repayment; approve / reject / revoke; adjust points; tab charges with due dates and status; repayments; points history; Square payments; decision history; activity log; edit (name, Square ID, archive) |
 | **Customers** | Search with a results table; download the Square import CSV |
+| **Rewards** | Start and end reward events; see how many were redeemed |
 | **Square** | Connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer |
 | **Tools** | Occasional jobs (next section) |
 | **Import** | Upload the school CSV: preview, then confirm |
@@ -234,7 +236,40 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 
 ---
 
-## 5. Tools
+## 5. Rewards (points shop)
+
+Run a reward whenever you like, e.g. **Free Coke for 1000 points**, or **$2 off for 500**. It
+stays live until you end it.
+
+**Starting one:** **Rewards** in the top bar → *Start a reward*. Give it:
+- a name;
+- the points it costs;
+- what staff should do in Square, e.g. "apply the Points: Free Coke discount";
+- optionally, a limit per customer.
+
+**At the counter:** while a reward is live, it shows on every customer's page.
+- **They have enough points:** it's green, with a **Redeem** button (shortcut `O`). Offer it;
+  they can take it or leave it.
+- **They don't:** it shows how many more points they need, which is worth telling them too.
+- **Search results** show a green **Reward** tag next to anyone who can redeem something.
+
+**Redeeming** takes the points off, logs who did it, and reminds staff which Square discount
+to apply. Ring the sale up in Square with that discount; the customer still earns points on
+anything they pay for. A redemption made by mistake can be undone from the customer's page
+for 12 hours.
+
+**In Square,** make a matching discount for each reward (Items → Discounts):
+- *Points: Free Coke* at 100% on the item;
+- *Points: $2 off* as a fixed amount.
+
+Don't use the Fizzy Tab discount for rewards: that would put the sale on a tab. Fizzy
+refuses a reward whose instructions mention it.
+
+**Ending one:** press **End** on the Rewards page. Its history (how many redeemed, by how
+many people) is kept. Redeeming doesn't count as spending, so it doesn't affect the $30 tab
+threshold. 1 point = 1 cent spent, so 1000 points = $10 spent.
+
+## 6. Tools
 
 **Tools** in the top bar holds the occasional jobs. Hover or tap **i** to see what a tool
 does, and click its name to open it. Tools in red change a lot at once or can't be undone,
@@ -272,7 +307,7 @@ says who you might mean, so a typo can't hit the wrong student.
 
 ---
 
-## 6. Search and keyboard shortcuts
+## 7. Search and keyboard shortcuts
 
 ### Search
 
@@ -312,6 +347,7 @@ you out of the box first. The key boxes are hidden on phones.
 | `Esc` | Leave the box you're in, then press again to go back to the dashboard |
 | `R` | Customer: record repayment (amount pre-filled; `Enter` saves) |
 | `P` | Customer: adjust points (`Tab` to the reason, `Enter` saves) |
+| `O` | Customer: redeem the reward they can have (asks first) |
 | `A` | Customer: approve tab |
 | `X` | Customer: reject, or revoke if approved (asks first) |
 | `N` | Customer: note for the tab decision |
@@ -319,33 +355,33 @@ you out of the box first. The key boxes are hidden on phones.
 | `W` | Switch who's on the counter |
 | `U` | Square page: sync now |
 | `1`–`8` | Tools page: jump to a section |
-| `G` then `D` `C` `S` `T` `I` `L` `,` | Go to Dashboard, Customers, Square, Tools, Import, Log, Settings |
+| `G` then `D` `C` `S` `R` `T` `I` `L` `,` | Go to Dashboard, Customers, Square, Rewards, Tools, Import, Log, Settings |
 | `Ctrl` + `Enter` | Submit the form you're in |
 | `?` | Show shortcuts |
 
 ---
 
-## 7. Setting up
+## 8. Setting up
 
 Do these once, in order.
 
-### 7.1 Fizzy itself
+### 8.1 Fizzy itself
 
-See [Running it](#8-running-it). You'll need a `.env` file. Copy `.env.example` and fill in
+See [Running it](#9-running-it). You'll need a `.env` file. Copy `.env.example` and fill in
 at least `FIZZY_PASSWORD` and `FIZZY_SECRET_KEY`:
 
 ```sh
 python -c "import secrets; print(secrets.token_urlsafe(48))"   # makes a secret key
 ```
 
-### 7.2 Import the school list
+### 8.2 Import the school list
 
 **Import** page (or `python -m fizzy import directory.csv`). The CSV needs a name column
 (`Cleaned Name` or `Name`) and `Email`. Only those two are stored; every other column is
 ignored. Emails must look like `rns<digits>@reddamnorthshore.nsw.edu.au`. Re-importing a
 newer list adds new students and updates changed names, and never deletes anyone.
 
-### 7.3 Put everyone into Square
+### 8.3 Put everyone into Square
 
 1. **Customers → Square import CSV** downloads everyone in Square's customer-import format.
    Names are split into first and last at the first space; fix any odd ones in Square
@@ -353,7 +389,7 @@ newer list adds new students and updates changed names, and never deletes anyone
 2. Square Dashboard → Customers → Import customers → upload it.
 3. On the next sync, Fizzy links each Square profile back to its Fizzy customer.
 
-### 7.4 Square: the discount, the item, and payment types
+### 8.4 Square: the discount, the item, and payment types
 
 In the Square Dashboard → Items:
 
@@ -368,7 +404,7 @@ Square app → Settings → Checkout → Payment types:
 - **Other Payment Types**: not used by Fizzy. A sale paid with Other counts as a normal sale.
 - **House Account**: leave disabled ([why](#why-not-square-house-accounts)).
 
-### 7.5 Square API access
+### 8.5 Square API access
 
 [Square Developer Dashboard](https://developer.squareup.com/apps) → create an application →
 **Production**:
@@ -385,7 +421,7 @@ Fizzy never writes to Square.
 `SQUARE_SYNC_FROM=YYYY-MM-DD` sets how far back the **first** sync reaches. Use it to give
 points for sales made before Fizzy existed; otherwise it starts from the day before.
 
-### 7.6 Test before going live
+### 8.6 Test before going live
 
 Test this once on the real Terminal, with a real customer attached each time. After each step, open Fizzy's **Square** page and
 press **Sync now**.
@@ -409,7 +445,7 @@ subscribed. Polling catches it within 5 minutes regardless.
 
 ---
 
-## 8. Running it
+## 9. Running it
 
 ### Docker on the home PC (recommended)
 
@@ -551,7 +587,7 @@ docker compose exec -u fizzy fizzy python -m fizzy backup /backups
 
 ---
 
-## 9. Configuration reference
+## 10. Configuration reference
 
 All configuration is environment variables, in `.env`. Never commit `.env`. A setting left
 blank (`KEY=`) counts as not set and uses its default.
@@ -587,7 +623,7 @@ The tab limit, days to pay and spend threshold live in the database and are chan
 
 ---
 
-## 10. Data and privacy
+## 11. Data and privacy
 
 Most customers are under 18, so Fizzy keeps the minimum:
 
@@ -607,7 +643,7 @@ them up by email. Nothing in the data model would need to change.
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | Problem | Check |
 |---|---|
@@ -616,7 +652,7 @@ them up by email. Nothing in the data model would need to change.
 | A sale didn't give points | The customer probably wasn't attached on the Terminal. **Square** page → *Only unlinked* → **Assign to…** |
 | A tab sale isn't on their tab | No customer attached: it's under **Needs attention**, so assign it there. No discount: see [Fixing a mistake](#fixing-a-mistake) |
 | A repayment didn't clear the tab | No customer attached: assign it under **Needs attention**. Otherwise the item must be called exactly **Tab repayment** |
-| A customer shows "Not in Square yet" | Import the Square CSV (7.3), then sync. Or paste their Square customer ID into **Edit customer** |
+| A customer shows "Not in Square yet" | Import the Square CSV (8.3), then sync. Or paste their Square customer ID into **Edit customer** |
 | Webhooks not arriving | `SQUARE_WEBHOOK_URL` must match Square's subscription URL exactly; no Cloudflare Access on `/square/webhook`. Polling still catches everything within 5 minutes |
 | Can't log in after an update | Check `FIZZY_SECURE_COOKIES=1` and that you're using `https://` |
 | Counter device keeps getting sent to `fizzy-remote` | Its registration was lost (browser data cleared, different browser) or removed. Register it again |
@@ -626,7 +662,7 @@ them up by email. Nothing in the data model would need to change.
 
 ---
 
-## 12. Development
+## 13. Development
 
 ```sh
 pip install -r requirements.txt pytest

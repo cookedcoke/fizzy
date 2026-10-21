@@ -8,6 +8,9 @@
 {% if not square_on %}<div class="err">Square isn't connected - set <code>SQUARE_ACCESS_TOKEN</code>. Points and tabs won't update on their own until it is.</div>
 {% elif sync_error %}<div class="err">Last Square sync failed: {{ sync_error }}</div>{% endif %}
 
+{% if live_rewards %}<div class="flash" style="border-left-color:var(--ok)">Rewards on:
+  {% for r in live_rewards %}<b>{{ r.name }}</b> ({{ '{:,}'.format(r.points_cost) }} pts){{ ', ' if not loop.last }}{% endfor %}
+  · <a href="/rewards">Manage</a></div>{% endif %}
 <div class="stats">
   <div class="stat"><div class="k">Total owed</div><div class="v">{{ total_owed|money }}</div></div>
   <div class="stat {{ 'alert' if total_overdue }}"><div class="k">Overdue</div><div class="v">{{ total_overdue|money }}</div><div class="sub">{{ overdue|length }} charge{{ '' if overdue|length == 1 else 's' }}</div></div>

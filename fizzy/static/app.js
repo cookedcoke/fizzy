@@ -85,7 +85,7 @@
       out.innerHTML = rows.length ? hits.map(function (h, i) {
         var r = h[0];
         return '<a class="hit" href="/customers/' + r.id + '"><span><kbd class="num">' + (numbersNeedAlt() ? "Alt " : "") + (i + 1) + '</kbd><span class="nm">' + highlight(r.name, h[1]) + '</span><span class="em">' + esc(r.sid) + "</span></span>" +
-          '<span class="facts"><span>' + r.points.toLocaleString() + " pts</span><span>owes " + money(r.owing) + '</span><span class="tag ' + esc(r.status) + '">' + esc(r.label) + "</span></span></a>";
+          '<span class="facts"><span>' + r.points.toLocaleString() + " pts</span><span>owes " + money(r.owing) + "</span>" + (r.reward ? '<span class="tag reward" title="Can redeem a reward">Reward</span>' : "") + '<span class="tag ' + esc(r.status) + '">' + esc(r.label) + "</span></span></a>";
       }).join("") : '<div class="none">No one matches “' + esc(q) + "”.</div>";
       mark();
     }
@@ -115,7 +115,7 @@
   }
 
   // ---- shortcuts ----------------------------------------------------------------------------
-  var GO = { d: ["/", "Dashboard"], c: ["/customers", "Customers"], s: ["/square", "Square"], t: ["/tools", "Tools"],
+  var GO = { d: ["/", "Dashboard"], c: ["/customers", "Customers"], s: ["/square", "Square"], t: ["/tools", "Tools"], r: ["/rewards", "Rewards"],
              i: ["/import", "Import"], l: ["/audit", "Log"], ",": ["/settings", "Settings"] };
   var pendingG = 0;
 

@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% block title %}Rewards{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Rewards</h1>
+  <div class="meta">Live rewards show on every customer page until you end them: a Redeem button if they have the points, otherwise how many more they need.</div></div></div>
+
+<div class="cols">
+<div class="col" style="flex-grow:2">
+  <div class="panel"><h2>Live <span class="count">{{ live|length }}</span></h2>
+    {% if live %}<div class="scroll"><table>
+      <tr><th>Reward</th><th class="n">Points</th><th>In Square</th><th class="n">Redeemed</th><th></th></tr>
+      {% for r in live %}<tr>
+        <td><b>{{ r.name }}</b>{% if r.per_customer_limit %}<br><span class="muted small">{{ r.per_customer_limit }} per customer</span>{% endif %}
+          <br><span class="muted small">Since {{ r.created_at|local('%a %d %b') }} · {{ r.created_by }}</span></td>
+        <td class="n">{{ '{:,}'.format(r.points_cost) }}</td>
+        <td class="small">{{ r.square_note or '' }}</td>
+        <td class="n">{{ r.used }}{% if r.used %}<br><span class="muted small">{{ r.people }} {{ 'person' if r.people == 1 else 'people' }}</span>{% endif %}</td>
+        <td class="n"><form class="inline" method="post" action="/rewards/{{ r.id }}/end">
+          <button class="sm danger" data-confirm="End “{{ r.name }}”? It stops showing on customer pages.">End</button></form></td></tr>{% endfor %}
+    </table></div>{% else %}<p class="empty">No rewards running. Start one on the right.</p>{% endif %}
+  </div>
+  {% if ended %}
+  <div class="panel"><h2>Ended</h2><div class="scroll"><table>
+    <tr><th>Reward</th><th class="n">Points</th><th>Ran</th><th class="n">Redeemed</th></tr>
+    {% for r in ended %}<tr><td>{{ r.name }}</td><td class="n">{{ '{:,}'.format(r.points_cost) }}</td>
+      <td class="small">{{ r.created_at|local('%d %b') }} – {{ r.ended_at|local('%d %b') }}</td><td class="n">{{ r.used }}</td></tr>{% endfor %}
+  </table></div></div>
+  {% endif %}
+</div>
+<div class="col">
+  <form class="panel" method="post" action="/rewards"><h2>Start a reward</h2>
+    <label>Name<input type="text" name="name" placeholder="e.g. Free Coke, $2 off" required></label>
+    <label>Points it costs<input type="number" name="points" min="1" step="1" placeholder="e.g. 1000" required></label>
+    <label>What to do in Square<input type="text" name="square_note" placeholder="e.g. apply the “Points: Free Coke” discount"></label>
+    <label>Limit per customer <span class="muted">(optional)</span><input type="number" name="limit" min="1" step="1" placeholder="No limit"></label>
+    <div class="actions"><button class="primary">Start</button></div>
+    <p class="hint">For each reward, make a matching discount in Square (Items → Discounts), e.g. “Points: Free Coke” at 100% on the item,
+      or “Points: $2 off” as a fixed amount. Don't use the Fizzy Tab discount. 1 point = 1 cent spent, so 1000 points = $10 spent.</p>
+  </form>
+</div>
+</div>
+{% endblock %}

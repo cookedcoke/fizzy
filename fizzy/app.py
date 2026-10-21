@@ -17,7 +17,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import config, customers, db, devices, logic, square, tools
+from . import config, customers, db, devices, logic, rewards, square, tools
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff
 
 log = logging.getLogger("fizzy")
@@ -144,6 +144,7 @@ def create_app(background=True):
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     register(app)
     app.include_router(tools.router)
+    app.include_router(rewards.router)
     return app
 
 
@@ -296,6 +297,7 @@ def register(app):
             tabs_paused=cfg["tabs_paused"],
             people=conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
             if unlinked_tabs else [],
+            live_rewards=rewards.active(conn),
         )
 
     @app.post("/breach/{charge_id}/ack")
@@ -322,7 +324,11 @@ def register(app):
 
     @app.get("/api/index")
     def api_index(who=Depends(staff), conn=Depends(get_conn)):
-        return JSONResponse(logic.search_index(conn), headers={"Cache-Control": "no-store"})
+        rows = logic.search_index(conn)
+        can = rewards.can_redeem_any(conn)
+        for r in rows:
+            r["reward"] = r["id"] in can
+        return JSONResponse(rows, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/search")
     def api_search(q: str = "", who=Depends(staff), conn=Depends(get_conn)):
@@ -360,7 +366,9 @@ def register(app):
             "SELECT * FROM audit_log WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100", (cid,)
         ).fetchall()
         return render(request, "customer.html", s=s, c=c, points=points, payments=payments,
-                      decisions=decisions, audit_rows=audit_rows)
+                      decisions=decisions, audit_rows=audit_rows,
+                      offers=rewards.offers_for(conn, cid, s["points"]),
+                      recent_redemptions=rewards.recent_redemptions(conn, cid))
 
     @app.post("/customers/{cid}/repay")
     def repay(request: Request, cid: int, amount: str = Form(...), method: str = Form(...), note: str = Form(""),

@@ -21,7 +21,7 @@
 <div class="panel" id="devices"><h2>Devices</h2>
 {% if not devices_on %}
   <p class="small" style="margin:0">Off: any device with the password can sign in. To limit {{ main_host }} to registered
-    devices and send everything else through Cloudflare Access, set <code>FIZZY_ACCESS_HOST</code> (README, section 8).</p>
+    devices and send everything else through Cloudflare Access, set <code>FIZZY_ACCESS_HOST</code> (README, "Locking it to the counter device").</p>
 {% else %}
   <p class="small" style="margin:0">Registered devices open <b>{{ main_host }}</b> directly. Anything else is sent to
     <b>{{ access_host }}</b>, behind Cloudflare Access. Both still need the staff password.

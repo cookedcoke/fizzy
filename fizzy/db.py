@@ -134,6 +134,30 @@ CREATE TABLE IF NOT EXISTS device_links (
     used_at TEXT
 );
 
+-- Points shop: reward events staff start and end (see rewards.py).
+CREATE TABLE IF NOT EXISTS rewards (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    points_cost INTEGER NOT NULL,
+    square_note TEXT,                 -- what to do in Square, e.g. "apply the Points: Free Coke discount"
+    per_customer_limit INTEGER,       -- NULL = no limit
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    ended_at TEXT,
+    ended_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS redemptions (
+    id INTEGER PRIMARY KEY,
+    reward_id INTEGER NOT NULL REFERENCES rewards(id),
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    points INTEGER NOT NULL,
+    staff TEXT,
+    created_at TEXT NOT NULL,
+    undone_at TEXT,
+    undone_by TEXT
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);

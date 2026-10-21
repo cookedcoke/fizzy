@@ -23,6 +23,29 @@
 </span></div></div>
 {% endif %}
 
+{% if offers or recent_redemptions %}
+{# Shortcut O redeems the first reward they can have right now. #}
+{% set first_ready = (offers|selectattr('can_redeem')|map(attribute='reward')|map(attribute='id')|first) %}
+<div class="rewards-strip">
+  {% for o in offers %}{% set r = o.reward %}
+  <div class="offer {{ 'ready' if o.can_redeem }}">
+    <div><b>{{ r.name }}</b> <span class="muted">· {{ '{:,}'.format(r.points_cost) }} pts</span>
+      <div class="small muted">{% if o.can_redeem %}{{ c.name.split(' ')[0] }} can have this now - offer it!{% if r.square_note %} In Square: {{ r.square_note }}.{% endif %}
+        {% elif o.limit_hit %}Already used{% if r.per_customer_limit > 1 %} {{ o.used }} times{% endif %} - that's the limit.
+        {% else %}Needs {{ '{:,}'.format(o.short) }} more points.{% endif %}</div></div>
+    {% if o.can_redeem %}{% set keyed = r.id == first_ready %}<form method="post" action="/customers/{{ c.id }}/redeem/{{ r.id }}">
+      <button class="primary" {% if keyed %}data-key="o" data-key-label="Redeem {{ r.name }}"{% endif %}
+        data-confirm="Redeem {{ r.name }} for {{ c.name }}? Takes {{ '{:,}'.format(r.points_cost) }} points.">Redeem{% if keyed %} <kbd>O</kbd>{% endif %}</button></form>{% endif %}
+  </div>
+  {% endfor %}
+  {% for d in recent_redemptions %}
+  <div class="offer done"><div><b>Redeemed {{ d.name }}</b> <span class="muted">· {{ d.created_at|local('%H:%M') }} by {{ d.staff }}</span>
+    {% if d.square_note %}<div class="small muted">In Square: {{ d.square_note }}.</div>{% endif %}</div>
+    <form method="post" action="/redemptions/{{ d.id }}/undo"><button class="sm" data-confirm="Undo this redemption and give {{ d.points }} points back?">Undo</button></form></div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="stats">
   <div class="stat"><div class="k">Points</div><div class="v">{{ '{:,}'.format(s.points) }}</div></div>
   <div class="stat {{ 'alert' if led.has_overdue }}"><div class="k">Tab owing</div><div class="v">{{ led.owing_cents|money }}</div>
