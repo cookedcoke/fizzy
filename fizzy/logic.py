@@ -166,17 +166,23 @@ def adjust_points(conn, customer_id, delta, note, staff):
 TAB_POINT_REASONS = ("tab_repaid", "tab_refund", "credit_used", "tab_adjust")
 
 
-def reconcile_tab_points(conn, customer_id, ts=None, staff="square"):
-    """Make a customer's tab points match the rule: points for the money that actually paid off
-    tabs (not credit, not write-offs). The specific entries (tab_repaid, credit_used, ...) cover
-    the normal cases; this corrects anything left over after refunds, undos and re-marking."""
+def _tab_points_target(conn, customer_id):
+    """The money that actually paid off tabs: real money in, but no more than was charged after
+    write-offs. Shared by the points rule and the bonus tool so they always agree."""
     money, written_off = conn.execute(
         "SELECT COALESCE(SUM(CASE WHEN method != 'writeoff' THEN amount_cents END), 0), "
         "COALESCE(SUM(CASE WHEN method = 'writeoff' THEN amount_cents END), 0) FROM tab_repayments WHERE customer_id = ?",
         (customer_id,)).fetchone()
     charged = conn.execute("SELECT COALESCE(SUM(amount_cents - refunded_cents), 0) FROM tab_charges WHERE customer_id = ?",
                            (customer_id,)).fetchone()[0]
-    target = max(0, min(money, charged - written_off))
+    return max(0, min(money, charged - written_off))
+
+
+def reconcile_tab_points(conn, customer_id, ts=None, staff="square"):
+    """Make a customer's tab points match the rule: points for the money that actually paid off
+    tabs (not credit, not write-offs). The specific entries (tab_repaid, credit_used, ...) cover
+    the normal cases; this corrects anything left over after refunds, undos and re-marking."""
+    target = _tab_points_target(conn, customer_id)
     held = conn.execute(f"SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = ? AND reason IN "
                         f"({','.join('?' * len(TAB_POINT_REASONS))})", (customer_id, *TAB_POINT_REASONS)).fetchone()[0]
     if target != held:
@@ -226,7 +232,28 @@ def paid_by_money(conn, customer_id):
             if take > 0:
                 c[kind] += take
                 spare[kind] -= take
-    return {c["id"]: c["money"] for c in charges}
+    # The replay above only decides *which* charges were paid with money. The amounts must agree
+    # with the ledger (each charge's paid share, oldest first) and with the points rule
+    # (reconcile_tab_points' target), so clamp to both: never more than a charge's paid share,
+    # and in total exactly the money that paid off tabs - trimming the newest first, topping up
+    # the oldest first.
+    paid = {c["id"]: c["paid_cents"] for c in tab_ledger(conn, customer_id)["charges"]}
+    out = {c["id"]: min(c["money"], paid.get(c["id"], 0)) for c in charges}
+    target = _tab_points_target(conn, customer_id)
+    excess = sum(out.values()) - target
+    for c in reversed(charges):
+        if excess <= 0:
+            break
+        cut = min(excess, out[c["id"]])
+        out[c["id"]] -= cut
+        excess -= cut
+    for c in charges:
+        if excess >= 0:
+            break
+        add = min(-excess, paid.get(c["id"], 0) - out[c["id"]])
+        out[c["id"]] += add
+        excess += add
+    return out
 
 
 def add_tab_charge(conn, customer, amount_cents, items, charged_at, staff=None, square_payment_id=None):

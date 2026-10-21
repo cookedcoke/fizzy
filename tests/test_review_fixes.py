@@ -503,3 +503,55 @@ def test_merge_reconciles_points_when_credit_meets_a_charge(conn, cust):
     tools.h_merge(type("R", (), {"session": {}})(), conn, "Bru", {"keep": "Keep Kid", "dup": "Dup Kid"})
     assert logic.tab_ledger(conn, keep["id"])["owing_cents"] == 0
     assert logic.points_balance(conn, keep["id"]) == 500
+
+
+# ---- fourth round: the money / write-off split always agrees with the ledger and the points ----
+
+def test_unpaid_newer_charge_never_counts_as_paid_after_a_write_off_reversal(conn, cust):
+    c = cust()
+    logic.add_tab_charge(conn, c, 200, "A", "2026-01-05T01:00:00+00:00")
+    b = logic.add_tab_charge(conn, c, 200, "B", "2026-01-06T01:00:00+00:00")
+    logic.add_repayment(conn, c["id"], 200, "writeoff", "x", "Bru", created_at="2026-01-07T01:00:00+00:00")
+    logic.add_repayment(conn, c["id"], 100, "cash", "", "Bru", created_at="2026-01-08T01:00:00+00:00")
+    charge_b = conn.execute("SELECT * FROM tab_charges WHERE id = ?", (b,)).fetchone()
+    logic.refund_tab_charge(conn, charge_b, 156, "Bru", "2026-01-09T01:00:00+00:00")
+    cc = logic.add_tab_charge(conn, c, 200, "C", "2026-03-05T01:00:00+00:00")
+    assert logic.paid_by_money(conn, c["id"])[cc] == 0
+
+
+@pytest.mark.parametrize("seed", range(300))
+def test_money_split_agrees_with_ledger_and_points(conn, cust, seed):
+    import random
+    rng = random.Random(seed)
+    c = cust()
+    day = 0
+    for _ in range(rng.randint(3, 12)):
+        day += 1
+        ts = f"2026-01-{day:02d}T01:00:00+00:00" if day <= 28 else f"2026-02-{day - 28:02d}T01:00:00+00:00"
+        op = rng.choice(["charge", "charge", "cash", "cash", "writeoff", "refund_charge", "refund_cash"])
+        owing = logic.tab_ledger(conn, c["id"])["owing_cents"]
+        if op == "charge":
+            logic.add_tab_charge(conn, c, rng.randint(50, 600), "x", ts)
+        elif op == "cash":
+            logic.add_repayment(conn, c["id"], rng.randint(50, 600), "cash", "", "Bru", created_at=ts)
+        elif op == "writeoff" and owing > 0:
+            logic.add_repayment(conn, c["id"], rng.randint(1, owing), "writeoff", "x", "Bru", created_at=ts)
+        elif op == "refund_charge":
+            rows = conn.execute("SELECT * FROM tab_charges WHERE customer_id = ? AND amount_cents > refunded_cents",
+                                (c["id"],)).fetchall()
+            if rows:
+                ch = rng.choice(rows)
+                logic.refund_tab_charge(conn, ch, rng.randint(1, ch["amount_cents"] - ch["refunded_cents"]), "Bru", ts)
+        elif op == "refund_cash":
+            paid = conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM tab_repayments WHERE customer_id = ? "
+                                "AND method != 'writeoff'", (c["id"],)).fetchone()[0]
+            if paid > 0:
+                conn.execute("INSERT INTO tab_repayments(customer_id, amount_cents, method, note, staff, created_at) "
+                             "VALUES (?, ?, 'other', 'Square refund', 'square', ?)", (c["id"], -rng.randint(1, paid), ts))
+                logic.reconcile_tab_points(conn, c["id"], ts)
+    split = logic.paid_by_money(conn, c["id"])
+    paid = {ch["id"]: ch["paid_cents"] for ch in logic.tab_ledger(conn, c["id"])["charges"]}
+    held = conn.execute("SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = ? AND reason IN "
+                        "('tab_repaid', 'tab_refund', 'credit_used', 'tab_adjust')", (c["id"],)).fetchone()[0]
+    assert all(0 <= split[k] <= paid[k] for k in split), (split, paid)
+    assert sum(split.values()) == held                       # bonus split == points rule
