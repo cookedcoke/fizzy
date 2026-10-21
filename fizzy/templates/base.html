@@ -21,6 +21,17 @@
     <a href="{{ href }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}" title="{{ label }} - press G then {{ key }}">{{ label }}</a>
     {% endfor %}
   </nav>
+  <script>/* Runs before first paint: keep the current page's tab in view, and fade only the edges with more tabs past them. */
+  (function (n) {
+    var on = n.querySelector("a.on");
+    if (on && n.scrollWidth > n.clientWidth) n.scrollLeft += on.getBoundingClientRect().left - n.getBoundingClientRect().left - (n.clientWidth - on.offsetWidth) / 2;
+    function edges() {
+      n.classList.toggle("more-l", n.scrollLeft > 2);
+      n.classList.toggle("more-r", n.scrollLeft + n.clientWidth < n.scrollWidth - 2);
+    }
+    edges(); n.addEventListener("scroll", edges, { passive: true }); addEventListener("resize", edges);
+  })(document.currentScript.previousElementSibling);
+  </script>
   {% if p not in ('/', '/customers') %}
   <div class="hsearch"><input type="search" data-search placeholder="Search  /" title="Search customers - press / or S" autocomplete="off" aria-label="Find a customer"><div class="results"></div></div>
   {% endif %}
