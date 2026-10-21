@@ -281,6 +281,8 @@ def undo_payment_effects(conn, sp):
         else:  # hand-entered in Fizzy: keep it, just unlink
             conn.execute("UPDATE tab_repayments SET square_payment_id = NULL WHERE id = ?", (r["id"],))
             conn.execute("UPDATE points_ledger SET square_payment_id = NULL WHERE repayment_id = ?", (r["id"],))
+    if sp["customer_id"] is not None:
+        logic.reconcile_tab_points(conn, sp["customer_id"])
 
 
 def apply_refund_effects(conn, sp, amount, created_at):
@@ -315,6 +317,7 @@ def apply_refund_effects(conn, sp, amount, created_at):
                 (cid, -take, -take, cur.lastrowid, pid, created_at),
             )
         audit(conn, "square", "repayment_refund", cid, f"-${amount / 100:.2f}")
+        logic.reconcile_tab_points(conn, cid, created_at)
 
 
 def _insert_sp(conn, sp):
@@ -446,17 +449,16 @@ def process_refund(conn, refund, return_order=None):
         return True
     sale_left = sale["amount_cents"] - _refunded_so_far(conn, sale["square_payment_id"])
     rep_left = sp["amount_cents"] - _refunded_so_far(conn, sp["square_payment_id"])
-    returned_rep = None
-    if return_order:
-        returned_rep = sum(_money(li, "total_money") for ret in return_order.get("returns", []) or []
-                           for li in ret.get("return_line_items", []) or []
-                           if config.SQUARE_REPAYMENT_ITEM and (li.get("name") or "").strip().lower() == config.SQUARE_REPAYMENT_ITEM.lower())
-    if returned_rep is None:
+    lines = [li for ret in (return_order or {}).get("returns", []) or [] for li in ret.get("return_line_items", []) or []]
+    if lines:  # Square says which items came back
+        returned_rep = sum(_money(li, "total_money") for li in lines if config.SQUARE_REPAYMENT_ITEM
+                           and (li.get("name") or "").strip().lower() == config.SQUARE_REPAYMENT_ITEM.lower())
+        # Whatever the purchase part can't absorb must be repayment money, whatever the lines say.
+        rep_part = min(max(returned_rep, amount - sale_left), amount, rep_left)
+        sale_part = min(amount - rep_part, sale_left)
+    else:  # no item detail: the purchase part first, the rest from the repayment
         sale_part = min(amount, sale_left)
         rep_part = min(amount - sale_part, rep_left)
-    else:
-        rep_part = min(returned_rep, amount, rep_left)
-        sale_part = min(amount - rep_part, sale_left)
     if sale_part > 0:
         _record_refund(conn, f"{rid}:sale", sale, sale_part, raw, ts)
     if rep_part > 0:
@@ -525,12 +527,14 @@ def sync_customers(conn, sq_customers):
             continue
         ref = (sc.get("reference_id") or "").strip()
         email = (sc.get("email_address") or "").strip().lower()
-        name = " ".join(filter(None, [sc.get("given_name"), sc.get("family_name")])).strip()
+        name = " ".join(" ".join(filter(None, [sc.get("given_name"), sc.get("family_name")])).split())
         row = None
         if ref.startswith("fizzy-") and ref[6:].isdigit():
             row = conn.execute("SELECT id, merged_into, square_customer_id, archived_at FROM customers WHERE id = ?",
                                (int(ref[6:]),)).fetchone()
-            if row is not None and row["merged_into"]:  # exported before a merge: follow it
+            for _ in range(10):  # exported before one or more merges: follow them to the survivor
+                if row is None or not row["merged_into"]:
+                    break
                 row = conn.execute("SELECT id, merged_into, square_customer_id, archived_at FROM customers WHERE id = ?",
                                    (row["merged_into"],)).fetchone()
             if row is not None and (row["square_customer_id"] or row["archived_at"]):
@@ -555,29 +559,52 @@ def sync_customers(conn, sq_customers):
     return {"linked": linked, "created": created, "conflicts": len(conflicts)}
 
 
-def _safely(conn, errors, label, fn):
-    """Run one item's processing in a savepoint, so a bad item is skipped and reported rather
-    than stopping the whole sync."""
+def _safely(conn, failed, key, fn):
+    """Run one item's processing in a savepoint. If it fails it's rolled back and added to
+    `failed` (key -> error); the caller keeps it on a retry list so it's never lost."""
     conn.execute("SAVEPOINT item")
     try:
         result = fn()
         conn.execute("RELEASE item")
         conn.commit()
-        return result
+        return True, result
     except Exception as e:
         conn.execute("ROLLBACK TO item")
         conn.execute("RELEASE item")
-        log.exception("Square sync: %s failed", label)
-        errors.append(f"{label}: {e}")
-        return None
+        log.exception("Square sync: %s failed", key)
+        failed[key] = str(e) or e.__class__.__name__
+        return False, None
 
 
 def _ts(obj):
     return norm_ts(obj.get("updated_at") or obj.get("closed_at") or obj["created_at"])
 
 
+def _process(conn, client, typ, obj):
+    """Process one payment / order / refund. Returns a count key or None."""
+    if typ == "payment":
+        if obj.get("status") != "COMPLETED":
+            return None
+        return process_payment(conn, obj, client.order(obj.get("order_id")))
+    if typ == "order":
+        return "tab_orders" if process_order(conn, obj) else None
+    if obj.get("payment_id") and not conn.execute(
+            "SELECT 1 FROM square_payments WHERE square_payment_id = ?", (obj["payment_id"],)).fetchone():
+        p = client.payment(obj["payment_id"])
+        if p:
+            process_payment(conn, p, client.order(p.get("order_id")))
+    if obj.get("status") != "COMPLETED":
+        return None
+    return "refunds" if process_refund(conn, obj, client.order(obj.get("order_id"))) else None
+
+
+def _refetch(client, typ, item_id):
+    return {"payment": client.payment, "order": client.order, "refund": client.refund}[typ](item_id)
+
+
 def _sync_once(conn, client):
-    errors = []
+    retry = json.loads(get_setting(conn, "square_retry") or "{}")   # "type:id" -> last error
+    failed = {}
     result = sync_customers(conn, client.customers())
     conn.commit()
     start = get_setting(conn, "square_cursor") or config_start()
@@ -588,6 +615,27 @@ def _sync_once(conn, client):
     since = (logic.parse_ts(start) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     newest = start
     counts = {"sale": 0, "tab_charge": 0, "tab_repayment": 0, "refunds": 0, "tab_orders": 0}
+
+    def run(typ, obj):
+        key = f"{typ}:{obj['id']}"
+        ok, kind = _safely(conn, failed, key, lambda: _process(conn, client, typ, obj))
+        if ok:
+            retry.pop(key, None)
+            if kind:
+                counts[kind] += 1
+
+    # Items that failed last time are fetched again by id (the window may have moved past them).
+    for key in list(retry):
+        typ, item_id = key.split(":", 1)
+        try:
+            obj = _refetch(client, typ, item_id)
+        except Exception as e:
+            failed[key] = str(e) or e.__class__.__name__
+            continue
+        if obj:
+            run(typ, obj)
+        else:
+            retry.pop(key, None)
 
     # Payments and tab orders are processed together in time order, so a tab sale is recorded
     # before the repayment that pays it off (matters on a re-sync or backfill).
@@ -601,40 +649,24 @@ def _sync_once(conn, client):
             newest = max(newest, _ts(o))
     items.sort(key=lambda x: x[0])
     for _, typ, obj in items:
-        if typ == "payment":
-            if obj.get("status") != "COMPLETED":
-                continue
-            kind = _safely(conn, errors, f"payment {obj['id']}",
-                           lambda p=obj: process_payment(conn, p, client.order(p.get("order_id"))))
-            if kind:
-                counts[kind] += 1
-        elif _safely(conn, errors, f"order {obj['id']}", lambda o=obj: process_order(conn, o)):
-            counts["tab_orders"] += 1
-
+        run(typ, obj)
     for rf in client.refunds(since):
         newest = max(newest, _ts(rf))
+        run("refund", rf)
 
-        def one(rf=rf):
-            if rf.get("payment_id") and not conn.execute(
-                    "SELECT 1 FROM square_payments WHERE square_payment_id = ?", (rf["payment_id"],)).fetchone():
-                p = client.payment(rf["payment_id"])
-                if p:
-                    process_payment(conn, p, client.order(p.get("order_id")))
-            return process_refund(conn, rf, client.order(rf.get("order_id")) if rf.get("status") == "COMPLETED" else None)
-        if _safely(conn, errors, f"refund {rf['id']}", one):
-            counts["refunds"] += 1
-
+    retry.update(failed)
     result.update(counts)
     result["relinked"] = link_pending(conn)
     set_setting(conn, "square_cursor", newest)
-    if resync:
-        set_setting(conn, "square_resync_from", "")
+    if resync:  # clear only the request we served; a newer one made meanwhile stays
+        conn.execute("UPDATE settings SET value = '' WHERE key = 'square_resync_from' AND value = ?", (resync,))
     set_setting(conn, "square_last_sync", now_iso())
     set_setting(conn, "square_last_error", "")
-    set_setting(conn, "square_item_errors", json.dumps(errors[-20:]))
+    set_setting(conn, "square_retry", json.dumps(retry))
+    set_setting(conn, "square_item_errors", json.dumps([f"{k}: {v}" for k, v in list(retry.items())[:20]]))
     conn.commit()
-    if errors:
-        result["skipped_items"] = len(errors)
+    if retry:
+        result["skipped_items"] = len(retry)
     return result
 
 
@@ -646,7 +678,10 @@ def sync(conn, client=None, wait=False):
     got = _sync_lock.acquire(timeout=60) if wait else _sync_lock.acquire(blocking=False)
     if not got:
         _sync_pending.set()
-        return {"queued": "a sync is already running; this one will run straight after"}
+        # The running sync may have finished between our failed acquire and setting the flag;
+        # if so, nobody would see the flag - so try once more and run it ourselves.
+        if not _sync_lock.acquire(blocking=False):
+            return {"queued": "a sync is already running; this one will run straight after"}
     result = {}
     while True:
         try:
@@ -681,7 +716,7 @@ def describe_sync(result):
     if result.get("conflicts"):
         msg += f" {result['conflicts']} Square profile(s) clash with existing emails - see below."
     if result.get("skipped_items"):
-        msg += f" {result['skipped_items']} item(s) couldn't be processed - see below."
+        msg += f" {result['skipped_items']} item(s) couldn't be processed yet - they're retried every sync (see below)."
     return msg
 
 

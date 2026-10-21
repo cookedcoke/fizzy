@@ -268,7 +268,9 @@ button.primary kbd { border-color: rgba(255,255,255,.45) }
 @media (max-width: 1200px) { header .brand small { display: none } }
 .assign input { height: 28px; font-size: 13px; min-width: 170px }
 .assign input:not(:focus) { border-style: dashed }
-label > input, label > select, label > textarea { display: block; margin-top: var(--s1); font-weight: 400 }
+label > input, label > select, label > textarea { display: block; margin-top: var(--s1); font-weight: 400; font-size: 14px }
 label.check > input { display: inline-block; margin-top: 0 }
 .msearch { display: none; align-items: center; color: #E8EAED; padding: 0 6px }
 @media (max-width: 720px) { .msearch { display: flex; margin-left: auto } header .who { margin-left: 0 } }
+/* Touch screens: 16px text in fields stops iPads/phones zooming in when a box is tapped. */
+@media (pointer: coarse) { input, select, textarea { font-size: 16px !important } }

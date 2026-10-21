@@ -14,6 +14,7 @@ from datetime import datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from . import config, customers, db, logic, square
 from .web import back, cents, get_conn, money, render, staff
@@ -95,7 +96,7 @@ def resolve(conn, text, archived_ok=False):
     m = re.search(r"<([^>]+)>", text)
     email = (m.group(1) if m else text if "@" in text else "").strip().lower()
     if email:
-        row = conn.execute(f"SELECT * FROM customers WHERE email = ?{arch}", (email,)).fetchone()
+        row = conn.execute(f"SELECT * FROM customers WHERE lower(email) = ?{arch}", (email,)).fetchone()
         if row:
             return row
         raise ToolError(f"No customer with email {email}.")
@@ -106,7 +107,9 @@ def resolve(conn, text, archived_ok=False):
         if len(rows) == 1:
             return rows[0]
         raise ToolError(f"No customer with student number {sid}.")
-    rows = conn.execute(f"SELECT * FROM customers WHERE lower(name) = ?{arch}", (text.lower(),)).fetchall()
+    # Compare names with spacing tidied on both sides (Square-made names can have double spaces).
+    rows = [r for r in conn.execute(f"SELECT * FROM customers WHERE 1 = 1{arch}")
+            if " ".join(r["name"].split()).lower() == text.lower()]
     if len(rows) == 1:
         return rows[0]
     hits = rows or customers.search(conn, text, 5)
@@ -188,7 +191,9 @@ async def run_tool(tool: str, request: Request, who=Depends(staff), conn=Depends
         raise HTTPException(404, "Unknown tool")
     form = {k: v for k, v in (await request.form()).items() if isinstance(v, str)}
     try:
-        result = handler(request, conn, who, form)
+        # In a worker thread: some tools wait on Square (Sync now waits for a running sync), and
+        # that mustn't freeze the whole app for everyone else.
+        result = await run_in_threadpool(handler, request, conn, who, form)
         conn.commit()
         return result
     except (ToolError, ValueError) as e:  # ValueError: rule checks in logic.py (e.g. a 0-point change)
@@ -271,7 +276,9 @@ def _purchases_in(conn, start, end):
         "AND created_at >= ? AND created_at < ? GROUP BY customer_id", (start, end))}
     for (cid,) in conn.execute("SELECT DISTINCT customer_id FROM tab_charges WHERE charged_at >= ? AND charged_at < ?",
                                (start, end)).fetchall():
-        paid = sum(ch["paid_cents"] for ch in logic.tab_ledger(conn, cid)["charges"] if start <= ch["charged_at"] < end)
+        by_money = logic.paid_by_money(conn, cid)  # written-off purchases earn nothing, bonus included
+        paid = sum(by_money.get(r["id"], 0) for r in conn.execute(
+            "SELECT id FROM tab_charges WHERE customer_id = ? AND charged_at >= ? AND charged_at < ?", (cid, start, end)))
         totals[cid] = totals.get(cid, 0) + paid
     return totals
 
@@ -411,6 +418,7 @@ def h_merge(request, conn, who, form):
     for table in ("points_ledger", "tab_charges", "tab_repayments", "square_payments", "tab_decisions", "audit_log",
                   "square_aliases"):
         conn.execute(f"UPDATE {table} SET customer_id = ? WHERE customer_id = ?", (keep["id"], dup["id"]))
+    conn.execute("UPDATE customers SET merged_into = ? WHERE merged_into = ?", (keep["id"], dup["id"]))  # earlier merges
     # Square profiles: keep's stays primary; the duplicate's becomes an alias, so its future sales
     # (and the next customer sync) still land on the kept customer.
     if keep["square_customer_id"] is None:

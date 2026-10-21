@@ -38,6 +38,9 @@ class FakeSquare:
     def payment(self, pid):
         return next((p for p in self._p if p["id"] == pid), None)
 
+    def refund(self, rid):
+        return next((r for r in self._r if r["id"] == rid), None)
+
 
 def reload(conn, c):
     return conn.execute("SELECT * FROM customers WHERE id = ?", (c["id"],)).fetchone()
@@ -89,7 +92,9 @@ def test_partial_refunds_of_a_repayment_never_take_more_points_than_it_earned(co
     assert logic.points_balance(conn, c["id"]) == 300                 # $2 of it is credit, no points
     square.process_refund(conn, refund("r1", "p1", 200))
     square.process_refund(conn, refund("r2", "p1", 200))
-    assert logic.points_balance(conn, c["id"]) == 0                   # was -100 before the fix
+    # $5 paid, $4 refunded: $1 of real money still paid the $3 tab, so 100 points, $2 owing.
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 200
+    assert logic.points_balance(conn, c["id"]) == 100                 # was -100 before the fix
 
 
 # ---- points ordering, write-offs, returns -----------------------------------------------------
@@ -298,3 +303,123 @@ def test_old_database_gets_new_columns(tmp_path):
     conn = db.connect(path)
     db.init(conn)
     assert "merged_into" in {r["name"] for r in conn.execute("PRAGMA table_info(customers)")}
+
+
+# ---- second round: issues found by the check over the first round of fixes -------------------
+
+def rep_order(oid, amt):
+    return order(("Tab repayment", amt), oid=oid)
+
+
+def test_return_of_paid_items_doesnt_revive_an_unrelated_old_write_off(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 500, ts=iso(30)))
+    logic.add_repayment(conn, c["id"], 500, "writeoff", "old debt", "Bru", created_at=iso(29))
+    square.process_order(conn, tab_order("o2", 500))
+    square.process_payment(conn, pay("p1", 500, source="CARD", order_id="r1"), rep_order("r1", 500))
+    assert logic.points_balance(conn, c["id"]) == 500
+    ret = {"source_order_id": "o2", "return_line_items": [{"total_discount_money": {"amount": 500}}]}
+    square.process_order(conn, {"id": "o9", "state": "COMPLETED", "closed_at": iso(), "created_at": iso(), "returns": [ret]})
+    assert logic.tab_ledger(conn, c["id"])["balance_cents"] == -500   # the card $5 is now credit
+    assert logic.points_balance(conn, c["id"]) == 0                   # and earns nothing
+
+
+def test_refunding_the_repayment_that_funded_a_later_tab_takes_its_points_back(conn, cust):
+    c = cust()
+    square.process_payment(conn, pay("p1", 500, source="CARD", order_id="r1"), rep_order("r1", 500))
+    square.process_order(conn, tab_order("o1", 500))
+    assert logic.points_balance(conn, c["id"]) == 500
+    square.process_refund(conn, refund("rf1", "p1", 500))
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 500
+    assert logic.points_balance(conn, c["id"]) == 0
+    square.process_payment(conn, pay("p2", 500, source="CARD", order_id="r2"), rep_order("r2", 500))
+    assert logic.points_balance(conn, c["id"]) == 500                 # not 1000
+
+
+def test_remarking_the_funding_repayment_keeps_points_right(conn, cust):
+    c = cust()
+    square.process_payment(conn, pay("p1", 500, source="CARD", order_id="r1"), rep_order("r1", 500))
+    square.process_order(conn, tab_order("o1", 500))
+    square.reclassify(conn, "p1", "sale", "Bru")
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 500
+    assert logic.points_balance(conn, c["id"]) == 500                 # 500 for the sale, none for the unpaid tab
+
+
+def test_item_that_fails_is_retried_on_the_next_sync(conn, cust):
+    import httpx
+    c = cust()
+    t_bad = iso(hours=3)
+
+    class Flaky(FakeSquare):
+        fail = True
+
+        def order(self, oid):
+            if oid == "obad" and Flaky.fail:
+                raise httpx.ReadTimeout("timeout")
+            return super().order(oid)
+    p_bad = pay("bad", 700, ts=t_bad, order_id="obad")
+    p_bad["updated_at"] = t_bad
+    p_new = pay("new", 100)
+    db.set_setting(conn, "square_cursor", iso(hours=4))
+    conn.commit()
+    assert square.sync(conn, Flaky(payments=[p_bad, p_new]))["skipped_items"] == 1
+    assert "payment:bad" in db.get_setting(conn, "square_item_errors")
+    Flaky.fail = False
+    # The window has moved past 'bad', so it isn't in the list any more - it's fetched by id.
+    fake = Flaky(payments=[p_new])
+    fake.payment = lambda pid: p_bad if pid == "bad" else None
+    square.sync(conn, fake)
+    assert logic.points_balance(conn, c["id"]) == 800
+    assert db.get_setting(conn, "square_item_errors") == "[]"
+
+
+def test_a_newer_resync_request_made_during_a_resync_survives(conn, cust, tmp_path):
+    cust()
+    square.request_resync(conn, "2026-09-01T00:00:00+00:00")
+    path = conn.execute("PRAGMA database_list").fetchone()["file"]
+    other = db.connect(path)
+
+    class Slow(FakeSquare):
+        def payments(self, since):
+            square.request_resync(other, "2026-06-01T00:00:00+00:00")
+            return super().payments(since)
+    square.sync(conn, Slow())
+    assert db.get_setting(conn, "square_resync_from") == "2026-06-01T00:00:00+00:00"
+
+
+def test_full_refund_with_an_order_but_no_return_lines_refunds_both_parts(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 500))
+    o2 = order(("Tab repayment", 500), ("Coke", 300), oid="o2")
+    p1 = pay("p1", 800, source="CARD", order_id="o2")
+    square.process_payment(conn, p1, o2)
+    square.process_refund(conn, refund("rf1", "p1", 800, oid="o2"), o2)   # o2 has no 'returns'
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 500
+
+
+def test_bonus_points_ignore_written_off_tab_purchases(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 400, ts="2026-01-05T01:00:00+00:00"))
+    logic.add_repayment(conn, c["id"], 400, "writeoff", "forgiven", "Bru", created_at="2026-01-06T01:00:00+00:00")
+    tools.h_bonus_points(type("R", (), {"session": {}})(), conn, "Bru",
+                         {"multiplier": "2", "start": "2026-01-01", "end": "2026-01-10"})
+    assert logic.points_balance(conn, c["id"]) == 0
+
+
+def test_merge_chain_is_followed(conn, cust):
+    a = cust("Ann A", "rns1@reddamnorthshore.nsw.edu.au", None)
+    b = cust("Ann B", "rns2@reddamnorthshore.nsw.edu.au", None)
+    c = cust("Ann C", "rns3@reddamnorthshore.nsw.edu.au", None)
+    req = type("R", (), {"session": {}})()
+    tools.h_merge(req, conn, "Bru", {"keep": "Ann B", "dup": "Ann A"})
+    tools.h_merge(req, conn, "Bru", {"keep": "Ann C", "dup": "Ann B"})
+    square.sync(conn, FakeSquare(customers=[{"id": "SQA", "given_name": "Ann", "reference_id": f"fizzy-{a['id']}",
+                                             "email_address": "rns1@reddamnorthshore.nsw.edu.au"}],
+                                 payments=[pay("p1", 200, cust="SQA")]))
+    assert logic.points_balance(conn, c["id"]) == 200
+
+
+def test_names_and_square_ids_match_however_they_are_spaced_or_cased(conn, cust):
+    c = cust("Nora  Zhang ", "square:SQABC", None)
+    assert tools.resolve(conn, "Nora Zhang")["id"] == c["id"]
+    assert tools.resolve(conn, "Nora Zhang <square:SQABC>")["id"] == c["id"]

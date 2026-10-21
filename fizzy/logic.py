@@ -163,6 +163,43 @@ def adjust_points(conn, customer_id, delta, note, staff):
     audit(conn, staff, "points_adjust", customer_id, f"{delta:+d}: {note.strip()}")
 
 
+TAB_POINT_REASONS = ("tab_repaid", "tab_refund", "credit_used", "tab_adjust")
+
+
+def reconcile_tab_points(conn, customer_id, ts=None, staff="square"):
+    """Make a customer's tab points match the rule: points for the money that actually paid off
+    tabs (not credit, not write-offs). The specific entries (tab_repaid, credit_used, ...) cover
+    the normal cases; this corrects anything left over after refunds, undos and re-marking."""
+    money, written_off = conn.execute(
+        "SELECT COALESCE(SUM(CASE WHEN method != 'writeoff' THEN amount_cents END), 0), "
+        "COALESCE(SUM(CASE WHEN method = 'writeoff' THEN amount_cents END), 0) FROM tab_repayments WHERE customer_id = ?",
+        (customer_id,)).fetchone()
+    charged = conn.execute("SELECT COALESCE(SUM(amount_cents - refunded_cents), 0) FROM tab_charges WHERE customer_id = ?",
+                           (customer_id,)).fetchone()[0]
+    target = max(0, min(money, charged - written_off))
+    held = conn.execute(f"SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = ? AND reason IN "
+                        f"({','.join('?' * len(TAB_POINT_REASONS))})", (customer_id, *TAB_POINT_REASONS)).fetchone()[0]
+    if target != held:
+        conn.execute(
+            "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, staff, created_at) "
+            "VALUES (?, ?, ?, 'tab_adjust', 'Tab points corrected after a refund or change', ?, ?)",
+            (customer_id, target - held, target - held, staff, ts or now_iso()))
+
+
+def paid_by_money(conn, customer_id):
+    """How much of each tab charge was paid with real money (oldest first), ignoring write-offs.
+    {charge_id: cents}."""
+    money = conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM tab_repayments WHERE customer_id = ? "
+                         "AND method != 'writeoff'", (customer_id,)).fetchone()[0]
+    out = {}
+    for c in conn.execute("SELECT id, amount_cents - refunded_cents AS net FROM tab_charges WHERE customer_id = ? "
+                          "ORDER BY charged_at, id", (customer_id,)):
+        part = max(0, min(c["net"], money))
+        out[c["id"]] = part
+        money -= part
+    return out
+
+
 def add_tab_charge(conn, customer, amount_cents, items, charged_at, staff=None, square_payment_id=None):
     """Record a tab charge. Breaking a rule doesn't stop it being owed; it's flagged instead."""
     cfg = settings(conn)
@@ -190,6 +227,7 @@ def add_tab_charge(conn, customer, amount_cents, items, charged_at, staff=None, 
         )
     audit(conn, staff or "square", "tab_charge", customer["id"],
           f"${amount_cents / 100:.2f} {items or ''}" + (f" [{breach}]" if breach else ""))
+    reconcile_tab_points(conn, customer["id"], charged_at)
     return cur.lastrowid
 
 
@@ -214,6 +252,7 @@ def add_repayment(conn, customer_id, amount_cents, method, note, staff, square_p
             (customer_id, applied, applied, f"Tab repayment ({method})", rid, square_payment_id, staff, ts),
         )
     audit(conn, staff or "square", "tab_repayment", customer_id, f"${amount_cents / 100:.2f} {method} {note or ''}".strip())
+    reconcile_tab_points(conn, customer_id, ts)
     return rid
 
 
@@ -230,8 +269,10 @@ def refund_tab_charge(conn, charge, refund_cents, staff="square", created_at=Non
     if credit_increase > 0:
         # Items returned from a debt that was written off: undo the write-off first, so the
         # customer isn't left in credit for money they never paid.
+        # Only write-offs made since this charge (net of earlier reversals) can have covered it.
         written_off = conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM tab_repayments "
-                                   "WHERE customer_id = ? AND method = 'writeoff'", (charge["customer_id"],)).fetchone()[0]
+                                   "WHERE customer_id = ? AND method = 'writeoff' AND created_at >= ?",
+                                   (charge["customer_id"], charge["charged_at"])).fetchone()[0]
         undo = min(credit_increase, max(0, written_off))
         if undo > 0:
             conn.execute(
@@ -247,6 +288,7 @@ def refund_tab_charge(conn, charge, refund_cents, staff="square", created_at=Non
              charge["square_payment_id"], staff, created_at or now_iso()),
         )
     audit(conn, staff, "tab_charge_refund", charge["customer_id"], f"-${refund_cents / 100:.2f} on charge #{charge['id']}")
+    reconcile_tab_points(conn, charge["customer_id"], created_at)
 
 
 def search_index(conn):

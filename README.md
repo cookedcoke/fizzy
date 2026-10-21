@@ -81,6 +81,8 @@ Switch it with `W` or the dropdown. **Lock** signs the device out.
 - **What counts as "spent":** completed sales with the customer attached, plus tab
   repayments, minus refunds. Manual point adjustments don't count.
 - **Points on tab purchases** are earned when the tab is **repaid**, not when charged.
+  Points always match the money that actually paid off tabs: if a repayment is refunded or
+  re-marked later, the points it earned come back off automatically.
   If someone has credit (paid more than they owed), it pays their next tab sale
   straight away and earns its points then.
   Money that leaves a customer in credit earns nothing, and neither do write-offs.
@@ -113,8 +115,9 @@ Square**, so Square's reports and the till always match.
 - **What gets read:** everything Square has *updated* since the last sync, so sales the
   Terminal took offline and uploaded later, and refunds that finish processing later, are
   still picked up.
-- **Problem items:** if one sale can't be processed, it's skipped and listed on the
-  **Square** page, and everything else still syncs.
+- **Problem items:** if one sale can't be processed (for example, a network blip while
+  fetching it), everything else still syncs. The problem item is listed on the **Square**
+  page and fetched again on every sync until it goes through, so nothing is lost.
 - **Duplicate Square profiles:** if a Square profile uses an email that's already someone
   else's in Fizzy, it's listed there too instead of being added.
 - **Failing syncs:** a sync that fails waits until the next 5-minute check before retrying.

@@ -6,6 +6,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY fizzy ./fizzy
 RUN useradd -r -u 10001 fizzy && mkdir -p /data /backups && chown fizzy /data /backups
 COPY deploy/entrypoint.sh /usr/local/bin/fizzy-entrypoint
+# Strip Windows line endings in case the repo was cloned on Windows (git autocrlf).
+RUN sed -i 's/\r$//' /usr/local/bin/fizzy-entrypoint && chmod +x /usr/local/bin/fizzy-entrypoint
 # Starts as root only to fix ownership of the mounted folders, then runs as the fizzy user.
 ENTRYPOINT ["fizzy-entrypoint"]
 EXPOSE 8000
