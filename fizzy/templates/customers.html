@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}Customers{% endblock %}
+{% block body %}
+<h1>Customers <span class="muted small">{{ count }} active</span></h1>
+<form class="panel bigsearch" method="get" action="/customers">
+  <input id="q" name="q" type="search" value="{{ q }}" placeholder="Name or student number…" autofocus autocomplete="off">
+  <div id="results"></div>
+</form>
+{% if q and not results %}<p class="muted">No match for "{{ q }}".</p>{% endif %}
+{% if results %}
+<div class="panel scroll"><table>
+  <tr><th>Name</th><th class="hide-sm">Email</th><th>Tab</th><th class="n">Owing</th><th class="n">Points</th></tr>
+  {% for s in results %}<tr>
+    <td><a href="/customers/{{ s.customer.id }}">{{ s.customer.name }}</a></td>
+    <td class="hide-sm muted">{{ s.customer.email }}</td>
+    <td><span class="tag {{ s.status.status }}">{{ s.status.label }}</span></td>
+    <td class="n">{{ s.ledger.owing_cents|money }}</td><td class="n">{{ s.points }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+<p class="small"><a href="/export/square-customers.csv">Download all customers as a Square import CSV</a></p>
+{% endblock %}
+{% block scripts %}<script src="/static/search.js"></script>{% endblock %}

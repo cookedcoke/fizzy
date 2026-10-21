@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+data/
+backups/
+*.db
+*.db-*
+*.csv
+!tests/fixtures/*.csv
+.venv/
+.pytest_cache/

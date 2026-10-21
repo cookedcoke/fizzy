@@ -1,0 +1,20 @@
+# Fizzy + Cloudflare Tunnel. No ports are published on the host.
+services:
+  fizzy:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      FIZZY_BACKUP_DIR: /backups
+    volumes:
+      - ./data:/data
+      # Change the left side to your external SSD later, e.g. /mnt/ssd/fizzy-backups or E:/fizzy-backups
+      - ./backups:/backups
+
+  cloudflared:
+    image: cloudflare/cloudflared:2025.9.1
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on: [fizzy]

@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block title %}Settings{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<form class="panel" method="post" action="/settings" style="max-width:480px">
+  <label>Max tab owing per customer ($)</label><input type="text" name="tab_limit" value="{{ '%.2f'|format(cfg.tab_limit_cents/100) }}">
+  <label>Days until a tab charge is due</label><input type="number" name="due_days" min="1" value="{{ cfg.tab_due_days }}">
+  <label>Spend needed before a customer is eligible for a tab ($)</label><input type="text" name="unlock_spend" value="{{ '%.2f'|format(cfg.unlock_spend_cents/100) }}">
+  <p><button class="primary">Save</button></p>
+  <p class="muted small">Points: 1 point per cent paid (fixed). Tab purchases earn points when repaid.</p>
+</form>
+<div class="panel" style="max-width:480px">
+  <h2>Backups</h2>
+  <p class="small">Folder: {{ backup_dir or 'not set (FIZZY_BACKUP_DIR)' }}<br>Last: {{ last_backup|local or 'never' }} {{ last_backup_path or '' }}</p>
+  <form method="post" action="/settings/backup"><button>Back up now</button></form>
+</div>
+{% endblock %}

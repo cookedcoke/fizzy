@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Sign in{% endblock %}
+{% block body %}
+<div class="panel" style="max-width:360px;margin:40px auto">
+  <h1><span class="red">C</span> Fizzy</h1>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="who">Who's on the counter</label>
+    <select id="who" name="who">{% for n in staff_names %}<option>{{ n }}</option>{% endfor %}</select>
+    <label for="pw">Password</label>
+    <input id="pw" type="password" name="password" autofocus autocomplete="current-password">
+    <p><button class="primary" type="submit">Sign in</button></p>
+  </form>
+</div>
+{% endblock %}

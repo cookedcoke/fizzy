@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block title %}Log{% endblock %}
+{% block body %}
+<h1>Activity log <span class="muted small">latest 500</span></h1>
+<div class="panel scroll"><table>
+  <tr><th>When</th><th>Staff</th><th>Action</th><th>Customer</th><th>Details</th></tr>
+  {% for a in rows %}<tr><td>{{ a.created_at|local }}</td><td>{{ a.staff }}</td><td>{{ a.action }}</td>
+    <td>{% if a.customer_id %}<a href="/customers/{{ a.customer_id }}">{{ a.name }}</a>{% endif %}</td><td class="small">{{ a.details }}</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

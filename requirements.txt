@@ -1,0 +1,6 @@
+fastapi==0.156.6
+uvicorn==0.54.0
+jinja2==3.1.6
+python-multipart==0.0.32
+itsdangerous==2.2.0
+httpx==0.28.1

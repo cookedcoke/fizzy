@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{% block title %}Fizzy{% endblock %} · Fizzy</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% if staff %}
+<header>
+  <a class="brand" href="/"><b>C</b>Fizzy</a>
+  {% set p = request.url.path %}
+  <nav>
+    <a href="/" class="{{ 'on' if p == '/' }}">Dashboard</a>
+    <a href="/customers" class="{{ 'on' if p.startswith('/customers') }}">Customers</a>
+    <a href="/square" class="{{ 'on' if p.startswith('/square') }}">Square</a>
+    <a href="/import" class="{{ 'on' if p.startswith('/import') }}">Import</a>
+    <a href="/settings" class="{{ 'on' if p.startswith('/settings') }}">Settings</a>
+    <a href="/audit" class="{{ 'on' if p.startswith('/audit') }}">Log</a>
+  </nav>
+  <div class="who">
+    <form class="inline" method="post" action="/switch">
+      <select name="who" onchange="this.form.submit()" aria-label="Staff on counter">
+        {% for n in staff_names %}<option {{ 'selected' if n == staff }}>{{ n }}</option>{% endfor %}
+      </select>
+    </form>
+    <form class="inline" method="post" action="/logout"><button type="submit">Lock</button></form>
+  </div>
+</header>
+{% endif %}
+<main>
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+{% block body %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

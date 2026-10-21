@@ -1,0 +1,115 @@
+{% extends "base.html" %}{% block title %}{{ c.name }}{% endblock %}
+{% block body %}
+{% set st = s.status %}{% set led = s.ledger %}
+<h1>{{ c.name }} <span class="tag {{ st.status }}">Tab: {{ st.label }}</span>
+  {% if c.archived_at %}<span class="tag">Archived</span>{% endif %}</h1>
+<p class="muted small">{{ c.email }} · Square: {{ c.square_customer_id or 'not linked' }}</p>
+
+<div class="stats">
+  <div class="stat"><div class="k">Points</div><div class="v">{{ s.points }}</div></div>
+  <div class="stat {{ 'alert' if led.has_overdue }}"><div class="k">Tab owing</div><div class="v">{{ led.owing_cents|money }}</div></div>
+  <div class="stat {{ 'alert' if led.has_overdue }}"><div class="k">Overdue</div><div class="v">{{ led.overdue_cents|money }}</div></div>
+  <div class="stat"><div class="k">Spent (unlock at {{ st.unlock_spend_cents|money }})</div><div class="v">{{ st.spend_cents|money }}</div></div>
+  {% if led.balance_cents < 0 %}<div class="stat"><div class="k">In credit</div><div class="v">{{ (-led.balance_cents)|money }}</div></div>{% endif %}
+</div>
+
+<div class="verdict {{ 'yes' if st.can_charge else 'no' }}">
+  {% if st.can_charge %}CAN use tab - up to {{ st.available_cents|money }}. In Square: attach customer, pay with "Other → {{ 'Fizzy Tab' }}".
+  {% elif st.status == 'approved' %}NO tab - at limit.
+  {% elif st.status == 'blocked_overdue' %}NO tab - overdue charge must be paid first.
+  {% elif st.status == 'eligible' %}NO tab yet - eligible, needs staff approval.
+  {% elif st.status == 'locked' %}NO tab - needs {{ (st.unlock_spend_cents - st.spend_cents)|money }} more spent first.
+  {% else %}NO tab - {{ st.label|lower }}{% if c.tab_decision_note %}: {{ c.tab_decision_note }}{% endif %}.{% endif %}
+</div>
+{% if led.late_count %}<p class="red">Late-payment record: {{ led.late_count }} charge(s) paid late or currently overdue (kept permanently).</p>{% endif %}
+
+<div class="grid" style="margin-top:14px">
+  <div class="panel"><h2>Record repayment</h2>
+    <form method="post" action="/customers/{{ c.id }}/repay">
+      <div class="row">
+        <div><label>Amount ($)</label><input type="text" name="amount" inputmode="decimal" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
+        <div><label>Method</label><select name="method"><option value="cash">Cash</option><option value="payid">PayID</option><option value="card">Card</option><option value="other">Other</option></select></div>
+      </div>
+      <label>Note (optional)</label><input type="text" name="note">
+      <p><button class="primary">Record repayment</button></p>
+      <p class="muted small">Also ring up the "Tab repayment" item in Square for the same amount - Fizzy matches them so it isn't counted twice.</p>
+    </form>
+  </div>
+  <div class="panel"><h2>Tab approval</h2>
+    <p class="small">Current: <b>{{ c.tab_decision or 'no decision' }}</b>{% if c.tab_decision_by %} by {{ c.tab_decision_by }}, {{ c.tab_decision_at|local }}{% endif %}{% if c.tab_decision_note %} - "{{ c.tab_decision_note }}"{% endif %}</p>
+    <form method="post" action="/customers/{{ c.id }}/tab">
+      <label>Note (optional)</label><input type="text" name="note">
+      <p class="row">
+        <button name="decision" value="approve" class="primary">Approve</button>
+        <button name="decision" value="reject" class="danger">Reject</button>
+        <button name="decision" value="revoke" class="danger">Revoke</button>
+        <button name="decision" value="reset">Clear decision</button>
+      </p>
+    </form>
+  </div>
+  <div class="panel"><h2>Adjust points</h2>
+    <form method="post" action="/customers/{{ c.id }}/points">
+      <div class="row">
+        <div><label>Points (+ add / − deduct)</label><input type="number" name="delta" step="1" required></div>
+        <div style="flex:2 1 200px"><label>Reason (required)</label><input type="text" name="note" required></div>
+        <button>Apply</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="panel"><h2>Tab charges</h2>
+  {% if led.charges %}<div class="scroll"><table>
+    <tr><th>Charged</th><th>Items</th><th class="n">Amount</th><th class="n">Paid</th><th class="n">Unpaid</th><th>Due</th><th>Status</th></tr>
+    {% for ch in led.charges|reverse %}<tr>
+      <td>{{ ch.charged_at|local }}</td><td class="small">{{ ch.items or '' }}{% if ch.breach %}<br><span class="red">{{ ch.breach }}</span>{% endif %}</td>
+      <td class="n">{{ ch.net_cents|money }}{% if ch.refunded_cents %}<br><span class="muted small">refunded {{ ch.refunded_cents|money }}</span>{% endif %}</td>
+      <td class="n">{{ ch.paid_cents|money }}</td><td class="n">{{ ch.unpaid_cents|money }}</td>
+      <td>{{ ch.due_at|local('%a %d %b') }}</td>
+      <td>{% if ch.overdue %}<span class="tag red">Overdue</span>{% elif ch.unpaid_cents > 0 %}<span class="tag">Open</span>
+          {% elif ch.paid_late %}<span class="tag eligible">Paid late {{ ch.settled_at|local('%d %b') }}</span>
+          {% else %}<span class="tag approved">Paid</span>{% endif %}</td></tr>{% endfor %}
+  </table></div>{% else %}<p class="muted">No tab charges.</p>{% endif %}
+</div>
+
+<div class="panel"><h2>Repayments</h2>
+  {% if led.repayments %}<div class="scroll"><table>
+    <tr><th>When</th><th class="n">Amount</th><th>Method</th><th>Note</th><th>Staff</th><th>Square</th></tr>
+    {% for r in led.repayments|reverse %}<tr><td>{{ r.created_at|local }}</td><td class="n">{{ r.amount_cents|money }}</td><td>{{ r.method }}</td>
+      <td>{{ r.note or '' }}</td><td>{{ r.staff or 'square' }}</td><td class="small">{{ 'matched' if r.square_payment_id else '-' }}</td></tr>{% endfor %}
+  </table></div>{% else %}<p class="muted">No repayments.</p>{% endif %}
+</div>
+
+<div class="panel"><h2>Points history</h2>
+  {% if points %}<div class="scroll"><table>
+    <tr><th>When</th><th class="n">Points</th><th>Reason</th><th>Detail</th><th>Staff</th></tr>
+    {% for p in points %}<tr><td>{{ p.created_at|local }}</td><td class="n">{{ '%+d'|format(p.delta) }}</td><td>{{ p.reason }}</td>
+      <td class="small">{{ p.note or '' }}</td><td>{{ p.staff or '' }}</td></tr>{% endfor %}
+  </table></div>{% else %}<p class="muted">No points yet.</p>{% endif %}
+</div>
+
+<div class="panel"><h2>Square payments</h2>
+  {% if payments %}<div class="scroll"><table>
+    <tr><th>When</th><th>Type</th><th class="n">Amount</th><th>Tender</th><th>Items</th></tr>
+    {% for p in payments %}<tr><td>{{ p.created_at|local }}</td><td>{{ p.kind }}</td><td class="n">{{ p.amount_cents|money }}</td>
+      <td class="small">{{ p.tender }}</td><td class="small">{{ p.items }}</td></tr>{% endfor %}
+  </table></div>{% else %}<p class="muted">None linked yet.</p>{% endif %}
+</div>
+
+<div class="panel">
+  <details><summary>Tab decision history ({{ decisions|length }})</summary>
+    <table>{% for d in decisions %}<tr><td>{{ d.created_at|local }}</td><td>{{ d.decision }}</td><td>{{ d.note or '' }}</td><td>{{ d.staff }}</td></tr>{% endfor %}</table>
+  </details>
+  <details><summary>Activity log</summary>
+    <table>{% for a in audit_rows %}<tr><td>{{ a.created_at|local }}</td><td>{{ a.staff }}</td><td>{{ a.action }}</td><td class="small">{{ a.details }}</td></tr>{% endfor %}</table>
+  </details>
+  <details><summary>Edit customer</summary>
+    <form method="post" action="/customers/{{ c.id }}/edit">
+      <label>Name</label><input type="text" name="name" value="{{ c.name }}">
+      <label>Square customer ID</label><input type="text" name="square_customer_id" value="{{ c.square_customer_id or '' }}">
+      <label><input type="checkbox" name="archived" value="1" {{ 'checked' if c.archived_at }}> Archived (hidden from search)</label>
+      <p><button>Save</button></p>
+    </form>
+  </details>
+</div>
+{% endblock %}

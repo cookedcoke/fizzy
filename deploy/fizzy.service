@@ -1,0 +1,15 @@
+# Alternative to Docker on a Linux host: /etc/systemd/system/fizzy.service
+[Unit]
+Description=Fizzy
+After=network-online.target
+
+[Service]
+User=fizzy
+WorkingDirectory=/opt/fizzy
+EnvironmentFile=/opt/fizzy/.env
+Environment=FIZZY_DB=/opt/fizzy/data/fizzy.db
+ExecStart=/opt/fizzy/.venv/bin/uvicorn fizzy.app:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

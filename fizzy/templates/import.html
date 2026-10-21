@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% block title %}Import{% endblock %}
+{% block body %}
+<h1>Import school directory</h1>
+<div class="panel">
+  <p class="small">CSV with a name column (<code>Cleaned Name</code> or <code>Name</code>) and <code>Email</code>. Only name and school email are stored; any other columns are ignored. Existing customers are matched by email and their name updated. Nothing is deleted.</p>
+  <form method="post" action="/import" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".csv,text/csv" required>
+    <p><button class="primary">Preview</button></p>
+  </form>
+</div>
+{% if preview %}
+<div class="panel">
+  <h2>Preview: {{ preview.total }} valid rows</h2>
+  <p>Will add <b>{{ preview.counts.added }}</b>, update <b>{{ preview.counts.updated }}</b>, unchanged {{ preview.counts.unchanged }}.</p>
+  {% if preview.errors %}<div class="err">{% for e in preview.errors %}{{ e }}<br>{% endfor %}</div>{% endif %}
+  <table><tr><th>Name</th><th>Email</th></tr>{% for r in preview.rows %}<tr><td>{{ r.name }}</td><td>{{ r.email }}</td></tr>{% endfor %}</table>
+  {% if preview.total > 20 %}<p class="muted small">…and {{ preview.total - 20 }} more.</p>{% endif %}
+  <p class="small">Choose the same file again to confirm:</p>
+  <form method="post" action="/import" enctype="multipart/form-data">
+    <input type="hidden" name="confirm" value="1">
+    <input type="file" name="file" accept=".csv,text/csv" required>
+    <p><button class="primary">Import</button></p>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
