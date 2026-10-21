@@ -158,8 +158,8 @@ system, and it doesn't suit this:
 
 | | Square House Accounts | Fizzy tabs |
 |---|---|---|
-| Setup | An account created by hand for each customer in Square (no way to bulk-create them) | Everyone is imported once; staff approve with one click |
-| Collecting money | Square sends invoices, paid by card, bank or card on file. Square's House Accounts page says outstanding balances can't be paid at the point of sale | Cash or card at the counter |
+| Setup | An account created one customer at a time in Square, with a spending limit and a billing method | Everyone is imported once; staff approve with one click |
+| Collecting money | Square invoices (one-off or recurring) or an automatic charge to a card on file. Square says house accounts can't take repayment in instalments, and a sale can't be split between House Account and another payment type | Cash or card at the counter, any amount, any time |
 | Overdue | Square sends reminders; you lock accounts by hand | Blocked automatically until paid, with a permanent late record |
 | Points, the $30 rule, approvals | None | Built in |
 | Your experience | It's the invoice flow you already shut down because people paid late | Built around a 7-day, $10 counter tab |
@@ -167,9 +167,7 @@ system, and it doesn't suit this:
 House Account suits a business billing regular adult customers monthly. For students paying
 a few dollars back at the counter, it's the wrong tool, so leave it disabled.
 
-Sources: [Square help: House Accounts](https://squareup.com/help/us/en/article/8034-create-and-charge-square-house-accounts),
-[Square House Accounts for retail](https://squareup.com/us/en/house-accounts/retail),
-[Square developer docs](https://developer.squareup.com/docs/payments-api/take-payments/house-accounts).
+Source: [Square AU help: Create and manage Square House Accounts](https://squareup.com/help/au/en/article/8034-create-and-charge-square-house-accounts).
 
 ### Customers in Square
 
