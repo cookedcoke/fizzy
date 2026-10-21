@@ -40,7 +40,7 @@ def reload(conn, c):
 
 
 def test_csv_parsing_keeps_only_name_and_email():
-    text = "Original Name,Cleaned Name,Email\nADELINE YATES,Adeline Yates,rns00000001@reddamnorthshore.nsw.edu.au\nX,Bad,someone@gmail.com\n"
+    text = "Original Name,Cleaned Name,Email\nADELINE YATES,Adeline Yates,RNS00000001@reddamnorthshore.nsw.edu.au\nX,Bad,someone@gmail.com\n"
     rows, errors = parse_directory_csv(text)
     assert rows == [{"name": "Adeline Yates", "email": "rns00000001@reddamnorthshore.nsw.edu.au"}]
     assert len(errors) == 1
@@ -51,9 +51,9 @@ def test_import_dry_run_and_search(conn):
     assert import_rows(conn, rows, "Bru", apply=False)["added"] == 2
     assert conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 0
     import_rows(conn, rows, "Bru")
-    assert {c["name"] for c in search(conn, "chloe")} == {"Nora Le Fevre", "Nora Zhang"}
+    assert {c["name"] for c in search(conn, "nora")} == {"Nora Le Fevre", "Nora Zhang"}
     assert [c["name"] for c in search(conn, "zhnag")] == ["Nora Zhang"]  # typo tolerant
-    assert search(conn, "c le")[0]["name"] == "Nora Le Fevre"
+    assert search(conn, "n le")[0]["name"] == "Nora Le Fevre"
     assert [c["name"] for c in search(conn, "rns2")] == ["Nora Zhang"]
 
 

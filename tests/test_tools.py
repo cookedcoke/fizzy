@@ -36,7 +36,7 @@ def test_points_tools(client):
     post(client, "bulk_points", delta="50", note="Halloween", people="Adeline Yates\nrns2\nNobody Here")
     msg = flash(client)
     assert "2 customer(s)" in msg and "Nobody Here" in msg
-    post(client, "transfer_points", **{"from": "Adeline Yates <rns1@reddamnorthshore.nsw.edu.au>", "to": "Chloe", "points": "20"})
+    post(client, "transfer_points", **{"from": "Adeline Yates <rns1@reddamnorthshore.nsw.edu.au>", "to": "Nora", "points": "20"})
     c = conn_()
     assert [logic.points_balance(c, i) for i in (1, 2, 3)] == [30, 50, 20]
     post(client, "reset_points", confirm="nope")

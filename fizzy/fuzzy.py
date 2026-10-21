@@ -1,6 +1,6 @@
 """Customer name matching: fzf-style fuzzy scoring plus typo tolerance.
 
-fzf scores a query as an in-order subsequence of the name ("chzh" -> NOra ZHang), rewarding
+fzf scores a query as an in-order subsequence of the name ("nozh" -> NOra ZHang), rewarding
 matches at word starts and consecutive runs, and penalising gaps. That handles skipped
 letters and abbreviations but not misspellings, so any query word that doesn't match as a
 subsequence falls back to an edit distance (with swaps) against the name's words.

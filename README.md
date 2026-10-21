@@ -270,9 +270,9 @@ Matching works like [fzf](https://github.com/junegunn/fzf), plus typo tolerance:
 
 | You type | Finds | Why |
 |---|---|---|
-| `chlo` | Chloe …, Chloey … | Start of a name |
-| `zhang chloe` | Nora Zhang | Words in any order |
-| `chzh` | **Ch**loe **Zh**ang | Letters in order with gaps, like fzf. Word starts and unbroken runs score higher |
+| `nor` | Nora …, Norah … | Start of a name |
+| `zhang nora` | Nora Zhang | Words in any order |
+| `nozh` | **No**ra **Zh**ang | Letters in order with gaps, like fzf. Word starts and unbroken runs score higher |
 | `odonnell` | Jemima O'Donnell | Punctuation doesn't matter |
 | `zhnag`, `wiliam`, `jaiden` | Zhang, William, Jayden | Misspellings: swapped, missing or wrong letters (1 mistake, or 2 in long words) |
 | `0830937` or `rns0830937` | that student | Student number |
