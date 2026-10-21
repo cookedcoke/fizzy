@@ -629,3 +629,9 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
   any button, field or `<details>`. It then works, gets a hover tip and appears in the `?`
   panel automatically. Add a visible `<kbd>X</kbd>` in the template next to it. Avoid `s`,
   `f`, `g` and `/`, which are taken.
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 Cooked Coke Co.
