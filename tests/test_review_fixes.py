@@ -423,3 +423,83 @@ def test_names_and_square_ids_match_however_they_are_spaced_or_cased(conn, cust)
     c = cust("Nora  Zhang ", "square:SQABC", None)
     assert tools.resolve(conn, "Nora Zhang")["id"] == c["id"]
     assert tools.resolve(conn, "Nora Zhang <square:SQABC>")["id"] == c["id"]
+
+
+# ---- third round ---------------------------------------------------------------------------
+
+def _mock_square(handlers):
+    """A real SquareClient talking to a fake Square: handlers maps path -> (status, json)."""
+    import httpx
+
+    def handle(request):
+        status, body = handlers.get(request.url.path, (200, {}))
+        return httpx.Response(status, json=body)
+    return square.SquareClient(token="t", base="https://sq.test", transport=httpx.MockTransport(handle))
+
+
+EMPTY = {"/v2/customers": (200, {}), "/v2/payments": (200, {}), "/v2/refunds": (200, {}),
+         "/v2/locations": (200, {"locations": [{"id": "L1"}]}), "/v2/orders/search": (200, {})}
+
+
+def test_retried_tab_sale_is_kept_when_square_is_briefly_down(conn, cust):
+    cust()
+    db.set_setting(conn, "square_retry", json.dumps({"order:o1": "database is locked"}))
+    conn.commit()
+    square.sync(conn, _mock_square({**EMPTY, "/v2/orders/o1": (503, {"errors": []})}))
+    assert "order:o1" in json.loads(db.get_setting(conn, "square_retry"))      # not dropped as "gone"
+    square.sync(conn, _mock_square({**EMPTY, "/v2/orders/o1": (200, {"order": tab_order("o1", 300)})}))
+    assert json.loads(db.get_setting(conn, "square_retry")) == {}
+    assert conn.execute("SELECT COUNT(*) FROM tab_charges").fetchone()[0] == 1
+    square.sync(conn, _mock_square({**EMPTY, "/v2/orders/gone": (404, {"errors": []})}))   # a real 404 is "gone"
+
+
+def test_repayment_isnt_recorded_as_a_sale_when_its_order_cant_be_fetched(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 500))
+    p = pay("p1", 500, source="CARD", order_id="o2")
+    down = _mock_square({**EMPTY, "/v2/payments": (200, {"payments": [p]}), "/v2/orders/o2": (503, {})})
+    square.sync(conn, down)
+    assert conn.execute("SELECT COUNT(*) FROM square_payments WHERE square_payment_id = 'p1'").fetchone()[0] == 0
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 500
+    up = _mock_square({**EMPTY, "/v2/payments/p1": (200, {"payment": p}),
+                       "/v2/orders/o2": (200, {"order": order(("Tab repayment", 500), oid="o2")})})
+    square.sync(conn, up)                                   # retried by id, now read properly
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 0
+
+
+def test_retry_item_that_goes_through_in_the_window_isnt_reported(conn, cust):
+    cust()
+    p = pay("p1", 300)
+    db.set_setting(conn, "square_retry", json.dumps({"payment:p1": "old error"}))
+    conn.commit()
+    fake = FakeSquare(payments=[p])
+
+    def blip(pid):
+        raise RuntimeError("blip")
+    fake.payment = blip
+    result = square.sync(conn, fake)
+    assert "skipped_items" not in result and json.loads(db.get_setting(conn, "square_retry")) == {}
+
+
+def test_bonus_follows_fifo_with_an_older_write_off_and_newer_cash_purchase(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 400, ts="2026-01-05T01:00:00+00:00"))
+    logic.add_repayment(conn, c["id"], 400, "writeoff", "forgiven", "Bru", created_at="2026-02-01T01:00:00+00:00")
+    square.process_order(conn, tab_order("o2", 400, ts="2026-03-05T01:00:00+00:00"))
+    logic.add_repayment(conn, c["id"], 400, "cash", "", "Bru", created_at="2026-03-06T01:00:00+00:00")
+    req = type("R", (), {"session": {}})()
+    before = logic.points_balance(conn, c["id"])
+    tools.h_bonus_points(req, conn, "Bru", {"multiplier": "2", "start": "2026-01-01", "end": "2026-01-10"})
+    assert logic.points_balance(conn, c["id"]) == before                # written off: no bonus
+    tools.h_bonus_points(req, conn, "Bru", {"multiplier": "2", "start": "2026-03-01", "end": "2026-03-10"})
+    assert logic.points_balance(conn, c["id"]) == before + 400          # paid in cash: bonus
+
+
+def test_merge_reconciles_points_when_credit_meets_a_charge(conn, cust):
+    keep = cust("Keep Kid", "rns1@reddamnorthshore.nsw.edu.au", "SQK")
+    dup = cust("Dup Kid", "rns2@reddamnorthshore.nsw.edu.au", "SQD")
+    logic.add_tab_charge(conn, keep, 500, "x", iso(1))
+    logic.add_repayment(conn, dup["id"], 500, "cash", "", "Bru")       # landed on the duplicate: credit, 0 points
+    tools.h_merge(type("R", (), {"session": {}})(), conn, "Bru", {"keep": "Keep Kid", "dup": "Dup Kid"})
+    assert logic.tab_ledger(conn, keep["id"])["owing_cents"] == 0
+    assert logic.points_balance(conn, keep["id"]) == 500

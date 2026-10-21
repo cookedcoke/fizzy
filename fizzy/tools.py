@@ -434,6 +434,9 @@ def h_merge(request, conn, who, form):
                                       dup["tab_decision_at"], keep["id"]))
     conn.execute("UPDATE customers SET square_customer_id = NULL, archived_at = ?, merged_into = ?, tab_decision = NULL "
                  "WHERE id = ?", (db.now_iso(), keep["id"], dup["id"]))
+    # Their tab money and charges now sit together: the points have to match the combined tab.
+    logic.reconcile_tab_points(conn, keep["id"], staff=who)
+    logic.reconcile_tab_points(conn, dup["id"], staff=who)
     db.audit(conn, who, "merge", keep["id"], f"merged #{dup['id']} {dup['name']} <{dup['email']}> into this customer")
     return back(request, f"/customers/{keep['id']}", f"Merged {dup['name']} into {keep['name']}.")
 

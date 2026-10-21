@@ -105,8 +105,12 @@ class SquareClient:
             return None
         try:
             return self._get(f"/v2/orders/{order_id}").get("order")
-        except httpx.HTTPStatusError:
-            return None
+        except httpx.HTTPStatusError as e:
+            # Only "not found" means there's no order. Anything else (a 5xx, rate limiting) must fail
+            # the item so it's retried - otherwise a repayment would be read as a plain sale.
+            if e.response.status_code == 404:
+                return None
+            raise
 
 
 # ---- classification -------------------------------------------------------------------------
@@ -621,6 +625,7 @@ def _sync_once(conn, client):
         ok, kind = _safely(conn, failed, key, lambda: _process(conn, client, typ, obj))
         if ok:
             retry.pop(key, None)
+            failed.pop(key, None)  # e.g. its re-fetch blipped, but it was in the window and went through
             if kind:
                 counts[kind] += 1
 

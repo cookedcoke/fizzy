@@ -187,17 +187,46 @@ def reconcile_tab_points(conn, customer_id, ts=None, staff="square"):
 
 
 def paid_by_money(conn, customer_id):
-    """How much of each tab charge was paid with real money (oldest first), ignoring write-offs.
-    {charge_id: cents}."""
-    money = conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM tab_repayments WHERE customer_id = ? "
-                         "AND method != 'writeoff'", (customer_id,)).fetchone()[0]
-    out = {}
-    for c in conn.execute("SELECT id, amount_cents - refunded_cents AS net FROM tab_charges WHERE customer_id = ? "
-                          "ORDER BY charged_at, id", (customer_id,)):
-        part = max(0, min(c["net"], money))
-        out[c["id"]] = part
-        money -= part
-    return out
+    """How much of each tab charge was paid with real money, as opposed to written off.
+    {charge_id: cents}. Repayments and write-offs fill charges oldest-first in the order they
+    happened (the same FIFO as tab_ledger); a negative row (a refunded repayment or a reversed
+    write-off) takes back the most recent cover of its own kind."""
+    charges = [dict(id=r["id"], net=r["net"], money=0, writeoff=0) for r in conn.execute(
+        "SELECT id, amount_cents - refunded_cents AS net FROM tab_charges WHERE customer_id = ? ORDER BY charged_at, id",
+        (customer_id,))]
+    spare = {"money": 0, "writeoff": 0}  # credit not yet used by any charge
+    for r in conn.execute("SELECT amount_cents, method FROM tab_repayments WHERE customer_id = ? ORDER BY created_at, id",
+                          (customer_id,)):
+        kind = "writeoff" if r["method"] == "writeoff" else "money"
+        amount = r["amount_cents"]
+        if amount >= 0:
+            for c in charges:
+                if amount <= 0:
+                    break
+                take = min(amount, c["net"] - c["money"] - c["writeoff"])
+                if take > 0:
+                    c[kind] += take
+                    amount -= take
+            spare[kind] += amount
+        else:
+            back = -amount
+            used = min(back, spare[kind])
+            spare[kind] -= used
+            back -= used
+            for c in reversed(charges):
+                if back <= 0:
+                    break
+                used = min(back, c[kind])
+                c[kind] -= used
+                back -= used
+    # Credit that arrived before a charge pays it once the charge exists.
+    for c in charges:
+        for kind in ("money", "writeoff"):
+            take = min(spare[kind], c["net"] - c["money"] - c["writeoff"])
+            if take > 0:
+                c[kind] += take
+                spare[kind] -= take
+    return {c["id"]: c["money"] for c in charges}
 
 
 def add_tab_charge(conn, customer, amount_cents, items, charged_at, staff=None, square_payment_id=None):

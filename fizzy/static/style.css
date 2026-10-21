@@ -273,4 +273,5 @@ label.check > input { display: inline-block; margin-top: 0 }
 .msearch { display: none; align-items: center; color: #E8EAED; padding: 0 6px }
 @media (max-width: 720px) { .msearch { display: flex; margin-left: auto } header .who { margin-left: 0 } }
 /* Touch screens: 16px text in fields stops iPads/phones zooming in when a box is tapped. */
-@media (pointer: coarse) { input, select, textarea { font-size: 16px !important } }
+@media (pointer: coarse) { label > input, label > select, label > textarea, .assign input, header .who select, .hsearch input,
+  input[type=text], input[type=number], input[type=password], input[type=date], select, textarea { font-size: 16px } .search input { font-size: 18px } }
