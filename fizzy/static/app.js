@@ -57,6 +57,9 @@
 
   function bindSearch(box) {
     var out = box.parentNode.querySelector(".results"), sel = 0, rows = [];
+    // Digits normally jump to a result, but while searching by student number they're part of
+    // the query - then Alt+digit jumps instead. Names never contain digits, so no clash.
+    function numbersNeedAlt() { var q = box.value.trim(); return !/[a-z]/i.test(q) || /^rns\d*$/i.test(q); }
     function mark() {
       $$("a.hit", out).forEach(function (a, i) { a.classList.toggle("sel", i === sel); });
       if (rows[sel]) prerender("/customers/" + rows[sel].id);
@@ -66,9 +69,9 @@
       if (!q) { out.innerHTML = ""; rows = []; return; }
       if (!index) { loadIndex().then(render); return; }
       var hits = rank(q, index, 8); rows = hits.map(function (h) { return h[0]; }); sel = 0;
-      out.innerHTML = rows.length ? hits.map(function (h) {
+      out.innerHTML = rows.length ? hits.map(function (h, i) {
         var r = h[0];
-        return '<a class="hit" href="/customers/' + r.id + '"><span><span class="nm">' + highlight(r.name, h[1]) + '</span><span class="em">' + esc(r.sid) + "</span></span>" +
+        return '<a class="hit" href="/customers/' + r.id + '"><span><kbd class="num">' + (numbersNeedAlt() ? "Alt " : "") + (i + 1) + '</kbd><span class="nm">' + highlight(r.name, h[1]) + '</span><span class="em">' + esc(r.sid) + "</span></span>" +
           '<span class="facts"><span>' + r.points.toLocaleString() + " pts</span><span>owes " + money(r.owing) + '</span><span class="tag ' + esc(r.status) + '">' + esc(r.label) + "</span></span></a>";
       }).join("") : '<div class="none">No one matches “' + esc(q) + "”.</div>";
       mark();
@@ -76,6 +79,12 @@
     box.addEventListener("input", render);
     box.addEventListener("focus", function () { loadIndex(); if (box.value.trim() && !out.innerHTML) render(); });
     box.addEventListener("keydown", function (e) {
+      var digit = /^(Digit|Numpad)([1-9])$/.exec(e.code);
+      if (digit && !e.ctrlKey && !e.metaKey && rows.length && (e.altKey || !numbersNeedAlt())) {
+        var r = rows[+digit[2] - 1];
+        if (r) { e.preventDefault(); location.href = "/customers/" + r.id; }
+        return;
+      }
       if (e.key === "ArrowDown") { sel = Math.min(sel + 1, rows.length - 1); mark(); e.preventDefault(); }
       else if (e.key === "ArrowUp") { sel = Math.max(sel - 1, 0); mark(); e.preventDefault(); }
       else if (e.key === "Enter") {
@@ -146,6 +155,15 @@
     if (el) { e.preventDefault(); trigger(el); }
   });
 
+  // Hover tips naming the shortcut for anything that has one (visible chips are in the templates).
+  $$("[data-key]").forEach(function (el) {
+    var key = el.dataset.key.toUpperCase(), what = el.dataset.keyLabel || el.textContent.trim();
+    var target = el.tagName === "DETAILS" ? $("summary", el) : el;
+    if (target && !target.title) target.title = what + " - press " + key;
+  });
+  $$("form button:not([type=button]):not([title])").forEach(function (b) {
+    if (b.form && b.form.method === "post") b.title = "Ctrl+Enter submits from anywhere in this form";
+  });
   $$("input[data-search]").forEach(bindSearch);
   var hb = $("#keys-btn"); if (hb) hb.addEventListener("click", help);
   // Warm the index as soon as the page is idle so the first keystroke is instant.

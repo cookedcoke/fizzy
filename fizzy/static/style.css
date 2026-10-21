@@ -143,7 +143,7 @@ form > :first-child, .tool-body > :first-child { margin-top: 0 }
   height: 52px; font-size: 18px; padding: 0 var(--s4) 0 46px; border-color: var(--line-strong);
   background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%236A717C' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 16px center;
 }
-.search kbd { position: absolute; right: 14px; top: 16px; font: 11px var(--mono); color: var(--faint); border: 1px solid var(--line-strong); border-radius: 3px; padding: 1px 5px; pointer-events: none }
+.search > kbd { position: absolute; right: 14px; top: 16px; font: 11px var(--mono); color: var(--faint); border: 1px solid var(--line-strong); border-radius: 3px; padding: 1px 5px; pointer-events: none }
 .results:empty { display: none }
 .results { position: absolute; left: 0; right: 0; top: 56px; z-index: 15; background: var(--surface); border: 1px solid var(--line-strong);
   border-radius: var(--r); box-shadow: 0 8px 24px rgba(21, 23, 27, .12); overflow: hidden }
@@ -257,6 +257,12 @@ dialog#keys td { border: none; padding: 5px var(--s3) 5px 0; vertical-align: mid
 dialog#keys td:first-child { width: 45%; line-height: 22px }
 dialog#keys .grid { grid-template-columns: 3fr 2fr }
 @media (max-width: 720px) { dialog#keys .grid { grid-template-columns: 1fr } }
-@media (max-width: 720px) { .hsearch, .keys-btn, h2 kbd, button kbd, .search kbd { display: none } }
+@media (max-width: 720px) { .hsearch, .keys-btn, h2 kbd, button kbd, .search > kbd { display: none } }
 #keys-page td:first-child { width: 48px }
 .results mark { background: none; color: var(--ink); font-weight: 800; text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 3px }
+.results kbd.num { margin-right: 10px; min-width: 20px; color: var(--faint) }
+.results a.hit.sel kbd.num { color: var(--ink); border-color: var(--ink) }
+summary kbd, label kbd { margin-left: 6px; font-size: 10.5px; line-height: 14px }
+button.primary kbd { border-color: rgba(255,255,255,.45) }
+@media (max-width: 720px) { summary kbd, label kbd, .results kbd.num { display: none } }
+@media (max-width: 1200px) { header .brand small { display: none } }

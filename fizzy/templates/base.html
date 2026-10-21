@@ -15,12 +15,12 @@
   <a class="brand" href="/">{% include "_logo.html" %}<span>Fizzy</span><small>Cooked Coke Co.</small></a>
   {% set p = request.url.path %}
   <nav>
-    {% for href, label in [('/', 'Dashboard'), ('/customers', 'Customers'), ('/square', 'Square'), ('/tools', 'Tools'), ('/import', 'Import'), ('/settings', 'Settings'), ('/audit', 'Log')] %}
-    <a href="{{ href }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}">{{ label }}</a>
+    {% for href, label, key in [('/', 'Dashboard', 'D'), ('/customers', 'Customers', 'C'), ('/square', 'Square', 'S'), ('/tools', 'Tools', 'T'), ('/import', 'Import', 'I'), ('/settings', 'Settings', ','), ('/audit', 'Log', 'L')] %}
+    <a href="{{ href }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}" title="{{ label }} - press G then {{ key }}">{{ label }}</a>
     {% endfor %}
   </nav>
   {% if p not in ('/', '/customers') %}
-  <div class="hsearch"><input type="search" data-search placeholder="Search  /" autocomplete="off" aria-label="Find a customer"><div class="results"></div></div>
+  <div class="hsearch"><input type="search" data-search placeholder="Search  /" title="Search customers - press / or S" autocomplete="off" aria-label="Find a customer"><div class="results"></div></div>
   {% endif %}
   <div class="who">
     <button type="button" id="keys-btn" class="keys-btn" title="Keyboard shortcuts (?)">?</button>
@@ -30,7 +30,7 @@
         {% for n in staff_names %}<option {{ 'selected' if n == staff }}>{{ n }}</option>{% endfor %}
       </select>
     </form>
-    <form class="inline" method="post" action="/logout"><button type="submit" title="Sign this device out">Lock</button></form>
+    <form class="inline" method="post" action="/logout"><button type="submit" title="Sign this device out (no shortcut, on purpose)">Lock</button></form>
   </div>
 </header>
 {% endif %}
@@ -44,6 +44,7 @@
     <div><h2>Everywhere</h2><table>
       <tr><td><kbd>/</kbd> <kbd>S</kbd></td><td>Search customers</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Pick a search result</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>Open that search result. Use <kbd>Alt</kbd>+number when searching by student number</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Leave a field · then back to dashboard</td></tr>
       <tr><td><kbd>Ctrl</kbd> <kbd>Enter</kbd></td><td>Submit the form you're in</td></tr>
       <tr><td><kbd>G</kbd> then <kbd>D</kbd> <kbd>C</kbd> <kbd>S</kbd> <kbd>T</kbd> <kbd>I</kbd> <kbd>L</kbd> <kbd>,</kbd></td><td>Go to Dashboard, Customers, Square, Tools, Import, Log, Settings</td></tr>

@@ -32,7 +32,7 @@ their tab?*
 2. Points arrive in Fizzy automatically (within seconds with webhooks, otherwise within 5 minutes).
 
 **Someone wants to put it on their tab**
-1. In Fizzy: `Esc`, type their name, `Enter`.
+1. In Fizzy: `Esc`, type their name, then `Enter` (or the result's number, `1`–`8`).
 2. Read the answer at the top of their page:
    - **Green tick:** they can, up to the amount shown.
    - **Red cross:** no (overdue, rejected, revoked, or at the limit). The line underneath says why.
@@ -248,13 +248,16 @@ identically.
 
 ### Shortcuts
 
-Press **`?`** on any page for the list. Shortcuts don't fire while you're typing in a box.
-`Esc` gets you out of the box first.
+Press **`?`** on any page for the list. Buttons and sections with a shortcut show its key
+in a small grey box (e.g. **Approve `A`**), and hovering over anything with a shortcut, including
+the top-bar links, names it. Shortcuts don't fire while you're typing in a box; `Esc` gets
+you out of the box first. The key boxes are hidden on phones.
 
 | Key | Does |
 |---|---|
 | `/` or `S` | Search |
 | `↑` `↓` `Enter` | Pick a search result |
+| `1`–`8` | Open that search result (results are numbered). While searching by student number, use `Alt`+number, since plain digits are part of the number |
 | `Esc` | Leave the box you're in, then press again to go back to the dashboard |
 | `R` | Customer: record repayment (amount pre-filled; `Enter` saves) |
 | `P` | Customer: adjust points (`Tab` to the reason, `Enter` saves) |
@@ -506,5 +509,6 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
   and polling can overlap safely.
 - Anything that changes data writes to `audit_log`.
 - Keyboard shortcuts: add `data-key="x"` (and optionally `data-key-label`, `data-confirm`) to
-  any button, field or `<details>`. It then works and shows in the `?` panel automatically.
-  Avoid `s`, `f`, `g` and `/`, which are taken.
+  any button, field or `<details>`. It then works, gets a hover tip and appears in the `?`
+  panel automatically. Add a visible `<kbd>X</kbd>` in the template next to it. Avoid `s`,
+  `f`, `g` and `/`, which are taken.
