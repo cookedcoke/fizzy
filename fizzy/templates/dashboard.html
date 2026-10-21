@@ -1,71 +1,72 @@
 {% extends "base.html" %}{% block title %}Dashboard{% endblock %}
 {% block body %}
-<div class="panel bigsearch">
-  <input id="q" type="search" placeholder="Search customer name or student number…" autofocus autocomplete="off">
-  <div id="results"></div>
-</div>
+{% include "_search.html" %}
 
-{% if notice %}<div class="notice">{{ notice }} <a class="small" href="/tools#notice">edit</a></div>{% endif %}
+{% if notice %}<div class="notice">{{ notice }}<a class="small" href="/tools#notice">Edit</a></div>{% endif %}
 {% if tabs_paused %}<div class="err">All tabs are paused. <a href="/tools#pause_tabs">Turn back on</a></div>{% endif %}
-{% if not square_on %}<div class="err">Square isn't connected yet - set SQUARE_ACCESS_TOKEN. Points and tabs won't update automatically.</div>
+{% if not square_on %}<div class="err">Square isn't connected - set <code>SQUARE_ACCESS_TOKEN</code>. Points and tabs won't update on their own until it is.</div>
 {% elif sync_error %}<div class="err">Last Square sync failed: {{ sync_error }}</div>{% endif %}
 
 <div class="stats">
   <div class="stat"><div class="k">Total owed</div><div class="v">{{ total_owed|money }}</div></div>
-  <div class="stat {{ 'alert' if total_overdue }}"><div class="k">Overdue</div><div class="v">{{ total_overdue|money }}</div></div>
-  <div class="stat"><div class="k">Due in 2 days</div><div class="v">{{ due_soon|length }}</div></div>
-  <div class="stat"><div class="k">Awaiting tab decision</div><div class="v">{{ eligible|length }}</div></div>
-  <div class="stat"><div class="k">Last Square sync</div><div class="v" style="font-size:14px">{{ last_sync|local or 'never' }}</div></div>
+  <div class="stat {{ 'alert' if total_overdue }}"><div class="k">Overdue</div><div class="v">{{ total_overdue|money }}</div><div class="sub">{{ overdue|length }} charge{{ '' if overdue|length == 1 else 's' }}</div></div>
+  <div class="stat"><div class="k">Due in 2 days</div><div class="v">{{ due_soon|length }}</div><div class="sub">charge{{ '' if due_soon|length == 1 else 's' }}</div></div>
+  <div class="stat"><div class="k">Awaiting approval</div><div class="v">{{ eligible|length }}</div><div class="sub">eligible for a tab</div></div>
+  <div class="stat"><div class="k">Square sync</div><div class="v sm">{{ last_sync|local or 'Never' }}</div></div>
 </div>
 
 {% if breaches or unlinked_tabs %}
-<div class="panel" style="border-color:var(--red)">
-  <h2 class="red">Needs attention</h2>
+<div class="panel" style="border-color:#F3C2C2">
+  <h2 class="red">Needs attention <span class="count">{{ breaches|length + unlinked_tabs|length }}</span></h2>
   <div class="scroll"><table>
     <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th>Problem</th><th></th></tr>
     {% for b in breaches %}
     <tr><td>{{ b.charged_at|local }}</td><td><a href="/customers/{{ b.customer_id }}">{{ b.name }}</a></td>
-      <td class="n">{{ b.amount_cents|money }}</td><td>Tab charge broke a rule: {{ b.breach }}</td>
-      <td><form class="inline" method="post" action="/breach/{{ b.id }}/ack"><button>Dismiss</button></form></td></tr>
+      <td class="n">{{ b.amount_cents|money }}</td><td>Tab used against the rules: {{ b.breach }}</td>
+      <td class="n"><form class="inline" method="post" action="/breach/{{ b.id }}/ack"><button class="sm">Dismiss</button></form></td></tr>
     {% endfor %}
     {% for u in unlinked_tabs %}
-    <tr><td>{{ u.created_at|local }}</td><td class="muted">no customer attached</td><td class="n">{{ u.amount_cents|money }}</td>
-      <td>{{ 'Tab charge' if u.kind == 'tab_charge' else 'Tab repayment' }} in Square with no customer profile - attach one in Square, or link the customer's Square ID</td>
-      <td><a href="/square?show=unlinked">View</a></td></tr>
+    <tr><td>{{ u.created_at|local }}</td><td class="muted">No customer attached</td><td class="n">{{ u.amount_cents|money }}</td>
+      <td>{{ 'Tab charge' if u.kind == 'tab_charge' else 'Tab repayment' }} in Square without a customer profile</td>
+      <td class="n"><a class="btn sm" href="/square?show=unlinked">Fix</a></td></tr>
     {% endfor %}
   </table></div>
 </div>
 {% endif %}
 
-<div class="grid">
-  <div class="panel"><h2>Overdue</h2>
+<div class="cols">
+<div class="col" style="flex-grow:2">
+  <div class="panel"><h2>Overdue <span class="count">{{ overdue|length }}</span></h2>
     {% if overdue %}<div class="scroll"><table>
       <tr><th>Customer</th><th class="n">Unpaid</th><th>Was due</th></tr>
       {% for r in overdue %}<tr><td><a href="/customers/{{ r.customer.id }}">{{ r.customer.name }}</a></td>
         <td class="n red">{{ r.charge.unpaid_cents|money }}</td><td>{{ r.charge.due_at|local('%a %d %b') }}</td></tr>{% endfor %}
-    </table></div>{% else %}<p class="muted">Nothing overdue.</p>{% endif %}
+    </table></div>{% else %}<p class="empty">Nothing overdue.</p>{% endif %}
   </div>
-  <div class="panel"><h2>Due in the next 2 days</h2>
+  <div class="panel"><h2>Due in the next 2 days <span class="count">{{ due_soon|length }}</span></h2>
     {% if due_soon %}<div class="scroll"><table>
       <tr><th>Customer</th><th class="n">Unpaid</th><th>Due</th></tr>
       {% for r in due_soon %}<tr><td><a href="/customers/{{ r.customer.id }}">{{ r.customer.name }}</a></td>
         <td class="n">{{ r.charge.unpaid_cents|money }}</td><td>{{ r.charge.due_at|local }}</td></tr>{% endfor %}
-    </table></div>{% else %}<p class="muted">Nothing due soon.</p>{% endif %}
-  </div>
-  <div class="panel"><h2>Eligible for a tab (no decision yet)</h2>
-    {% if eligible %}<div class="scroll"><table>
-      <tr><th>Customer</th><th class="n">Spent</th><th></th></tr>
-      {% for c in eligible %}<tr><td><a href="/customers/{{ c.id }}">{{ c.name }}</a></td><td class="n">{{ c.spent|money }}</td>
-        <td><form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="approve"><button>Approve</button></form>
-            <form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="reject"><button class="danger">Reject</button></form></td></tr>{% endfor %}
-    </table></div>{% else %}<p class="muted">No one new.</p>{% endif %}
+    </table></div>{% else %}<p class="empty">Nothing due soon.</p>{% endif %}
   </div>
   <div class="panel"><h2>Top customers</h2>
     {% if top %}<div class="scroll"><table>
-      <tr><th>Customer</th><th class="n">Spent</th><th class="n">Points</th></tr>
-      {% for c in top %}<tr><td><a href="/customers/{{ c.id }}">{{ c.name }}</a></td><td class="n">{{ c.spent|money }}</td><td class="n">{{ c.points }}</td></tr>{% endfor %}
-    </table></div>{% else %}<p class="muted">No sales yet.</p>{% endif %}
+      <tr><th class="n" style="width:1%">#</th><th>Customer</th><th class="n">Spent</th><th class="n">Points</th></tr>
+      {% for c in top %}<tr><td class="n muted">{{ loop.index }}</td><td><a href="/customers/{{ c.id }}">{{ c.name }}</a></td><td class="n">{{ c.spent|money }}</td><td class="n">{{ '{:,}'.format(c.points) }}</td></tr>{% endfor %}
+    </table></div>{% else %}<p class="empty">No sales yet.</p>{% endif %}
   </div>
+</div>
+<div class="col">
+  <div class="panel"><h2>Eligible for a tab <span class="count">{{ eligible|length }}</span></h2>
+    {% if eligible %}<div class="scroll"><table>
+      {% for c in eligible[:8] %}<tr><td><a href="/customers/{{ c.id }}">{{ c.name }}</a><br><span class="muted small">{{ c.spent|money }} spent</span></td>
+        <td class="n" style="vertical-align:middle"><form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="approve"><button class="sm">Approve</button></form>
+            <form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="reject"><button class="sm danger">Reject</button></form></td></tr>{% endfor %}
+      {% if eligible|length > 8 %}<tr><td colspan="2" class="small">{{ eligible|length - 8 }} more · <a href="/tools#approve_eligible">Approve all eligible</a></td></tr>{% endif %}
+    </table></div>{% else %}<p class="empty">No one waiting.</p>{% endif %}
+  </div>
+</div>
 </div>
 {% endblock %}
 {% block scripts %}<script src="/static/search.js"></script>{% endblock %}

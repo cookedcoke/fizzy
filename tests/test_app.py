@@ -28,7 +28,7 @@ def test_full_flow(client):
     assert login(client).status_code == 303
     csv = b"Original Name,Cleaned Name,Email\nADELINE YATES,Adeline Yates,rns00000001@reddamnorthshore.nsw.edu.au\n"
     r = client.post("/import", files={"file": ("d.csv", csv, "text/csv")})
-    assert "Will add <b>1</b>" in r.text
+    assert "Import 1 row<" in r.text
     client.post("/import", files={"file": ("d.csv", csv, "text/csv")}, data={"confirm": "1"})
     hits = client.get("/api/search?q=adel").json()
     assert hits[0]["name"] == "Adeline Yates"
@@ -36,7 +36,7 @@ def test_full_flow(client):
     client.post(f"/customers/{cid}/tab", data={"decision": "approve", "note": "ok"})
     client.post(f"/customers/{cid}/points", data={"delta": "100", "note": "event"})
     page = client.get(f"/customers/{cid}").text
-    assert "CAN use tab" in page and ">100<" in page
+    assert "Can use tab" in page and ">100<" in page
     for path in ["/", "/square", "/settings", "/audit", "/import", "/customers?q=zzz", "/export/square-customers.csv"]:
         assert client.get(path).status_code == 200, path
     assert "fizzy-1" in client.get("/export/square-customers.csv").text

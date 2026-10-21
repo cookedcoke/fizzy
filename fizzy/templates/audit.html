@@ -1,9 +1,11 @@
 {% extends "base.html" %}{% block title %}Log{% endblock %}
 {% block body %}
-<h1>Activity log <span class="muted small">latest 500</span></h1>
-<div class="panel scroll"><table>
-  <tr><th>When</th><th>Staff</th><th>Action</th><th>Customer</th><th>Details</th></tr>
-  {% for a in rows %}<tr><td>{{ a.created_at|local }}</td><td>{{ a.staff }}</td><td>{{ a.action }}</td>
-    <td>{% if a.customer_id %}<a href="/customers/{{ a.customer_id }}">{{ a.name }}</a>{% endif %}</td><td class="small">{{ a.details }}</td></tr>{% endfor %}
-</table></div>
+<div class="pagehead"><div><h1>Activity log</h1><div class="meta">Latest 500 actions</div></div>
+  <a class="btn" href="/tools/export/audit_log.csv">Export all</a></div>
+<div class="panel"><div class="scroll"><table>
+  <tr><th>When</th><th>Who</th><th>Action</th><th>Customer</th><th>Details</th></tr>
+  {% for a in rows %}<tr><td style="white-space:nowrap">{{ a.created_at|local }}</td><td>{{ a.staff }}</td><td class="mono">{{ a.action }}</td>
+    <td>{% if a.customer_id %}<a href="/customers/{{ a.customer_id }}">{{ a.name }}</a>{% endif %}</td><td class="small">{{ a.details }}</td></tr>
+  {% else %}<tr><td colspan="5" class="empty">Nothing yet.</td></tr>{% endfor %}
+</table></div></div>
 {% endblock %}

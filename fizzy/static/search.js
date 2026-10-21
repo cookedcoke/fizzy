@@ -12,9 +12,9 @@
       if (my !== seq) return;
       sel = 0;
       out.innerHTML = rows.length ? rows.map(function (r) {
-        return '<a class="hit" href="/customers/' + r.id + '"><span><b>' + esc(r.name) + '</b> <span class="muted small hide-sm">' + esc(r.email) + '</span></span>' +
-          '<span><span class="tag ' + esc(r.status_key) + '">' + esc(r.status) + '</span> owes ' + esc(r.owing) + ' · ' + r.points + ' pts</span></a>';
-      }).join("") : '<div class="muted">No match.</div>';
+        return '<a class="hit" href="/customers/' + r.id + '"><span><span class="nm">' + esc(r.name) + '</span><span class="em">' + esc(r.email.split("@")[0]) + '</span></span>' +
+          '<span class="facts"><span>' + r.points + ' pts</span><span>owes ' + esc(r.owing) + '</span><span class="tag ' + esc(r.status_key) + '">' + esc(r.status) + '</span></span></a>';
+      }).join("") : '<div class="none">No one matches “' + esc(q) + '”.</div>';
       mark();
     });
   }
@@ -26,5 +26,7 @@
     else if (e.key === "Enter" && a.length) { location.href = a[sel].href; e.preventDefault(); }
     else if (e.key === "Escape") { box.value = ""; out.innerHTML = ""; }
   });
-  if (box.value) run();
+  document.addEventListener("click", function (e) { if (!out.contains(e.target) && e.target !== box) out.innerHTML = ""; });
+  box.addEventListener("focus", function () { if (box.value.trim() && !out.innerHTML) run(); 
+  });
 })();

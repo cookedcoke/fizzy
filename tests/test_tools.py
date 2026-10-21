@@ -50,6 +50,8 @@ def test_tab_tools(client):
     c = conn_()
     post(client, "manual_charge", customer="Adeline Yates", amount="4.50", items="Coke")
     assert logic.tab_ledger(c, 1)["owing_cents"] == 450
+    page = client.get("/customers/1").text
+    assert "Coke (entered by hand)" in page and "built-in method" not in page
     post(client, "write_off", customer="Adeline Yates", amount="1.50", note="spilt drink")
     assert logic.tab_ledger(c, 1)["owing_cents"] == 300
     assert logic.points_balance(c, 1) == 0  # write-offs earn nothing

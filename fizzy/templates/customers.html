@@ -1,21 +1,18 @@
 {% extends "base.html" %}{% block title %}Customers{% endblock %}
 {% block body %}
-<h1>Customers <span class="muted small">{{ count }} active</span></h1>
-<form class="panel bigsearch" method="get" action="/customers">
-  <input id="q" name="q" type="search" value="{{ q }}" placeholder="Name or student number…" autofocus autocomplete="off">
-  <div id="results"></div>
-</form>
-{% if q and not results %}<p class="muted">No match for "{{ q }}".</p>{% endif %}
+<div class="pagehead"><div><h1>Customers</h1><div class="meta">{{ '{:,}'.format(count) }} active</div></div>
+  <a class="btn" href="/export/square-customers.csv" title="All customers in Square's customer import format">Square import CSV</a></div>
+{% include "_search.html" %}
+{% if q and not results %}<p class="empty">No one matches “{{ q }}”.</p>{% endif %}
 {% if results %}
-<div class="panel scroll"><table>
-  <tr><th>Name</th><th class="hide-sm">Email</th><th>Tab</th><th class="n">Owing</th><th class="n">Points</th></tr>
+<div class="panel"><h2>Results <span class="count">{{ results|length }}</span></h2><div class="scroll"><table>
+  <tr><th>Name</th><th class="hide-sm">Student no.</th><th>Tab</th><th class="n">Owing</th><th class="n">Points</th></tr>
   {% for s in results %}<tr>
     <td><a href="/customers/{{ s.customer.id }}">{{ s.customer.name }}</a></td>
-    <td class="hide-sm muted">{{ s.customer.email }}</td>
+    <td class="hide-sm mono muted">{{ s.customer.email.split('@')[0] }}</td>
     <td><span class="tag {{ s.status.status }}">{{ s.status.label }}</span></td>
-    <td class="n">{{ s.ledger.owing_cents|money }}</td><td class="n">{{ s.points }}</td></tr>{% endfor %}
-</table></div>
+    <td class="n">{{ s.ledger.owing_cents|money }}</td><td class="n">{{ '{:,}'.format(s.points) }}</td></tr>{% endfor %}
+</table></div></div>
 {% endif %}
-<p class="small"><a href="/export/square-customers.csv">Download all customers as a Square import CSV</a></p>
 {% endblock %}
 {% block scripts %}<script src="/static/search.js"></script>{% endblock %}

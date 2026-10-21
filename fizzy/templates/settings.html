@@ -1,16 +1,20 @@
 {% extends "base.html" %}{% block title %}Settings{% endblock %}
 {% block body %}
-<h1>Settings</h1>
-<form class="panel" method="post" action="/settings" style="max-width:480px">
-  <label>Max tab owing per customer ($)</label><input type="text" name="tab_limit" value="{{ '%.2f'|format(cfg.tab_limit_cents/100) }}">
-  <label>Days until a tab charge is due</label><input type="number" name="due_days" min="1" value="{{ cfg.tab_due_days }}">
-  <label>Spend needed before a customer is eligible for a tab ($)</label><input type="text" name="unlock_spend" value="{{ '%.2f'|format(cfg.unlock_spend_cents/100) }}">
-  <p><button class="primary">Save</button></p>
-  <p class="muted small">Points: 1 point per cent paid (fixed). Tab purchases earn points when repaid.</p>
+<div class="pagehead"><h1>Settings</h1></div>
+<div class="grid">
+<form class="panel" method="post" action="/settings"><h2>Tab rules</h2>
+  <label>Max owing per customer ($)</label><input type="text" name="tab_limit" inputmode="decimal" value="{{ '%.2f'|format(cfg.tab_limit_cents/100) }}">
+  <label>Days to pay</label><input type="number" name="due_days" min="1" value="{{ cfg.tab_due_days }}">
+  <label>Spend before eligible ($)</label><input type="text" name="unlock_spend" inputmode="decimal" value="{{ '%.2f'|format(cfg.unlock_spend_cents/100) }}">
+  <div class="actions"><button class="primary">Save</button></div>
+  <p class="hint">Points are fixed at 1 per cent paid. Tab purchases earn points when they're repaid. A new “days to pay” only applies to new charges.</p>
 </form>
-<div class="panel" style="max-width:480px">
-  <h2>Backups</h2>
-  <p class="small">Folder: {{ backup_dir or 'not set (FIZZY_BACKUP_DIR)' }}<br>Last: {{ last_backup|local or 'never' }} {{ last_backup_path or '' }}</p>
-  <form method="post" action="/settings/backup"><button>Back up now</button></form>
+<form class="panel" method="post" action="/settings/backup"><h2>Backups</h2>
+  <table>
+    <tr><td style="width:90px" class="muted">Folder</td><td class="mono">{{ backup_dir or 'Not set (FIZZY_BACKUP_DIR)' }}</td></tr>
+    <tr><td class="muted">Last</td><td>{{ last_backup|local or 'Never' }}</td></tr>
+  </table>
+  <div class="actions"><button>Back up now</button><a class="btn" href="/tools/backup.db">Download a copy</a></div>
+</form>
 </div>
 {% endblock %}

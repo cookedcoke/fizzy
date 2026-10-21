@@ -1,33 +1,35 @@
 {% extends "base.html" %}{% block title %}Square{% endblock %}
 {% block body %}
-<h1>Square</h1>
+<div class="pagehead"><div><h1>Square</h1><div class="meta">Last sync {{ last_sync|local or 'never' }}</div></div>
+  <form method="post" action="/square/sync"><button class="primary" {{ 'disabled' if not square_on }}>Sync now</button></form></div>
 {% if sync_error %}<div class="err">Last sync error: {{ sync_error }}</div>{% endif %}
-<div class="panel">
+<div class="stats">
+  <div class="stat"><div class="k">Connection</div><div class="v sm">{{ 'Connected' if square_on else 'Not set up' }}</div><div class="sub">{{ 'Webhooks + polling' if webhook_on else 'Polling every 5 min' }}</div></div>
+  <div class="stat"><div class="k">Synced up to</div><div class="v sm">{{ cursor|local or '-' }}</div></div>
+  <div class="stat {{ 'alert' if unlinked_customers }}"><div class="k">Not in Square</div><div class="v">{{ unlinked_customers }}</div><div class="sub"><a href="/export/square-customers.csv">Download import CSV</a></div></div>
+</div>
+<div class="panel"><h2>How Fizzy reads Square</h2>
   <table>
-    <tr><th>Connected</th><td>{{ 'yes' if square_on else 'no - set SQUARE_ACCESS_TOKEN' }}</td></tr>
-    <tr><th>Webhooks</th><td>{{ 'on (signature key set)' if webhook_on else 'off - polling only' }}</td></tr>
-    <tr><th>Last sync</th><td>{{ last_sync|local or 'never' }}</td></tr>
-    <tr><th>Synced up to</th><td>{{ cursor|local or '-' }}</td></tr>
-    <tr><th>Tab sale detection</th><td>"Other" payment whose name/note contains "<b>{{ tab_match }}</b>"</td></tr>
-    <tr><th>Repayment detection</th><td>Order contains an item named "<b>{{ repay_item }}</b>"</td></tr>
-    <tr><th>Fizzy customers not in Square</th><td>{{ unlinked_customers }} - <a href="/export/square-customers.csv">download import CSV</a></td></tr>
+    <tr><td style="width:180px">Tab sale</td><td>An “Other” payment whose name or note contains <code>{{ tab_match }}</code></td></tr>
+    <tr><td>Tab repayment</td><td>Any sale containing an item called <code>{{ repay_item }}</code></td></tr>
+    <tr><td>Everything else</td><td>A normal sale - earns points if a customer is attached</td></tr>
   </table>
-  <form method="post" action="/square/sync"><p><button class="primary">Sync now</button></p></form>
 </div>
 <div class="panel">
-  <h2>Recent payments {% if show == 'unlinked' %}(no customer) <a class="small" href="/square">show all</a>{% else %}<a class="small" href="/square?show=unlinked">show unlinked only</a>{% endif %}</h2>
+  <h2>{{ 'Payments with no customer' if show == 'unlinked' else 'Recent payments' }}
+    <a class="small" style="float:right;text-transform:none;letter-spacing:0;font-weight:500" href="{{ '/square' if show == 'unlinked' else '/square?show=unlinked' }}">{{ 'Show all' if show == 'unlinked' else 'Only unlinked' }}</a></h2>
   <div class="scroll"><table>
-    <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th>Tender</th><th>Items</th><th>Detected as</th><th></th></tr>
+    <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th>Tender</th><th class="hide-sm">Items</th><th title="Change this if Fizzy got it wrong">Counted as</th><th></th></tr>
     {% for p in rows %}<tr>
       <td>{{ p.created_at|local }}</td>
-      <td>{% if p.customer_id %}<a href="/customers/{{ p.customer_id }}">{{ p.name }}</a>{% else %}<span class="muted">none{% if p.square_customer_id %} ({{ p.square_customer_id }}){% endif %}</span>{% endif %}</td>
-      <td class="n">{{ p.amount_cents|money }}</td><td class="small">{{ p.tender }}</td><td class="small">{{ p.items }}</td>
+      <td>{% if p.customer_id %}<a href="/customers/{{ p.customer_id }}">{{ p.name }}</a>{% else %}<span class="muted">None</span>{% endif %}</td>
+      <td class="n">{{ p.amount_cents|money }}</td><td class="small">{{ p.tender }}</td><td class="small hide-sm">{{ p['items'] }}</td>
       <td><form class="inline" method="post" action="/square/payments/{{ p.square_payment_id }}/kind">
-        <select name="kind" onchange="if(confirm('Change how this payment is counted?'))this.form.submit()">
-          {% for k in ['sale','tab_charge','tab_repayment'] %}<option {{ 'selected' if k == p.kind }}>{{ k }}</option>{% endfor %}
+        <select name="kind" style="height:28px;width:auto" onchange="if(confirm('Change how this payment is counted?'))this.form.submit()">
+          {% for k, l in [('sale','Sale'),('tab_charge','Tab charge'),('tab_repayment','Tab repayment')] %}<option value="{{ k }}" {{ 'selected' if k == p.kind }}>{{ l }}</option>{% endfor %}
         </select></form></td>
-      <td><a class="small" href="/square/payments/{{ p.square_payment_id }}" target="_blank">raw</a></td></tr>
-    {% else %}<tr><td colspan="7" class="muted">No payments yet.</td></tr>{% endfor %}
+      <td class="n"><a class="small" href="/square/payments/{{ p.square_payment_id }}" target="_blank" title="What Square sent">Raw</a></td></tr>
+    {% else %}<tr><td colspan="7" class="empty">No payments yet.</td></tr>{% endfor %}
   </table></div>
 </div>
 {% endblock %}

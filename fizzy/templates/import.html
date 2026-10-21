@@ -1,25 +1,28 @@
 {% extends "base.html" %}{% block title %}Import{% endblock %}
 {% block body %}
-<h1>Import school directory</h1>
-<div class="panel">
-  <p class="small">CSV with a name column (<code>Cleaned Name</code> or <code>Name</code>) and <code>Email</code>. Only name and school email are stored; any other columns are ignored. Existing customers are matched by email and their name updated. Nothing is deleted.</p>
-  <form method="post" action="/import" enctype="multipart/form-data">
-    <input type="file" name="file" accept=".csv,text/csv" required>
-    <p><button class="primary">Preview</button></p>
-  </form>
-</div>
+<div class="pagehead"><div><h1>Import school directory</h1><div class="meta">Adds new students and updates names. Never deletes anyone.</div></div></div>
+<form class="panel" method="post" action="/import" enctype="multipart/form-data" style="max-width:640px">
+  <h2>1 · Choose the CSV</h2>
+  <p class="small" style="margin:0">Needs a name column (<code>Cleaned Name</code> or <code>Name</code>) and <code>Email</code>. Only those two are stored; other columns are ignored.</p>
+  <label>File</label><input type="file" name="file" accept=".csv,text/csv" required>
+  <div class="actions"><button class="primary">Preview</button></div>
+</form>
 {% if preview %}
 <div class="panel">
-  <h2>Preview: {{ preview.total }} valid rows</h2>
-  <p>Will add <b>{{ preview.counts.added }}</b>, update <b>{{ preview.counts.updated }}</b>, unchanged {{ preview.counts.unchanged }}.</p>
+  <h2>2 · Check and confirm</h2>
+  <div class="stats" style="margin-bottom:12px">
+    <div class="stat"><div class="k">New</div><div class="v">{{ preview.counts.added }}</div></div>
+    <div class="stat"><div class="k">Name changes</div><div class="v">{{ preview.counts.updated }}</div></div>
+    <div class="stat"><div class="k">Unchanged</div><div class="v">{{ preview.counts.unchanged }}</div></div>
+    <div class="stat {{ 'alert' if preview.errors }}"><div class="k">Skipped</div><div class="v">{{ preview.errors|length }}</div></div>
+  </div>
   {% if preview.errors %}<div class="err">{% for e in preview.errors %}{{ e }}<br>{% endfor %}</div>{% endif %}
-  <table><tr><th>Name</th><th>Email</th></tr>{% for r in preview.rows %}<tr><td>{{ r.name }}</td><td>{{ r.email }}</td></tr>{% endfor %}</table>
-  {% if preview.total > 20 %}<p class="muted small">…and {{ preview.total - 20 }} more.</p>{% endif %}
-  <p class="small">Choose the same file again to confirm:</p>
-  <form method="post" action="/import" enctype="multipart/form-data">
+  <div class="scroll"><table><tr><th>Name</th><th>Email</th></tr>{% for r in preview.rows %}<tr><td>{{ r.name }}</td><td class="mono">{{ r.email }}</td></tr>{% endfor %}
+    {% if preview.total > 20 %}<tr><td colspan="2" class="empty">…and {{ preview.total - 20 }} more</td></tr>{% endif %}</table></div>
+  <form method="post" action="/import" enctype="multipart/form-data" style="margin-top:16px">
     <input type="hidden" name="confirm" value="1">
-    <input type="file" name="file" accept=".csv,text/csv" required>
-    <p><button class="primary">Import</button></p>
+    <label>Choose the same file again to import it</label><input type="file" name="file" accept=".csv,text/csv" required>
+    <div class="actions"><button class="primary">Import {{ preview.total }} row{{ '' if preview.total == 1 else 's' }}</button></div>
   </form>
 </div>
 {% endif %}

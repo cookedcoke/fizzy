@@ -17,9 +17,9 @@
 
 {% macro form(id) %}
 {% if id == 'export' %}
-  <p class="row">{% for e in exports %}<a class="btn" href="/tools/export/{{ e }}.csv">{{ e.replace('_', ' ') }}</a>{% endfor %}</p>
+  <p class="row">{% for e in exports %}<a class="btn sm" href="/tools/export/{{ e }}.csv">{{ e.replace('_', ' ') }}</a>{% endfor %}</p>
 {% elif id == 'download_backup' %}
-  <p><a class="btn" href="/tools/backup.db">Download fizzy.db</a></p>
+  <p><a class="btn sm" href="/tools/backup.db">Download fizzy.db</a></p>
   <p class="muted small">Contains students' names and emails. Keep it somewhere private.</p>
 {% else %}
 <form method="post" action="/tools/{{ id }}">
@@ -27,7 +27,7 @@
   <div class="row"><div><label>Points (+ add / − take)</label><input type="number" name="delta" required></div></div>
   {{ note('Reason (required)', True) }}
   <label>People - one per line (names, emails or student numbers)</label><textarea name="people" rows="4"></textarea>
-  <label><input type="checkbox" name="everyone" value="1"> Everyone (all active customers) instead</label>
+  <label class="check"><input type="checkbox" name="everyone" value="1"> Everyone (all active customers) instead</label>
 {% elif id == 'bonus_points' %}
   <div class="row"><div><label>Multiplier</label><input type="number" name="multiplier" value="2" min="1.1" step="0.1" required></div></div>
   {{ dates(today, today) }}{{ note() }}
@@ -39,7 +39,7 @@
 {% elif id == 'pause_tabs' %}
   <p>Tabs are currently <b class="{{ 'red' if cfg.tabs_paused }}">{{ 'PAUSED' if cfg.tabs_paused else 'on' }}</b>.</p>
   <input type="hidden" name="paused" value="{{ '0' if cfg.tabs_paused else '1' }}">{{ note() }}
-  <p><button class="{{ 'primary' if cfg.tabs_paused else 'danger' }}">{{ 'Turn tabs back on' if cfg.tabs_paused else 'Pause all tabs' }}</button></p>
+  <p><button class="{{ 'primary' if cfg.tabs_paused else 'danger' }} sm">{{ 'Turn tabs back on' if cfg.tabs_paused else 'Pause all tabs' }}</button></p>
 {% elif id == 'approve_eligible' %}
   {{ note() }}
 {% elif id == 'revoke_all' %}
@@ -61,7 +61,7 @@
   <label>People - one per line</label><textarea name="people" rows="4" required></textarea>{{ note() }}
 {% elif id == 'restore' %}
   <label>People - one per line ({{ archived|length }} archived)</label><textarea name="people" rows="3"></textarea>
-  <label><input type="checkbox" name="all" value="1"> Restore everyone archived</label>
+  <label class="check"><input type="checkbox" name="all" value="1"> Restore everyone archived</label>
 {% elif id == 'takings' %}
   {{ dates(today, today) }}
 {% elif id == 'chase' or id == 'balances' or id == 'integrity' %}
@@ -73,7 +73,7 @@
     <option value="points">Anyone with points</option><option value="all">Every active customer</option></select>
   {{ dates() }}
   <div class="row"><div><label>Winners</label><input type="number" name="n" value="1" min="1"></div></div>
-  <label><input type="checkbox" name="weighted" value="1"> Weight by points</label>
+  <label class="check"><input type="checkbox" name="weighted" value="1"> Weight by points</label>
 {% elif id == 'sync_now' %}
   {% if not square_on %}<p class="red small">Square isn't configured.</p>{% endif %}
 {% elif id == 'resync' %}
@@ -85,27 +85,30 @@
 {% elif id == 'sign_out_all' %}
   {{ confirm('SIGN OUT') }}
 {% endif %}
-{% if id != 'pause_tabs' %}<p><button class="{{ 'danger' if id in DANGER else 'primary' }}">Run</button></p>{% endif %}
+{% if id != 'pause_tabs' %}<div class="actions"><button class="{{ 'danger' if id in DANGER else 'primary' }} sm">Run</button></div>{% endif %}
 </form>
 {% endif %}
 {% endmacro %}
 
 {% block body %}
-<h1>Tools <span class="muted small">hover or tap ⓘ to see what each does</span></h1>
+<div class="pagehead"><div><h1>Tools</h1><div class="meta">Hover or tap <span class="tip" style="display:inline-grid;vertical-align:-3px" data-tip="Like this.">i</span> for what a tool does. Red tools change a lot at once.</div></div></div>
 <datalist id="people">{% for p in people %}<option value="{{ p.name }} <{{ p.email }}>">{% endfor %}</datalist>
 <div class="toolgrid">
-{% for section, items in tools %}
+{# Fixed columns so tall and short sections pack neatly; stacks in reading order on a phone. #}
+{% for col in [[0, 2, 4], [1, 3], [5, 6, 7]] %}<div class="toolcol">
+{% for i in col %}{% set section, items = tools[i] %}
   <section class="panel">
     <h2>{{ section }}</h2>
     {% for id, label, tip in items %}
-    <details class="tool" id="{{ id }}">
-      <summary><span class="{{ 'red' if id in DANGER }}">{{ label }}</span>
-        <span class="tip" tabindex="0" data-tip="{{ tip }}" title="{{ tip }}" aria-label="{{ tip }}" onclick="event.preventDefault()">ⓘ</span></summary>
-      <div class="tool-body"><p class="muted small">{{ tip }}</p>{{ form(id) }}</div>
+    <details class="tool{{ ' danger' if id in DANGER }}" id="{{ id }}">
+      <summary><span>{{ label }}</span>
+        <span class="tip" tabindex="0" data-tip="{{ tip }}" title="{{ tip }}" aria-label="{{ tip }}" onclick="event.preventDefault()">i</span></summary>
+      <div class="tool-body"><p class="desc">{{ tip }}</p>{{ form(id) }}</div>
     </details>
     {% endfor %}
   </section>
 {% endfor %}
+</div>{% endfor %}
 </div>
 {% endblock %}
 {% block scripts %}<script>
