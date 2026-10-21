@@ -388,7 +388,8 @@ def register(app):
         return render(request, "customer.html", s=s, c=c, points=points, payments=payments,
                       decisions=decisions, audit_rows=audit_rows,
                       offers=rewards.offers_for(conn, cid, s["points"]),
-                      recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST)
+                      recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
+                      passcode=portal.reveal_passcode(c["passcode_enc"]))
 
     @app.post("/customers/{cid}/repay")
     def repay(request: Request, cid: int, amount: str = Form(...), method: str = Form(...), note: str = Form(""),

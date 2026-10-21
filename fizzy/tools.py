@@ -433,11 +433,11 @@ def h_merge(request, conn, who, form):
                      "WHERE id = ?", (dup["tab_decision"], dup["tab_decision_note"], dup["tab_decision_by"],
                                       dup["tab_decision_at"], keep["id"]))
     # Student site passcode: likewise, if only the duplicate had one.
-    if keep["passcode_hash"] is None and dup["passcode_hash"] is not None:
-        conn.execute("UPDATE customers SET passcode_hash = ?, passcode_set_at = ? WHERE id = ?",
-                     (dup["passcode_hash"], dup["passcode_set_at"], keep["id"]))
+    if keep["passcode_enc"] is None and dup["passcode_enc"] is not None:
+        conn.execute("UPDATE customers SET passcode_enc = ?, passcode_set_at = ? WHERE id = ?",
+                     (dup["passcode_enc"], dup["passcode_set_at"], keep["id"]))
     conn.execute("UPDATE customers SET square_customer_id = NULL, archived_at = ?, merged_into = ?, tab_decision = NULL, "
-                 "passcode_hash = NULL, passcode_set_at = NULL WHERE id = ?", (db.now_iso(), keep["id"], dup["id"]))
+                 "passcode_enc = NULL, passcode_set_at = NULL WHERE id = ?", (db.now_iso(), keep["id"], dup["id"]))
     # Their tab money and charges now sit together: the points have to match the combined tab.
     logic.reconcile_tab_points(conn, keep["id"], staff=who)
     logic.reconcile_tab_points(conn, dup["id"], staff=who)

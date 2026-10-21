@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at TEXT NOT NULL,
     archived_at TEXT,
     merged_into INTEGER REFERENCES customers(id),  -- set on the archived side of a merge
-    passcode_hash TEXT,                             -- student site sign-in (scrypt), set by staff at the stall
+    passcode_enc TEXT,                              -- student site passcode, encrypted with FIZZY_SECRET_KEY (staff can show it)
     passcode_set_at TEXT
 );
 
@@ -196,7 +196,7 @@ def connect(path=None):
 # table, so databases created before these existed get them added here on start-up.
 MIGRATIONS = [
     ("customers", "merged_into", "INTEGER REFERENCES customers(id)"),
-    ("customers", "passcode_hash", "TEXT"),
+    ("customers", "passcode_enc", "TEXT"),
     ("customers", "passcode_set_at", "TEXT"),
 ]
 

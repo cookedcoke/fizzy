@@ -34,8 +34,8 @@ def test_passcode_rules(conn, cust):
     assert "at most" in portal.passcode_problem("x" * 65)
     assert portal.passcode_problem("1234") is None                    # relaxed on purpose: staff type it in
     portal.set_passcode(conn, c, "  1234 ", "Will")                    # stray spaces ignored
-    stored = conn.execute("SELECT passcode_hash FROM customers").fetchone()[0]
-    assert stored.startswith("scrypt$") and "1234" not in stored
+    stored = conn.execute("SELECT passcode_enc FROM customers").fetchone()[0]
+    assert "1234" not in stored and portal.reveal_passcode(stored) == "1234"   # encrypted, but staff can read it
     assert portal.check_passcode("1234", stored) and not portal.check_passcode("1235", stored)
     assert "1234" not in str([tuple(r) for r in conn.execute("SELECT * FROM audit_log")])
 
@@ -122,7 +122,7 @@ def test_leaderboard(conn, cust):
     b = cust(name="Hugo Williams", email="rns2@x", sq="B")
     c = cust(name="Cher", email="rns3@x", sq="C")
     d = cust(name="Not Signedup", email="rns4@x", sq="D")
-    conn.execute("UPDATE customers SET passcode_hash = 'x' WHERE id != ?", (d["id"],))
+    conn.execute("UPDATE customers SET passcode_enc = 'x' WHERE id != ?", (d["id"],))
     ts = db.now_iso()
     for cid, pts, reason in [(a["id"], 500, "purchase"), (b["id"], 900, "purchase"), (b["id"], -800, "redeem"),
                              (c["id"], 500, "purchase"), (d["id"], 9999, "purchase")]:
@@ -185,3 +185,17 @@ def test_trailing_dot_host_is_still_the_public_host(client, monkeypatch):
     login(client)
     monkeypatch.setattr(config, "PUBLIC_HOST", "my.example")
     assert client.get("/api/index", headers={"host": "my.example."}).status_code == 404
+
+
+def test_staff_can_look_up_a_forgotten_passcode(client):
+    cid = setup_student(client)
+    page = client.get(f"/customers/{cid}").text
+    assert f'<span class="mono">{PC}</span>' in page and 'class="secret"' in page
+
+
+def test_new_secret_key_makes_old_passcodes_unreadable_not_broken(client, monkeypatch):
+    cid = setup_student(client)
+    monkeypatch.setattr(config, "SECRET_KEY", "a-different-key")
+    login(client)
+    assert "set a new one" in client.get(f"/customers/{cid}").text
+    assert "name and passcode don" in me_login(client, "Nora Le Fevre").text

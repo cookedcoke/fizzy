@@ -143,6 +143,10 @@
   </details>
   <details id="passcode"><summary>Student site passcode <span class="muted">({{ 'set ' ~ c.passcode_set_at|local('%d %b') if c.passcode_set_at else 'not set' }})</span></summary>
     <form method="post" action="/customers/{{ c.id }}/passcode" style="max-width:420px" autocomplete="off">
+      {% if c.passcode_enc %}<p style="margin-top:0">Current passcode:
+        {% if passcode %}<span class="secret" tabindex="0" title="Click to show">
+          <span class="mono">{{ passcode }}</span></span>
+        {% else %}<span class="red">can't be read (the secret key changed) - set a new one.</span>{% endif %}</p>{% endif %}
       <p class="hint" style="margin-top:0">Type in the passcode {{ c.name.split(' ')[0] }} picks (at least 4 characters). They sign in at
         <b>{{ public_host or '/me on this site' }}</b> with their name or student number. Setting a new one replaces the old one.</p>
       <label for="pc-new">New passcode</label><input id="pc-new" type="text" name="passcode" autocomplete="off" autocapitalize="off" spellcheck="false" minlength="4" maxlength="64">

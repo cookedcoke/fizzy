@@ -330,3 +330,9 @@ body.me .login input { font-size: 16px }                     /* no zoom-on-focus
 .me-board .pt { font-weight: 600 }
 .me-board li.me-row { background: var(--ok-wash); margin: 0 -8px; padding: 5px 8px; border-radius: 3px }
 @media (max-width: 480px) { .me-boards { grid-template-columns: 1fr } }
+/* Passcode on the customer page: hidden until clicked, so people at the counter can't read it. */
+.secret { display: inline-block; position: relative; cursor: pointer; border-radius: 3px; padding: 0 6px; background: var(--hover) }
+.secret .mono { filter: blur(6px); user-select: none; font-size: 14px }
+.secret::after { content: "Show"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--muted) }
+.secret:focus .mono, .secret:active .mono { filter: none; user-select: text }
+.secret:focus::after, .secret:active::after { content: none }

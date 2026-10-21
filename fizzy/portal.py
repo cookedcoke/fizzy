@@ -8,13 +8,14 @@ that passcode. The public host only serves these pages; everything staff-side is
 Read-only on purpose: nothing a student does here changes their account.
 """
 import asyncio
+import base64
 import hashlib
 import hmac
-import secrets
 import time
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 import anyio
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi.responses import RedirectResponse
 
 from . import config, logic, rewards
@@ -29,30 +30,39 @@ SESSION_HOURS = 12                 # signed in this long at most, then sign in a
 FAIL_WINDOW = 900
 LIMIT_PER_NAME = 5                 # wrong passcodes per name per 15 minutes
 LIMIT_PER_IP = 20                  # per network per 15 minutes
-MAX_IN_FLIGHT = 8                  # sign-ins being checked at once; more get "busy" (scrypt is slow on purpose)
+MAX_IN_FLIGHT = 8                  # sign-ins being checked at once; more get "busy"
 FAIL_DELAY = 1
 _fails = {}
 _in_flight = 0
-_scrypt_slots = None               # its own small thread limiter, so a flood can't starve the staff pages
+_check_slots = None                # its own small thread limiter, so a flood can't starve the staff pages
 
 # ---- passcodes --------------------------------------------------------------------------------
 
-_SCRYPT = dict(n=2 ** 14, r=8, p=1, dklen=32)
+# Encrypted, not hashed: staff can look a passcode up for a student who forgot it. Someone with
+# only the database (or a backup) can't read them; someone with the database and .env can.
+
+def _fernet():
+    key = hashlib.sha256(b"fizzy-passcode:" + config.SECRET_KEY.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
 
 
-def hash_passcode(passcode):
-    salt = secrets.token_bytes(16)
-    return f"scrypt${salt.hex()}${hashlib.scrypt(passcode.encode(), salt=salt, **_SCRYPT).hex()}"
+def encrypt_passcode(passcode):
+    return _fernet().encrypt(passcode.encode()).decode()
+
+
+def reveal_passcode(stored):
+    """The passcode, or None (nothing set, or the secret key has changed since)."""
+    if not stored:
+        return None
+    try:
+        return _fernet().decrypt(stored.encode()).decode()
+    except (InvalidToken, ValueError):
+        return None
 
 
 def check_passcode(passcode, stored):
-    """Constant-ish time: always does one scrypt, even with nothing stored."""
-    try:
-        _, salt, digest = (stored or "scrypt$00$00").split("$")
-        got = hashlib.scrypt(passcode.encode(), salt=bytes.fromhex(salt), **_SCRYPT).hex()
-    except ValueError:
-        return False
-    return bool(stored) and hmac.compare_digest(got, digest)
+    actual = reveal_passcode(stored)
+    return actual is not None and hmac.compare_digest(passcode.encode(), actual.encode())
 
 
 def passcode_problem(passcode):
@@ -69,13 +79,13 @@ def set_passcode(conn, customer, passcode, staff_name):
     problem = passcode_problem(passcode)
     if problem:
         raise ValueError(problem)
-    conn.execute("UPDATE customers SET passcode_hash = ?, passcode_set_at = ? WHERE id = ?",
-                 (hash_passcode(passcode), now_iso(), customer["id"]))
+    conn.execute("UPDATE customers SET passcode_enc = ?, passcode_set_at = ? WHERE id = ?",
+                 (encrypt_passcode(passcode), now_iso(), customer["id"]))
     audit(conn, staff_name, "passcode_set", customer["id"], "")
 
 
 def remove_passcode(conn, customer, staff_name):
-    conn.execute("UPDATE customers SET passcode_hash = NULL, passcode_set_at = NULL WHERE id = ?", (customer["id"],))
+    conn.execute("UPDATE customers SET passcode_enc = NULL, passcode_set_at = NULL WHERE id = ?", (customer["id"],))
     audit(conn, staff_name, "passcode_removed", customer["id"], "")
 
 
@@ -92,14 +102,14 @@ def candidates(conn, who):
     if not who:
         return []
     rows = conn.execute("SELECT * FROM customers WHERE archived_at IS NULL AND merged_into IS NULL "
-                        "AND passcode_hash IS NOT NULL").fetchall()
+                        "AND passcode_enc IS NOT NULL").fetchall()
     return [r for r in rows if _norm(r["name"]) == who or r["email"].split("@")[0].lower() == who]
 
 
 def authenticate(conn, who, passcode, found_candidates=None):
     found = None
     for c in (candidates(conn, who) if found_candidates is None else found_candidates) or [None]:
-        if check_passcode(passcode, c["passcode_hash"] if c else None) and found is None:
+        if check_passcode(passcode, c["passcode_enc"] if c else None) and found is None:
             found = c
     return found
 
@@ -117,7 +127,7 @@ def _buckets(request, who):
 
 def _session_marker(customer):
     """Changes when the passcode changes or is removed, which signs out existing sessions."""
-    return hashlib.sha256((customer["passcode_hash"] or "").encode()).hexdigest()[:16]
+    return hashlib.sha256((customer["passcode_enc"] or "").encode()).hexdigest()[:16]
 
 
 def current(request, conn):
@@ -126,7 +136,7 @@ def current(request, conn):
         return None
     c = conn.execute("SELECT * FROM customers WHERE id = ? AND archived_at IS NULL AND merged_into IS NULL",
                      (me.get("id"),)).fetchone()
-    if c is None or not c["passcode_hash"] or me.get("v") != _session_marker(c):
+    if c is None or not c["passcode_enc"] or me.get("v") != _session_marker(c):
         return None
     return c
 
@@ -162,7 +172,7 @@ def home(request: Request, conn=Depends(get_conn)):
 
 @router.post("/me/login")
 async def login(request: Request, who: str = Form(""), passcode: str = Form(""), conn=Depends(get_conn)):
-    global _in_flight, _scrypt_slots
+    global _in_flight, _check_slots
     now = time.time()
     found = candidates(conn, who)
     # Limited per typed name, per network, and per account (a name and a student number are the
@@ -181,11 +191,11 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
     if len(_fails) > 5000:
         for k in [k for k, v in _fails.items() if not v or v[-1] < now - FAIL_WINDOW]:
             del _fails[k]
-    _scrypt_slots = _scrypt_slots or anyio.CapacityLimiter(2)
+    _check_slots = _check_slots or anyio.CapacityLimiter(2)
     _in_flight += 1
     try:
         c = await anyio.to_thread.run_sync(authenticate, conn, who, passcode.strip()[:PASSCODE_MAX], found,
-                                           limiter=_scrypt_slots)
+                                           limiter=_check_slots)
     finally:
         _in_flight -= 1
     if c is None:
@@ -246,7 +256,7 @@ def leaderboard(conn, since=None, limit=10, me=None):
     rows = conn.execute(
         "SELECT c.id, c.name, SUM(p.delta) AS pts FROM points_ledger p JOIN customers c ON c.id = p.customer_id "
         "WHERE p.reason NOT IN ('redeem', 'redeem_undo') AND c.archived_at IS NULL AND c.merged_into IS NULL "
-        "AND c.passcode_hash IS NOT NULL "
+        "AND c.passcode_enc IS NOT NULL "
         "AND p.created_at >= ? GROUP BY c.id HAVING pts > 0 ORDER BY pts DESC, MIN(p.created_at)",
         (since or "",)).fetchall()
     board, my_rank, rank, prev = [], None, 0, None

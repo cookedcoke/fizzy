@@ -279,8 +279,9 @@ Students can check their own **points, rewards, tab and recent activity**, plus 
 **Setting a passcode (at the stall only).** On the customer's page, open **Student site
 passcode**, ask them what they'd like, and type it in once (at least 4 characters). It's a
 convenience, not a vault, so tell them not to reuse a password from anywhere else. Setting it
-in person is how Fizzy knows it's theirs. Fizzy still stores it hashed, so it can't be read
-back - if they forget it, just set a new one. To change it, they ask at the stall. **Remove** turns their sign-in off.
+in person is how Fizzy knows it's theirs. **Forgot it?** Staff can look it up: it's on the
+customer's page, blurred until you click **Show**. Or just set a new one. To change it, they
+ask at the stall. **Remove** turns their sign-in off.
 There's no "forgot passcode" or sign-up online, on purpose: nobody can take over someone
 else's account from home.
 
@@ -684,7 +685,9 @@ Most customers are under 18, so Fizzy keeps the minimum:
   student site, once staff set a passcode for them at the stall. Other signed-in students
   see them only as *first name + last initial* with points earned, on the leaderboard, and
   only if they have a passcode.
-- **Passcodes** are stored hashed (scrypt), never in plain text, and never in the logs.
+- **Passcodes** are stored encrypted with `FIZZY_SECRET_KEY`, so staff can look one up but a
+  copy of the database or a backup alone doesn't reveal them. They're never written to the
+  logs. Changing `FIZZY_SECRET_KEY` makes existing passcodes unreadable: set new ones.
 - **Never committed to git:** `.env`, the database, backups and CSVs (see `.gitignore`).
 - **Leaving school:** archive them (Tools → Archive many). Their history stays for the
   records, hidden from search.
