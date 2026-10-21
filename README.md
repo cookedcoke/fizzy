@@ -44,8 +44,8 @@ their tab?*
 
 **Someone pays off their tab**
 1. On the Terminal: **attach their profile**, add the **Tab repayment** item, and type the
-   amount (their Fizzy page shows what they owe).
-2. Take **cash, card, or Other for PayID**. They can buy something in the same sale too.
+   amount (it has no set price; their Fizzy page shows what they owe).
+2. Take **cash or card**. They can buy something in the same sale too.
    Fizzy splits it: the repayment pays off the tab, and the rest is a normal sale with points.
 3. Fizzy records the repayment automatically. There's nothing to do in Fizzy.
 4. Money that doesn't go through Square (rare) can be recorded on the customer's page under
@@ -100,7 +100,7 @@ Switch it with `W` or the dropdown. **Lock** signs the device out.
 ```
 Square Terminal ── sale (customer attached) ───────────────► Fizzy: points
                 ── sale with "Fizzy Tab" discount ─────────► Fizzy: tab charge, due in 7 days
-                ── "Tab repayment" item (cash/card/PayID) ─► Fizzy: repayment + points
+                ── "Tab repayment" item (cash / card) ─────► Fizzy: repayment + points
                 ── refund / return ────────────────────────► Fizzy: reverses the above
 ```
 
@@ -118,14 +118,14 @@ a **$0 sale** (charged as $0 cash): the items, the customer, and a discount equa
 - **Paying part now:** apply the discount to only some items. The discounted part goes on
   the tab, and what's paid is a normal sale with points.
 - **Customer names:** you name the discount, so nothing else in Square gets mistaken for a
-  tab, and **Other Payment Types** is free to use for PayID.
+  tab.
 
 Fizzy finds these sales through Square's order history, because a $0 sale has no payment.
 
 ### Repayments: the "Tab repayment" item
 
-Paying off a tab is a normal Square sale of a custom-amount item called **Tab repayment**, by
-cash, card or Other (PayID). Fizzy records it as a repayment, oldest charge first, and gives
+Paying off a tab is a normal Square sale of an item called **Tab repayment**, a catalogue item
+with a blank price so you type the amount each time, paid by cash or card. Fizzy records it as a repayment, oldest charge first, and gives
 the points then. If the same sale also has other items, Fizzy splits it: the repayment part
 pays the tab, and the rest is a normal sale.
 
@@ -136,7 +136,7 @@ Each dollar is counted in Square's **net sales** exactly once, when it's actuall
 | When | Square shows | Net sales |
 |---|---|---|
 | $3 Coke on the tab | Coke $3, Fizzy Tab discount −$3 | $0 |
-| Tab paid off | Tab repayment $3 (cash/card/PayID) | $3 |
+| Tab paid off | Tab repayment $3 (cash or card) | $3 |
 | **Total** | | **$3** |
 
 - **Net sales and money collected** are right: the till and the bank match Square.
@@ -159,7 +159,7 @@ system, and it doesn't suit this:
 | | Square House Accounts | Fizzy tabs |
 |---|---|---|
 | Setup | An account created by hand for each customer in Square (no way to bulk-create them) | Everyone is imported once; staff approve with one click |
-| Collecting money | Square sends invoices, paid by card, bank or card on file. Square's House Accounts page says outstanding balances can't be paid at the point of sale | Cash, card or PayID at the counter |
+| Collecting money | Square sends invoices, paid by card, bank or card on file. Square's House Accounts page says outstanding balances can't be paid at the point of sale | Cash or card at the counter |
 | Overdue | Square sends reminders; you lock accounts by hand | Blocked automatically until paid, with a permanent late record |
 | Points, the $30 rule, approvals | None | Built in |
 | Your experience | It's the invoice flow you already shut down because people paid late | Built around a 7-day, $10 counter tab |
@@ -335,11 +335,13 @@ In the Square Dashboard → Items:
 
 1. **Discounts → Create discount:** name **Fizzy Tab**, **100%**, applied manually. (Fizzy
    matches any discount whose name contains "fizzy tab".)
-2. **Items → Create item:** name **Tab repayment**, variable price (entered at checkout), not
-   tracked in inventory. The name must be exactly that.
+2. **Items → Create item:** name **Tab repayment**, **leave the price blank** (so Square asks
+   for the amount at checkout), and don't track inventory. The name must be exactly that,
+   though capitals don't matter. Use this item rather than Square's "Custom amount" key,
+   because Fizzy recognises repayments by the item's name.
 
 Square app → Settings → Checkout → Payment types:
-- **Other Payment Types**: use it for **PayID** repayments and sales.
+- **Other Payment Types**: not used by Fizzy. A sale paid with Other counts as a normal sale.
 - **House Account**: leave disabled ([why](#why-not-square-house-accounts)).
 
 ### 7.5 Square API access
@@ -409,12 +411,64 @@ survives rebuilds. New tables are created automatically on start.
 2. Add a public hostname: `fizzy.cookedcoke.co` → service `http://fizzy:8000`.
 3. Optional: a Cloudflare WAF rate-limit rule on `/login`. Fizzy also blocks an address for
    15 minutes after 10 wrong passwords.
-4. If you ever put Cloudflare Access in front of the site, add a **bypass** for
-   `/square/webhook`. Square has to reach it, and Fizzy checks every request against
-   Square's signature.
+4. Don't put Cloudflare Access in front of `fizzy.cookedcoke.co` itself. Square's webhook
+   has to reach `/square/webhook` there, and Fizzy checks every request against Square's
+   signature. To restrict which devices can use Fizzy, see the next section.
 
 To try it locally without the tunnel, add `ports: ["127.0.0.1:8000:8000"]` to the `fizzy`
 service, set `FIZZY_SECURE_COOKIES=0`, and open http://localhost:8000.
+
+### Locking it to the counter device (optional)
+
+A web app can't see a device's **MAC address**: it never leaves your local network, so it
+doesn't survive the trip through the internet and Cloudflare. Fizzy does the next best
+thing with **registered devices**:
+
+| Device | Goes to | What it needs |
+|---|---|---|
+| Registered (e.g. the counter iPad) | `fizzy.cookedcoke.co` | The staff password |
+| Anything else | Automatically sent to `fizzy-remote.cookedcoke.co` | Cloudflare Access (an emailed one-time code for Bru, Mike or Frankie), **then** the staff password |
+
+- **How a device is registered:** it opens a one-time link and gets a secret cookie that
+  lasts about a year. The cookie is refreshed each time the device is used.
+- **On `fizzy-remote`:** Fizzy checks Cloudflare's signed sign-in token itself, so the
+  address can't be reached around Access.
+- **The log** records each sign-in with the device name or Access email.
+
+**Setup**
+
+1. **Second hostname:** in the same tunnel, add a public hostname `fizzy-remote.cookedcoke.co`
+   → `http://fizzy:8000`. Use a single-level subdomain like this one, because Cloudflare's
+   free certificate doesn't cover `x.fizzy.cookedcoke.co`.
+2. **Access application:** Zero Trust → Access → Applications → **Add an application** →
+   Self-hosted.
+   - Domain: `fizzy-remote.cookedcoke.co`.
+   - Policy: **Allow**, with your three email addresses.
+   - Login method: **One-time PIN**.
+   - Session duration: whatever suits, e.g. 24 hours.
+3. **Copy two values into `.env`:**
+   - The application's **Audience (AUD) tag** → `CF_ACCESS_AUD`.
+   - Your team domain → `CF_ACCESS_TEAM_DOMAIN`, e.g. `cookedcoke.cloudflareaccess.com`
+     (Zero Trust → Settings → Custom Pages shows the team name).
+4. **Turn it on:** set `FIZZY_ACCESS_HOST=fizzy-remote.cookedcoke.co`, then `docker compose up -d`.
+5. **Register the counter device:**
+   1. On any device, open `fizzy-remote.cookedcoke.co`, then Settings → **Devices** →
+      name it → **Make link**.
+   2. Open that link on the counter device within 15 minutes and press **Register this
+      device**.
+   3. Or, from the PC: `docker compose exec fizzy python -m fizzy device-link "Counter iPad"`.
+
+**Good to know**
+
+- **What counts as registered** is that browser on that device. Another browser, a private
+  window, or clearing site data means registering again.
+- **Lost or replaced device:** Settings → Devices → **Remove**. Also use **Tools → Sign
+  everyone out** if it was signed in.
+- **Turning it off:** remove `FIZZY_ACCESS_HOST` and restart. Everything goes back to
+  password-only.
+- **Heavier alternative:** Cloudflare's WARP client with device posture checks can tie
+  access to specific managed devices, but it needs an app installed and managed on each
+  device. The registered-device cookie is simpler for one counter screen.
 
 ### Backups
 
@@ -449,6 +503,7 @@ Then install `cloudflared` as a service with the hostname pointing at `http://lo
 python -m fizzy import directory.csv   # import the school CSV
 python -m fizzy backup /path/to/dir    # write a backup now
 python -m fizzy sync                   # run one Square sync
+python -m fizzy device-link "Counter iPad"   # registration link for the device lock
 ```
 
 In Docker, prefix these with `docker compose exec fizzy`.
@@ -479,6 +534,10 @@ All configuration is environment variables, in `.env`. Never commit `.env`.
 | `SQUARE_TAB_DISCOUNT` | `fizzy tab` | A sale with a discount whose name contains this goes on the tab (the discounted amount) |
 | `SQUARE_REPAYMENT_ITEM` | `tab repayment` | Item name that marks part of a sale as a tab repayment |
 | `SQUARE_TAB_TENDERS` | *(off)* | Optional extra: payment types that also mean "on the tab", e.g. `EXTERNAL` (Other Payment Types) or `SQUARE_ACCOUNT` (House Account). Only if the discount can't be used |
+| `FIZZY_HOST` | `fizzy.cookedcoke.co` | Main address; used in device registration links |
+| `FIZZY_ACCESS_HOST` | *(off)* | Turns on the device lock. Unregistered devices are sent here (behind Cloudflare Access) |
+| `CF_ACCESS_TEAM_DOMAIN` | — | Your Access team domain, e.g. `cookedcoke.cloudflareaccess.com` |
+| `CF_ACCESS_AUD` | — | The Access application's Audience (AUD) tag |
 | `CLOUDFLARE_TUNNEL_TOKEN` | — | Used by the `cloudflared` container |
 
 The tab limit, days to pay and spend threshold live in the database and are changed on the
@@ -494,7 +553,8 @@ Most customers are under 18, so Fizzy keeps the minimum:
   charges and repayments, points history, and Square payment and order details (amount,
   items, payment type, time).
 - **Not stored:** year group, phone numbers, addresses, or anything else in the school CSV.
-- **Who can see it:** only staff with the password. There's no customer login.
+- **Who can see it:** only staff with the password. Optionally, only from registered devices
+  or through Cloudflare Access. There's no customer login.
 - **Never committed to git:** `.env`, the database, backups and CSVs (see `.gitignore`).
 - **Leaving school:** archive them (Tools → Archive many). Their history stays for the
   records, hidden from search.
@@ -517,6 +577,8 @@ them up by email. Nothing in the data model would need to change.
 | A customer shows "Not in Square yet" | Import the Square CSV (7.3), then sync. Or paste their Square customer ID into **Edit customer** |
 | Webhooks not arriving | `SQUARE_WEBHOOK_URL` must match Square's subscription URL exactly; no Cloudflare Access on `/square/webhook`. Polling still catches everything within 5 minutes |
 | Can't log in after an update | Check `FIZZY_SECURE_COOKIES=1` and that you're using `https://` |
+| Counter device keeps getting sent to `fizzy-remote` | Its registration was lost (browser data cleared, different browser) or removed. Register it again |
+| "Cloudflare Access required" on `fizzy-remote` | Check `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` match the Access application, and that Access is actually in front of that hostname |
 | Everything slow at the counter | Fizzy pages render in ~5 ms; check the PC is awake and the tunnel is up (`docker compose logs cloudflared`) |
 | Something looks wrong with the data | **Tools → Health check** |
 
@@ -545,6 +607,7 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
 | `fizzy/app.py` | Routes, login, background jobs |
 | `fizzy/customers.py` | CSV import, search, Square export |
 | `fizzy/db.py` | Schema, settings, audit log, backups |
+| `fizzy/devices.py` | Registered devices and Cloudflare Access token checks |
 | `fizzy/web.py` | Shared page helpers |
 | `fizzy/templates/`, `fizzy/static/style.css` | Pages and styling |
 

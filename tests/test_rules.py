@@ -105,7 +105,7 @@ def test_fifo_partial_repayment(conn, cust):
     c = cust()
     logic.add_tab_charge(conn, c, 300, "a", iso(days_ago=3))
     logic.add_tab_charge(conn, c, 300, "b", iso(days_ago=1))
-    logic.add_repayment(conn, c["id"], 400, "payid", "", "Frankie")
+    logic.add_repayment(conn, c["id"], 400, "card", "", "Frankie")
     ch = logic.tab_ledger(conn, c["id"])["charges"]
     assert (ch[0]["paid_cents"], ch[1]["paid_cents"]) == (300, 100)
     assert ch[0]["settled_at"] is not None and ch[1]["settled_at"] is None

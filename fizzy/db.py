@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS tab_repayments (
     id INTEGER PRIMARY KEY,
     customer_id INTEGER NOT NULL REFERENCES customers(id),
     amount_cents INTEGER NOT NULL,  -- negative for a refunded repayment
-    method TEXT NOT NULL,           -- cash | payid | card | other
+    method TEXT NOT NULL,           -- cash | card | other | writeoff
     note TEXT,
     staff TEXT,
     square_payment_id TEXT,
@@ -105,6 +105,26 @@ CREATE TABLE IF NOT EXISTS audit_log (
     customer_id INTEGER,
     details TEXT,
     created_at TEXT NOT NULL
+);
+
+-- Devices allowed on the main host without Cloudflare Access (see devices.py).
+CREATE TABLE IF NOT EXISTS devices (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    revoked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS device_links (
+    token_hash TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);

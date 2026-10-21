@@ -16,6 +16,12 @@ BACKUP_DIR = _env("FIZZY_BACKUP_DIR")
 BACKUP_KEEP = int(_env("FIZZY_BACKUP_KEEP", "30"))
 SECURE_COOKIES = _env("FIZZY_SECURE_COOKIES", "1") == "1"
 
+# Registered devices + Cloudflare Access (see devices.py). Off unless FIZZY_ACCESS_HOST is set.
+HOST = _env("FIZZY_HOST", "fizzy.cookedcoke.co")                 # counter: registered devices only
+ACCESS_HOST = _env("FIZZY_ACCESS_HOST")                          # anyone else, behind Cloudflare Access
+CF_ACCESS_TEAM = _env("CF_ACCESS_TEAM_DOMAIN")                   # e.g. cookedcoke.cloudflareaccess.com
+CF_ACCESS_AUD = _env("CF_ACCESS_AUD")                            # the Access application's audience tag
+
 SQUARE_TOKEN = _env("SQUARE_ACCESS_TOKEN")
 SQUARE_ENV = _env("SQUARE_ENVIRONMENT", "production")
 SQUARE_LOCATION_ID = _env("SQUARE_LOCATION_ID")
@@ -26,7 +32,7 @@ SQUARE_POLL_SECONDS = int(_env("SQUARE_POLL_SECONDS", "300"))
 # Tab sale: an order with this discount (a 100% discount called "Fizzy Tab"). The discounted
 # amount goes on the customer's tab; Square records a $0 (or reduced) sale.
 SQUARE_TAB_DISCOUNT = _env("SQUARE_TAB_DISCOUNT", "fizzy tab")
-# Tab repayment: an order containing this item (custom amount), paid by cash, card or Other.
+# Tab repayment: an order containing this item (a catalogue item with a blank, variable price).
 SQUARE_REPAYMENT_ITEM = _env("SQUARE_REPAYMENT_ITEM", "tab repayment")
 # Optional: payment types that also mean "on the tab" (e.g. EXTERNAL for Other Payment Types,
 # SQUARE_ACCOUNT for House Account). Off by default - the discount is the tab button.

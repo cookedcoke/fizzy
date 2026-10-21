@@ -153,8 +153,7 @@ def repayment_method(payment):
         return "cash"
     if st in ("CARD", "WALLET"):
         return "card"
-    # With the discount as the tab button, "Other Payment Types" is free for PayID repayments.
-    return "payid" if st == "EXTERNAL" else "other"
+    return "other"
 
 
 def describe_items(order, skip_repayment=False):

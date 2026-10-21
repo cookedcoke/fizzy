@@ -17,4 +17,33 @@
   <div class="actions"><button>Back up now</button><a class="btn" href="/tools/backup.db">Download a copy</a></div>
 </form>
 </div>
+
+<div class="panel" id="devices"><h2>Devices</h2>
+{% if not devices_on %}
+  <p class="small" style="margin:0">Off: any device with the password can sign in. To limit {{ main_host }} to registered
+    devices and send everything else through Cloudflare Access, set <code>FIZZY_ACCESS_HOST</code> (README, section 8).</p>
+{% else %}
+  <p class="small" style="margin:0">Registered devices open <b>{{ main_host }}</b> directly. Anything else is sent to
+    <b>{{ access_host }}</b>, behind Cloudflare Access. Both still need the staff password.
+    {% if this_device %}<br>This device: <b>{{ this_device }}</b> (registered).{% elif access_email %}<br>You're on {{ access_host }} as <b>{{ access_email }}</b>.{% endif %}</p>
+  {% if new_link %}
+  <div class="notice" style="margin-top:12px"><b>Open this link on the device within {{ link_minutes }} minutes</b> (works once):
+    <input type="text" readonly value="{{ new_link }}" onclick="this.select()" class="mono" style="margin-top:6px"></div>
+  {% endif %}
+  <form method="post" action="/settings/devices" class="row" style="margin-top:12px">
+    <div><label>Register a device</label><input type="text" name="name" placeholder="e.g. Counter iPad" required></div>
+    <button class="primary">Make link</button>
+  </form>
+  {% if device_list %}<div class="scroll" style="margin-top:16px"><table>
+    <tr><th>Device</th><th>Added</th><th>Last used</th><th></th></tr>
+    {% for d in device_list %}<tr>
+      <td>{{ d.name }}{% if d.revoked_at %} <span class="tag">Removed</span>{% endif %}</td>
+      <td class="small">{{ d.created_at|local('%d %b %Y') }} · {{ d.created_by }}</td>
+      <td class="small">{{ d.last_seen_at|local }}</td>
+      <td class="n">{% if not d.revoked_at %}<form class="inline" method="post" action="/settings/devices/{{ d.id }}/revoke">
+        <button class="sm danger" onclick="return confirm('Remove {{ d.name }}? It will have to use Cloudflare Access.')">Remove</button></form>{% endif %}</td>
+    </tr>{% endfor %}
+  </table></div>{% endif %}
+{% endif %}
+</div>
 {% endblock %}

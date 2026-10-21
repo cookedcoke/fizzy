@@ -37,11 +37,11 @@
 <div class="grid">
   <form class="panel" method="post" action="/customers/{{ c.id }}/repay"><h2>Repayment <kbd>R</kbd></h2>
     <p class="small" style="margin:0">{% if led.owing_cents %}<b>In Square:</b> attach {{ c.name.split(' ')[0] }}'s profile, add <b>Tab repayment</b> for
-      <b>{{ led.owing_cents|money }}</b>, and take cash, card, or Other for PayID. Fizzy records it automatically.{% else %}Nothing owing.{% endif %}</p>
+      <b>{{ led.owing_cents|money }}</b>, type the amount, and take cash or card. Fizzy records it automatically.{% else %}Nothing owing.{% endif %}</p>
     <p class="hint" style="margin-top:8px">Only use the form below for money that <b>didn't</b> go through Square.</p>
     <div class="row">
       <div><label>Amount ($)</label><input type="text" name="amount" inputmode="decimal" data-key="r" data-key-label="Record a repayment without Square" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
-      <div><label>Paid by</label><select name="method"><option value="cash">Cash</option><option value="payid">PayID</option><option value="card">Card</option><option value="other">Other</option></select></div>
+      <div><label>Paid by</label><select name="method"><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other</option></select></div>
     </div>
     <label>Note</label><input type="text" name="note" placeholder="Optional">
     <label class="check"><input type="checkbox" name="confirm_dup" value="1"> This is a separate payment (not one already rung up in Square)</label>

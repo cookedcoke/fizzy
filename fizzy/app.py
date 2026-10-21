@@ -1,5 +1,6 @@
 """Fizzy web app (staff only, shared password)."""
 import hmac
+from html import escape
 import json
 import logging
 import threading
@@ -13,10 +14,21 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import config, customers, db, logic, square, tools
+from . import config, customers, db, devices, logic, square, tools
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff
 
 log = logging.getLogger("fizzy")
+
+
+GATE_EXEMPT = ("/static/", "/healthz", "/square/webhook", "/enrol/")
+GATE_PAGE = ("<!doctype html><meta name=viewport content='width=device-width'><title>{title}</title>"
+             "<body style='font:15px system-ui;max-width:520px;margin:15vh auto;padding:0 16px'>"
+             "<h1 style='font-size:20px'>{title}</h1><p>{body}</p>")
+
+
+def set_device_cookie(response, token):
+    response.set_cookie(devices.DEVICE_COOKIE, token, max_age=devices.DEVICE_COOKIE_DAYS * 86400,
+                        httponly=True, secure=config.SECURE_COOKIES, samesite="lax")
 
 
 # ---- background jobs --------------------------------------------------------------------------
@@ -81,6 +93,43 @@ def create_app(background=True):
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     @app.middleware("http")
+    async def device_gate(request, call_next):
+        """With FIZZY_ACCESS_HOST set: the main host only serves registered devices, and the
+        Access host only serves requests carrying a valid Cloudflare Access token."""
+        if not devices.enabled() or request.url.path.startswith(GATE_EXEMPT):
+            return await call_next(request)
+        host = (request.headers.get("host") or "").split(":")[0].lower()
+        if host == config.ACCESS_HOST.lower():
+            claims = devices.verify_access(request.headers.get("cf-access-jwt-assertion"))
+            if not claims:
+                return HTMLResponse(GATE_PAGE.format(
+                    title="Cloudflare Access required",
+                    body="This address only works through Cloudflare Access, and Fizzy couldn't verify the "
+                         "Access sign-in. If you just set it up, check <code>CF_ACCESS_TEAM_DOMAIN</code> and "
+                         "<code>CF_ACCESS_AUD</code>."), status_code=403)
+            request.state.access_email = claims.get("email")
+            return await call_next(request)
+        conn = db.connect()
+        try:
+            device, refreshed = devices.check(conn, request.cookies.get(devices.DEVICE_COOKIE))
+        finally:
+            conn.close()
+        if device is None:
+            if request.method == "GET":
+                target = f"https://{config.ACCESS_HOST}{request.url.path}"
+                if request.url.query:
+                    target += "?" + request.url.query
+                return RedirectResponse(target, status_code=303)
+            return HTMLResponse(GATE_PAGE.format(title="Device not registered",
+                                                 body=f'Use <a href="https://{config.ACCESS_HOST}/">{config.ACCESS_HOST}</a>.'),
+                                status_code=403)
+        request.state.device = device["name"]
+        response = await call_next(request)
+        if refreshed:
+            set_device_cookie(response, request.cookies.get(devices.DEVICE_COOKIE))
+        return response
+
+    @app.middleware("http")
     async def cache_static(request, call_next):
         response = await call_next(request)
         if request.url.path.startswith("/static/") and request.query_params.get("v"):
@@ -121,6 +170,9 @@ def register(app):
         conn = db.connect()
         try:
             request.session.update(auth=True, staff=who, gen=session_gen(conn))
+            via = getattr(request.state, "device", None) or getattr(request.state, "access_email", None)
+            db.audit(conn, who, "login", None, f"via {via}" if via else "")
+            conn.commit()
         finally:
             conn.close()
         return RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
@@ -255,7 +307,7 @@ def register(app):
     def repay(request: Request, cid: int, amount: str = Form(...), method: str = Form(...), note: str = Form(""),
               confirm_dup: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         load_customer(conn, cid)
-        if method not in ("cash", "payid", "card", "other"):
+        if method not in ("cash", "card", "other"):
             raise HTTPException(400, "bad method")
         amt = cents(amount)
         # Repayments are normally rung up in Square and recorded automatically; don't let the
@@ -394,6 +446,12 @@ def register(app):
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         return render(request, "settings.html", cfg=logic.settings(conn),
+                      devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
+                      device_list=conn.execute("SELECT * FROM devices ORDER BY revoked_at IS NOT NULL, created_at DESC").fetchall(),
+                      this_device=getattr(request.state, "device", None),
+                      access_email=getattr(request.state, "access_email", None),
+                      new_link=request.session.pop("new_device_link", None),
+                      link_minutes=devices.LINK_MINUTES,
                       last_backup=db.get_setting(conn, "last_backup"),
                       last_backup_path=db.get_setting(conn, "last_backup_path"), backup_dir=config.BACKUP_DIR)
 
@@ -426,6 +484,48 @@ def register(app):
             "ORDER BY a.created_at DESC, a.id DESC LIMIT 500"
         ).fetchall()
         return render(request, "audit.html", rows=rows)
+
+    # ---- registered devices ---------------------------------------------------------------
+
+    @app.get("/enrol/{token}", response_class=HTMLResponse)
+    def enrol_form(token: str, conn=Depends(get_conn)):
+        link = devices.pending_link(conn, token)
+        if link is None:
+            return HTMLResponse(GATE_PAGE.format(title="Link expired or used",
+                                                 body="Make a new one in Settings → Devices."), status_code=410)
+        # A button rather than registering on GET, so link previews can't use the link up.
+        return HTMLResponse(GATE_PAGE.format(
+            title=f"Register this device as “{escape(link['name'])}”?",
+            body=f"<form method=post><button style='font:inherit;padding:8px 16px'>Register this device</button></form>"
+                 f"<p style='color:#6A717C'>It can then open {config.HOST} without Cloudflare Access (staff password still "
+                 f"needed). Only do this on a device that stays at the counter.</p>"))
+
+    @app.post("/enrol/{token}")
+    def enrol(token: str, conn=Depends(get_conn)):
+        device_token = devices.redeem(conn, token)
+        if device_token is None:
+            return HTMLResponse(GATE_PAGE.format(title="Link expired or used",
+                                                 body="Make a new one in Settings → Devices."), status_code=410)
+        conn.commit()
+        response = RedirectResponse("/", status_code=303)
+        set_device_cookie(response, device_token)
+        return response
+
+    @app.post("/settings/devices")
+    def device_link(request: Request, name: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+        try:
+            link = devices.create_link(conn, name, who)
+        except ValueError as e:
+            return back(request, "/settings#devices", str(e))
+        conn.commit()
+        request.session["new_device_link"] = link
+        return back(request, "/settings#devices")
+
+    @app.post("/settings/devices/{device_id}/revoke")
+    def device_revoke(request: Request, device_id: int, who=Depends(staff), conn=Depends(get_conn)):
+        devices.revoke(conn, device_id, who)
+        conn.commit()
+        return back(request, "/settings#devices", "Device removed. It now has to go through Cloudflare Access.")
 
     @app.get("/healthz", response_class=PlainTextResponse)
     def healthz():
