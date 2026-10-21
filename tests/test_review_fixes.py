@@ -121,7 +121,7 @@ def test_sync_processes_tab_sales_before_later_repayments(conn, cust):
 def test_square_repayment_is_never_matched_to_a_write_off(conn, cust):
     c = cust()
     logic.add_tab_charge(conn, c, 300, "x", iso(hours=1))
-    logic.add_repayment(conn, c["id"], 300, "writeoff", "forgiven", "Bru")
+    logic.add_repayment(conn, c["id"], 300, "writeoff", "forgiven", "Will")
     square.process_payment(conn, pay("p1", 300, order_id="o2"), order(("Tab repayment", 300), oid="o2"))
     assert conn.execute("SELECT COUNT(*) FROM tab_repayments").fetchone()[0] == 2
     assert logic.tab_ledger(conn, c["id"])["balance_cents"] == -300
@@ -130,7 +130,7 @@ def test_square_repayment_is_never_matched_to_a_write_off(conn, cust):
 def test_return_from_a_written_off_tab_reverses_the_write_off_not_credit(conn, cust):
     c = cust()
     square.process_order(conn, tab_order("o1", 400))
-    logic.add_repayment(conn, c["id"], 400, "writeoff", "forgiven", "Bru")
+    logic.add_repayment(conn, c["id"], 400, "writeoff", "forgiven", "Will")
     ret = {"source_order_id": "o1", "return_line_items": [{"total_discount_money": {"amount": 400}}]}
     square.process_order(conn, {"id": "o9", "state": "COMPLETED", "closed_at": iso(), "created_at": iso(), "returns": [ret]})
     assert logic.tab_ledger(conn, c["id"])["balance_cents"] == 0       # not $4 credit
@@ -159,8 +159,8 @@ def test_reclassify_round_trip_does_not_double_refund_a_hand_charge(conn, cust):
     square.process_order(conn, tab_order("o1", 400))                  # links to the hand charge
     ret = {"source_order_id": "o1", "return_line_items": [{"total_discount_money": {"amount": 100}}]}
     square.process_order(conn, {"id": "o9", "state": "COMPLETED", "closed_at": iso(), "created_at": iso(), "returns": [ret]})
-    square.reclassify(conn, "order:o1", "sale", "Bru")
-    square.reclassify(conn, "order:o1", "tab_charge", "Bru")
+    square.reclassify(conn, "order:o1", "sale", "Will")
+    square.reclassify(conn, "order:o1", "tab_charge", "Will")
     assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 300
 
 
@@ -220,9 +220,9 @@ def test_resync_requested_during_a_running_sync_is_not_lost(conn, cust):
 def test_merge_keeps_the_duplicates_square_profile_pointing_at_the_kept_customer(conn, cust):
     keep = cust("Keep Kid", "rns1@reddamnorthshore.nsw.edu.au", "SQK")
     dup = cust("Dup Kid", "rns2@reddamnorthshore.nsw.edu.au", "SQD")
-    logic.set_tab_decision(conn, dup["id"], "approved", "ok", "Bru")
+    logic.set_tab_decision(conn, dup["id"], "approved", "ok", "Will")
     req = type("R", (), {"session": {}})()
-    tools.h_merge(req, conn, "Bru", {"keep": "Keep Kid <rns1@reddamnorthshore.nsw.edu.au>",
+    tools.h_merge(req, conn, "Will", {"keep": "Keep Kid <rns1@reddamnorthshore.nsw.edu.au>",
                                      "dup": "Dup Kid <rns2@reddamnorthshore.nsw.edu.au>"})
     # Next sync sees both Square profiles again; the duplicate's must not attach to the archived record.
     square.sync(conn, FakeSquare(customers=[{"id": "SQK", "email_address": "rns1@reddamnorthshore.nsw.edu.au"},
@@ -244,7 +244,7 @@ def test_takings_puts_tab_returns_on_their_own_line(conn, cust):
     monkey_report = tools.report
     tools.report = lambda request, title, headers, rows, **kw: captured.setdefault("rows", rows)
     try:
-        tools.h_takings(None, conn, "Bru", {"start": "2020-01-01", "end": "2030-01-01"})
+        tools.h_takings(None, conn, "Will", {"start": "2020-01-01", "end": "2030-01-01"})
     finally:
         tools.report = monkey_report
     labels = [r[0] for r in captured["rows"]]
@@ -254,8 +254,8 @@ def test_takings_puts_tab_returns_on_their_own_line(conn, cust):
 def test_bonus_points_count_tab_purchases_by_purchase_date(conn, cust):
     c = cust()
     square.process_order(conn, tab_order("o1", 400, ts="2026-01-05T01:00:00+00:00"))   # bought in the bonus week
-    logic.add_repayment(conn, c["id"], 400, "cash", "", "Bru", created_at="2026-02-01T01:00:00+00:00")  # repaid later
-    tools.h_bonus_points(type("R", (), {"session": {}})(), conn, "Bru",
+    logic.add_repayment(conn, c["id"], 400, "cash", "", "Will", created_at="2026-02-01T01:00:00+00:00")  # repaid later
+    tools.h_bonus_points(type("R", (), {"session": {}})(), conn, "Will",
                          {"multiplier": "2", "start": "2026-01-01", "end": "2026-01-10"})
     assert logic.points_balance(conn, c["id"]) == 800
 
@@ -275,9 +275,9 @@ def test_strict_customer_matching(conn, cust):
 def test_move_points_cannot_overdraw(conn, cust):
     a = cust("Ann A", "rns1@reddamnorthshore.nsw.edu.au", "S1")
     cust("Bob B", "rns2@reddamnorthshore.nsw.edu.au", "S2")
-    logic.adjust_points(conn, a["id"], 50, "seed", "Bru")
+    logic.adjust_points(conn, a["id"], 50, "seed", "Will")
     with pytest.raises(tools.ToolError):
-        tools.h_transfer_points(None, conn, "Bru", {"from": "Ann A", "to": "Bob B", "points": "60"})
+        tools.h_transfer_points(None, conn, "Will", {"from": "Ann A", "to": "Bob B", "points": "60"})
 
 
 def test_csv_row_with_no_name_is_skipped_not_blanked():
@@ -314,7 +314,7 @@ def rep_order(oid, amt):
 def test_return_of_paid_items_doesnt_revive_an_unrelated_old_write_off(conn, cust):
     c = cust()
     square.process_order(conn, tab_order("o1", 500, ts=iso(30)))
-    logic.add_repayment(conn, c["id"], 500, "writeoff", "old debt", "Bru", created_at=iso(29))
+    logic.add_repayment(conn, c["id"], 500, "writeoff", "old debt", "Will", created_at=iso(29))
     square.process_order(conn, tab_order("o2", 500))
     square.process_payment(conn, pay("p1", 500, source="CARD", order_id="r1"), rep_order("r1", 500))
     assert logic.points_balance(conn, c["id"]) == 500
@@ -340,7 +340,7 @@ def test_remarking_the_funding_repayment_keeps_points_right(conn, cust):
     c = cust()
     square.process_payment(conn, pay("p1", 500, source="CARD", order_id="r1"), rep_order("r1", 500))
     square.process_order(conn, tab_order("o1", 500))
-    square.reclassify(conn, "p1", "sale", "Bru")
+    square.reclassify(conn, "p1", "sale", "Will")
     assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 500
     assert logic.points_balance(conn, c["id"]) == 500                 # 500 for the sale, none for the unpaid tab
 
@@ -400,8 +400,8 @@ def test_full_refund_with_an_order_but_no_return_lines_refunds_both_parts(conn, 
 def test_bonus_points_ignore_written_off_tab_purchases(conn, cust):
     c = cust()
     square.process_order(conn, tab_order("o1", 400, ts="2026-01-05T01:00:00+00:00"))
-    logic.add_repayment(conn, c["id"], 400, "writeoff", "forgiven", "Bru", created_at="2026-01-06T01:00:00+00:00")
-    tools.h_bonus_points(type("R", (), {"session": {}})(), conn, "Bru",
+    logic.add_repayment(conn, c["id"], 400, "writeoff", "forgiven", "Will", created_at="2026-01-06T01:00:00+00:00")
+    tools.h_bonus_points(type("R", (), {"session": {}})(), conn, "Will",
                          {"multiplier": "2", "start": "2026-01-01", "end": "2026-01-10"})
     assert logic.points_balance(conn, c["id"]) == 0
 
@@ -411,8 +411,8 @@ def test_merge_chain_is_followed(conn, cust):
     b = cust("Ann B", "rns2@reddamnorthshore.nsw.edu.au", None)
     c = cust("Ann C", "rns3@reddamnorthshore.nsw.edu.au", None)
     req = type("R", (), {"session": {}})()
-    tools.h_merge(req, conn, "Bru", {"keep": "Ann B", "dup": "Ann A"})
-    tools.h_merge(req, conn, "Bru", {"keep": "Ann C", "dup": "Ann B"})
+    tools.h_merge(req, conn, "Will", {"keep": "Ann B", "dup": "Ann A"})
+    tools.h_merge(req, conn, "Will", {"keep": "Ann C", "dup": "Ann B"})
     square.sync(conn, FakeSquare(customers=[{"id": "SQA", "given_name": "Ann", "reference_id": f"fizzy-{a['id']}",
                                              "email_address": "rns1@reddamnorthshore.nsw.edu.au"}],
                                  payments=[pay("p1", 200, cust="SQA")]))
@@ -484,14 +484,14 @@ def test_retry_item_that_goes_through_in_the_window_isnt_reported(conn, cust):
 def test_bonus_follows_fifo_with_an_older_write_off_and_newer_cash_purchase(conn, cust):
     c = cust()
     square.process_order(conn, tab_order("o1", 400, ts="2026-01-05T01:00:00+00:00"))
-    logic.add_repayment(conn, c["id"], 400, "writeoff", "forgiven", "Bru", created_at="2026-02-01T01:00:00+00:00")
+    logic.add_repayment(conn, c["id"], 400, "writeoff", "forgiven", "Will", created_at="2026-02-01T01:00:00+00:00")
     square.process_order(conn, tab_order("o2", 400, ts="2026-03-05T01:00:00+00:00"))
-    logic.add_repayment(conn, c["id"], 400, "cash", "", "Bru", created_at="2026-03-06T01:00:00+00:00")
+    logic.add_repayment(conn, c["id"], 400, "cash", "", "Will", created_at="2026-03-06T01:00:00+00:00")
     req = type("R", (), {"session": {}})()
     before = logic.points_balance(conn, c["id"])
-    tools.h_bonus_points(req, conn, "Bru", {"multiplier": "2", "start": "2026-01-01", "end": "2026-01-10"})
+    tools.h_bonus_points(req, conn, "Will", {"multiplier": "2", "start": "2026-01-01", "end": "2026-01-10"})
     assert logic.points_balance(conn, c["id"]) == before                # written off: no bonus
-    tools.h_bonus_points(req, conn, "Bru", {"multiplier": "2", "start": "2026-03-01", "end": "2026-03-10"})
+    tools.h_bonus_points(req, conn, "Will", {"multiplier": "2", "start": "2026-03-01", "end": "2026-03-10"})
     assert logic.points_balance(conn, c["id"]) == before + 400          # paid in cash: bonus
 
 
@@ -499,8 +499,8 @@ def test_merge_reconciles_points_when_credit_meets_a_charge(conn, cust):
     keep = cust("Keep Kid", "rns1@reddamnorthshore.nsw.edu.au", "SQK")
     dup = cust("Dup Kid", "rns2@reddamnorthshore.nsw.edu.au", "SQD")
     logic.add_tab_charge(conn, keep, 500, "x", iso(1))
-    logic.add_repayment(conn, dup["id"], 500, "cash", "", "Bru")       # landed on the duplicate: credit, 0 points
-    tools.h_merge(type("R", (), {"session": {}})(), conn, "Bru", {"keep": "Keep Kid", "dup": "Dup Kid"})
+    logic.add_repayment(conn, dup["id"], 500, "cash", "", "Will")       # landed on the duplicate: credit, 0 points
+    tools.h_merge(type("R", (), {"session": {}})(), conn, "Will", {"keep": "Keep Kid", "dup": "Dup Kid"})
     assert logic.tab_ledger(conn, keep["id"])["owing_cents"] == 0
     assert logic.points_balance(conn, keep["id"]) == 500
 
@@ -511,10 +511,10 @@ def test_unpaid_newer_charge_never_counts_as_paid_after_a_write_off_reversal(con
     c = cust()
     logic.add_tab_charge(conn, c, 200, "A", "2026-01-05T01:00:00+00:00")
     b = logic.add_tab_charge(conn, c, 200, "B", "2026-01-06T01:00:00+00:00")
-    logic.add_repayment(conn, c["id"], 200, "writeoff", "x", "Bru", created_at="2026-01-07T01:00:00+00:00")
-    logic.add_repayment(conn, c["id"], 100, "cash", "", "Bru", created_at="2026-01-08T01:00:00+00:00")
+    logic.add_repayment(conn, c["id"], 200, "writeoff", "x", "Will", created_at="2026-01-07T01:00:00+00:00")
+    logic.add_repayment(conn, c["id"], 100, "cash", "", "Will", created_at="2026-01-08T01:00:00+00:00")
     charge_b = conn.execute("SELECT * FROM tab_charges WHERE id = ?", (b,)).fetchone()
-    logic.refund_tab_charge(conn, charge_b, 156, "Bru", "2026-01-09T01:00:00+00:00")
+    logic.refund_tab_charge(conn, charge_b, 156, "Will", "2026-01-09T01:00:00+00:00")
     cc = logic.add_tab_charge(conn, c, 200, "C", "2026-03-05T01:00:00+00:00")
     assert logic.paid_by_money(conn, c["id"])[cc] == 0
 
@@ -533,15 +533,15 @@ def test_money_split_agrees_with_ledger_and_points(conn, cust, seed):
         if op == "charge":
             logic.add_tab_charge(conn, c, rng.randint(50, 600), "x", ts)
         elif op == "cash":
-            logic.add_repayment(conn, c["id"], rng.randint(50, 600), "cash", "", "Bru", created_at=ts)
+            logic.add_repayment(conn, c["id"], rng.randint(50, 600), "cash", "", "Will", created_at=ts)
         elif op == "writeoff" and owing > 0:
-            logic.add_repayment(conn, c["id"], rng.randint(1, owing), "writeoff", "x", "Bru", created_at=ts)
+            logic.add_repayment(conn, c["id"], rng.randint(1, owing), "writeoff", "x", "Will", created_at=ts)
         elif op == "refund_charge":
             rows = conn.execute("SELECT * FROM tab_charges WHERE customer_id = ? AND amount_cents > refunded_cents",
                                 (c["id"],)).fetchall()
             if rows:
                 ch = rng.choice(rows)
-                logic.refund_tab_charge(conn, ch, rng.randint(1, ch["amount_cents"] - ch["refunded_cents"]), "Bru", ts)
+                logic.refund_tab_charge(conn, ch, rng.randint(1, ch["amount_cents"] - ch["refunded_cents"]), "Will", ts)
         elif op == "refund_cash":
             paid = conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM tab_repayments WHERE customer_id = ? "
                                 "AND method != 'writeoff'", (c["id"],)).fetchone()[0]

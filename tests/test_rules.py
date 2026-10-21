@@ -48,9 +48,9 @@ def test_csv_parsing_keeps_only_name_and_email():
 
 def test_import_dry_run_and_search(conn):
     rows, _ = parse_directory_csv("Cleaned Name,Email\nNora Le Fevre,rns1@reddamnorthshore.nsw.edu.au\nNora Zhang,rns2@reddamnorthshore.nsw.edu.au\n")
-    assert import_rows(conn, rows, "Bru", apply=False)["added"] == 2
+    assert import_rows(conn, rows, "Will", apply=False)["added"] == 2
     assert conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 0
-    import_rows(conn, rows, "Bru")
+    import_rows(conn, rows, "Will")
     assert {c["name"] for c in search(conn, "nora")} == {"Nora Le Fevre", "Nora Zhang"}
     assert [c["name"] for c in search(conn, "zhnag")] == ["Nora Zhang"]  # typo tolerant
     assert search(conn, "n le")[0]["name"] == "Nora Le Fevre"
@@ -71,7 +71,7 @@ def test_sale_awards_points_and_unlock_at_30(conn, cust):
 
 def test_tab_charge_repay_points_and_overdue(conn, cust):
     c = cust()
-    logic.set_tab_decision(conn, c["id"], "approved", "good kid", "Bru")
+    logic.set_tab_decision(conn, c["id"], "approved", "good kid", "Will")
     c = reload(conn, c)
     assert square.process_order(conn, tab_order("o1", 400, ts=iso(days_ago=8)))
     assert not square.process_order(conn, tab_order("o1", 400, ts=iso(days_ago=8)))  # idempotent
@@ -92,7 +92,7 @@ def test_tab_charge_repay_points_and_overdue(conn, cust):
 
 def test_limit_breach_is_flagged_but_still_owed(conn, cust):
     c = cust()
-    logic.set_tab_decision(conn, c["id"], "approved", "", "Bru")
+    logic.set_tab_decision(conn, c["id"], "approved", "", "Will")
     c = reload(conn, c)
     logic.add_tab_charge(conn, c, 800, "x", iso())
     logic.add_tab_charge(conn, c, 400, "y", iso())
@@ -119,7 +119,7 @@ def test_refunds_reverse_points_and_tab(conn, cust):
     assert logic.spend_cents(conn, c["id"]) == 400
 
     square.process_order(conn, tab_order("t1", 500, ("Snack", 0), ("Coke", 0)))
-    logic.add_repayment(conn, c["id"], 300, "cash", "", "Bru")
+    logic.add_repayment(conn, c["id"], 300, "cash", "", "Will")
     assert logic.points_balance(conn, c["id"]) == 700
     # Return the snack ($3 of the tab) from the tab sale: owing drops, and since only $2 was
     # still owed, $1 of the earlier repayment is now credit - its points come back off.
@@ -208,7 +208,7 @@ def test_reclassify(conn, cust):
     c = cust()
     square.process_payment(conn, pay("x1", 300, source="CARD"), order("Coke"))
     assert logic.points_balance(conn, c["id"]) == 300
-    square.reclassify(conn, "x1", "tab_charge", "Bru")
+    square.reclassify(conn, "x1", "tab_charge", "Will")
     assert logic.points_balance(conn, c["id"]) == 0
     assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 300
 
@@ -217,8 +217,8 @@ def test_manual_points_need_reason(conn, cust):
     c = cust()
     import pytest
     with pytest.raises(ValueError):
-        logic.adjust_points(conn, c["id"], 100, " ", "Bru")
-    logic.adjust_points(conn, c["id"], -50, "event", "Bru")
+        logic.adjust_points(conn, c["id"], 100, " ", "Will")
+    logic.adjust_points(conn, c["id"], -50, "event", "Will")
     assert logic.points_balance(conn, c["id"]) == -50
     assert logic.spend_cents(conn, c["id"]) == 0  # manual points don't count towards unlock
 
@@ -238,7 +238,7 @@ def test_assign_unlinked_sale_tab_and_repayment(conn, cust):
     square.process_payment(conn, pay("r1", 250, cust=None, order_id="o2"), order(("Tab repayment", 250), oid="o2"))
     assert logic.points_balance(conn, c["id"]) == 0
     for pid in ("s1", "order:o1", "r1"):
-        square.assign_customer(conn, pid, c, "Bru")
+        square.assign_customer(conn, pid, c, "Will")
     led = logic.tab_ledger(conn, c["id"])
     assert led["owing_cents"] == 150                       # 400 tab - 250 repaid
     assert logic.points_balance(conn, c["id"]) == 300 + 250
@@ -251,7 +251,7 @@ def test_assign_moves_split_payment_and_corrects_wrong_customer(conn, cust):
     # Repayment + drink in one sale, but rung up against the wrong person.
     square.process_payment(conn, pay("p1", 700, cust="SQW", order_id="o2"), order(("Tab repayment", 400), ("Coke", 300), oid="o2"))
     assert logic.points_balance(conn, wrong["id"]) == 300   # wrong kid got the drink's points (no tab to repay)
-    square.assign_customer(conn, "p1", right, "Bru")
+    square.assign_customer(conn, "p1", right, "Will")
     assert logic.points_balance(conn, wrong["id"]) == 0
     assert logic.tab_ledger(conn, wrong["id"])["balance_cents"] == 0
     assert logic.tab_ledger(conn, right["id"])["owing_cents"] == 0
@@ -262,7 +262,7 @@ def test_assigning_a_tab_sale_matches_a_hand_added_charge(conn, cust):
     c = cust()
     logic.add_tab_charge(conn, c, 400, "added by hand", iso(), "Mike")
     square.process_order(conn, tab_order("o1", 400, cust=None))
-    square.assign_customer(conn, "order:o1", c, "Bru")
+    square.assign_customer(conn, "order:o1", c, "Will")
     charges = conn.execute("SELECT * FROM tab_charges").fetchall()
     assert len(charges) == 1 and charges[0]["square_payment_id"] == "order:o1"
     assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 400

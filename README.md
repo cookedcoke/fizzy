@@ -459,7 +459,7 @@ thing with **registered devices**:
 | Device | Goes to | What it needs |
 |---|---|---|
 | Registered (e.g. the counter iPad) | `fizzy.cookedcoke.co` | The staff password |
-| Anything else | Automatically sent to `fizzy-remote.cookedcoke.co` | Cloudflare Access (an emailed one-time code for Bru, Mike or Frankie), **then** the staff password |
+| Anything else | Automatically sent to `fizzy-remote.cookedcoke.co` | Cloudflare Access (an emailed one-time code for Will, Mike or Frankie), **then** the staff password |
 
 - **How a device is registered:** it opens a one-time link and gets a secret cookie that
   lasts about a year. The cookie is refreshed each time the device is used.
@@ -560,7 +560,7 @@ blank (`KEY=`) counts as not set and uses its default.
 |---|---|---|
 | `FIZZY_PASSWORD` | *(required)* | The shared staff password |
 | `FIZZY_SECRET_KEY` | *(required)* | Signs login cookies. Changing it signs everyone out |
-| `FIZZY_STAFF` | `Bru,Mike,Frankie` | Names in the "on counter" list |
+| `FIZZY_STAFF` | `Will,Mike,Frankie` | Names in the "on counter" list |
 | `FIZZY_TZ` | `Australia/Sydney` | Time zone for display and due dates |
 | `FIZZY_DB` | `data/fizzy.db` | Database file (Docker: `/data/fizzy.db`) |
 | `FIZZY_BACKUP_DIR` | *(off)* | Daily backup folder (Docker: `/backups`) |

@@ -26,18 +26,18 @@ def test_unregistered_device_is_sent_to_access_host(locked):
 
 def test_access_host_needs_a_valid_access_token(locked, monkeypatch):
     assert locked.get("/login", headers={"host": "access.test"}).status_code == 403
-    monkeypatch.setattr(devices, "verify_access", lambda t: {"email": "bru@example.com"} if t == "ok" else None)
+    monkeypatch.setattr(devices, "verify_access", lambda t: {"email": "will@example.com"} if t == "ok" else None)
     h = {"host": "access.test", "cf-access-jwt-assertion": "ok"}
     assert locked.get("/login", headers=h).status_code == 200
-    locked.post("/login", data={"password": "test-pw", "who": "Bru"}, headers=h)
+    locked.post("/login", data={"password": "test-pw", "who": "Will"}, headers=h)
     assert locked.get("/", headers=h).status_code == 200
     conn = db.connect(config.DB_PATH)
-    assert conn.execute("SELECT details FROM audit_log WHERE action = 'login'").fetchone()[0] == "via bru@example.com"
+    assert conn.execute("SELECT details FROM audit_log WHERE action = 'login'").fetchone()[0] == "via will@example.com"
 
 
 def test_register_then_revoke_a_device(locked):
     conn = db.connect(config.DB_PATH)
-    link = devices.create_link(conn, "Counter iPad", "Bru")
+    link = devices.create_link(conn, "Counter iPad", "Will")
     conn.commit()
     path = link.split("testserver")[1]
     assert "Counter iPad" in locked.get(path).text               # confirm page; GET doesn't use the link up
@@ -56,7 +56,7 @@ def test_register_then_revoke_a_device(locked):
 
 def test_expired_link(locked):
     conn = db.connect(config.DB_PATH)
-    link = devices.create_link(conn, "Old", "Bru")
+    link = devices.create_link(conn, "Old", "Will")
     conn.execute("UPDATE device_links SET expires_at = '2000-01-01T00:00:00+00:00'")
     conn.commit()
     assert locked.get(link.split("testserver")[1]).status_code == 410
