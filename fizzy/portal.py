@@ -1,7 +1,7 @@
 """Customer portal: students look up their own points, tab and rewards.
 
-Staff set a passcode for a student at the stall (the student types it on the counter device),
-which is how we know the passcode belongs to the right person. The student then signs in on the
+Staff set a passcode for a student at the stall (staff type it in, once), which is how we know
+the passcode belongs to the right person. The student then signs in on the
 public host (FIZZY_PUBLIC_HOST, e.g. my.cookedcoke.co) with their name or student number and
 that passcode. The public host only serves these pages; everything staff-side is 404 there.
 
@@ -14,7 +14,7 @@ import secrets
 import time
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.concurrency import run_in_threadpool
+import anyio
 from fastapi.responses import RedirectResponse
 
 from . import config, logic, rewards
@@ -23,15 +23,17 @@ from .web import get_conn, staff, templates
 
 router = APIRouter()
 
-PASSCODE_MIN = 6
+PASSCODE_MIN = 4
 PASSCODE_MAX = 64
 SESSION_HOURS = 12                 # signed in this long at most, then sign in again
 FAIL_WINDOW = 900
 LIMIT_PER_NAME = 5                 # wrong passcodes per name per 15 minutes
 LIMIT_PER_IP = 20                  # per network per 15 minutes
-LIMIT_ALL = 200                    # everyone together: stops one passcode being tried against every name
+MAX_IN_FLIGHT = 8                  # sign-ins being checked at once; more get "busy" (scrypt is slow on purpose)
 FAIL_DELAY = 1
 _fails = {}
+_in_flight = 0
+_scrypt_slots = None               # its own small thread limiter, so a flood can't starve the staff pages
 
 # ---- passcodes --------------------------------------------------------------------------------
 
@@ -53,24 +55,18 @@ def check_passcode(passcode, stored):
     return bool(stored) and hmac.compare_digest(got, digest)
 
 
-def passcode_problem(passcode, customer):
-    """Why a passcode isn't allowed, or None."""
+def passcode_problem(passcode):
+    """Why a passcode isn't allowed, or None. Deliberately relaxed: staff type it in for the student."""
     if len(passcode) < PASSCODE_MIN:
         return f"Passcode must be at least {PASSCODE_MIN} characters."
     if len(passcode) > PASSCODE_MAX:
         return f"Passcode can be at most {PASSCODE_MAX} characters."
-    low = passcode.lower()
-    if len(set(low)) == 1 or low in "0123456789012345678909876543210" or low in "abcdefghijklmnopqrstuvwxyz":
-        return "That passcode is too easy to guess - pick something less obvious."
-    if low in (customer["email"].split("@")[0].lower(), _norm(customer["name"]).replace(" ", "")):
-        return "Don't use the student number or name as the passcode."
     return None
 
 
-def set_passcode(conn, customer, passcode, confirm, staff_name):
-    if passcode != confirm:
-        raise ValueError("The two passcodes don't match.")
-    problem = passcode_problem(passcode, customer)
+def set_passcode(conn, customer, passcode, staff_name):
+    passcode = passcode.strip()
+    problem = passcode_problem(passcode)
     if problem:
         raise ValueError(problem)
     conn.execute("UPDATE customers SET passcode_hash = ?, passcode_set_at = ? WHERE id = ?",
@@ -100,9 +96,9 @@ def candidates(conn, who):
     return [r for r in rows if _norm(r["name"]) == who or r["email"].split("@")[0].lower() == who]
 
 
-def authenticate(conn, who, passcode):
+def authenticate(conn, who, passcode, found_candidates=None):
     found = None
-    for c in candidates(conn, who) or [None]:
+    for c in (candidates(conn, who) if found_candidates is None else found_candidates) or [None]:
         if check_passcode(passcode, c["passcode_hash"] if c else None) and found is None:
             found = c
     return found
@@ -116,7 +112,7 @@ def _buckets(request, who):
     ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
     if ":" in ip:
         ip = ":".join(ip.split(":")[:4]) + "::/64"
-    return [(("name", _norm(who)), LIMIT_PER_NAME), (("ip", ip), LIMIT_PER_IP), (("all", "*"), LIMIT_ALL)]
+    return [(("name", _norm(who)), LIMIT_PER_NAME), (("ip", ip), LIMIT_PER_IP)]
 
 
 def _session_marker(customer):
@@ -166,22 +162,39 @@ def home(request: Request, conn=Depends(get_conn)):
 
 @router.post("/me/login")
 async def login(request: Request, who: str = Form(""), passcode: str = Form(""), conn=Depends(get_conn)):
+    global _in_flight, _scrypt_slots
     now = time.time()
-    buckets = _buckets(request, who)
+    found = candidates(conn, who)
+    # Limited per typed name, per network, and per account (a name and a student number are the
+    # same account, so they share one allowance).
+    buckets = _buckets(request, who) + [(("acct", c["id"]), LIMIT_PER_NAME) for c in found]
     if any(len(_recent(k, now)) >= limit for k, limit in buckets):
         return _page(request, "me_login.html", who=who, live=rewards.active(conn),
                      error="Too many tries. Wait 15 minutes and try again.")
-    c = await run_in_threadpool(authenticate, conn, who, passcode[:PASSCODE_MAX])   # scrypt is slow on purpose
+    if _in_flight >= MAX_IN_FLIGHT:
+        return _page(request, "me_login.html", who=who, live=rewards.active(conn),
+                     error="Lots of people are signing in right now. Try again in a moment.")
+    # Count the attempt before checking it, so a burst of parallel guesses can't all get past
+    # the limits before the first one fails. Taken back off if it turns out to be right.
+    for k, _ in buckets:
+        _fails[k] = _recent(k, now) + [now]
+    if len(_fails) > 5000:
+        for k in [k for k, v in _fails.items() if not v or v[-1] < now - FAIL_WINDOW]:
+            del _fails[k]
+    _scrypt_slots = _scrypt_slots or anyio.CapacityLimiter(2)
+    _in_flight += 1
+    try:
+        c = await anyio.to_thread.run_sync(authenticate, conn, who, passcode.strip()[:PASSCODE_MAX], found,
+                                           limiter=_scrypt_slots)
+    finally:
+        _in_flight -= 1
     if c is None:
-        for k, _ in buckets:
-            _fails[k] = _recent(k, now) + [now]
-        if len(_fails) > 5000:
-            for k in [k for k, v in _fails.items() if not v or v[-1] < now - FAIL_WINDOW]:
-                del _fails[k]
         await asyncio.sleep(FAIL_DELAY)
         return _page(request, "me_login.html", who=who, live=rewards.active(conn),
                      error="That name and passcode don't match. No passcode yet? Ask at the Cooked Coke stall.")
-    _fails.pop(buckets[0][0], None)
+    for k, _ in buckets:
+        if k[0] != "ip" and now in _fails.get(k, []):
+            _fails[k].remove(now)
     request.session["me"] = {"id": c["id"], "v": _session_marker(c), "at": int(now)}
     return RedirectResponse(_url("/"), status_code=303)
 
@@ -221,8 +234,8 @@ def activity(conn, customer_id, limit=15):
 
 # ---- leaderboard ------------------------------------------------------------------------------
 # Ranked by points *earned* (not the balance), so spending points on a reward doesn't drop anyone
-# down the board. Names are shortened to first name + last initial, and it's only shown to
-# signed-in students - never to the open internet.
+# down the board. Only students with a passcode (who signed up at the stall) are on it, names
+# are shortened to first name + last initial, and it's only shown to signed-in students.
 
 def short_name(name):
     parts = name.split()
@@ -233,6 +246,7 @@ def leaderboard(conn, since=None, limit=10, me=None):
     rows = conn.execute(
         "SELECT c.id, c.name, SUM(p.delta) AS pts FROM points_ledger p JOIN customers c ON c.id = p.customer_id "
         "WHERE p.reason NOT IN ('redeem', 'redeem_undo') AND c.archived_at IS NULL AND c.merged_into IS NULL "
+        "AND c.passcode_hash IS NOT NULL "
         "AND p.created_at >= ? GROUP BY c.id HAVING pts > 0 ORDER BY pts DESC, MIN(p.created_at)",
         (since or "",)).fetchall()
     board, my_rank, rank, prev = [], None, 0, None
@@ -255,8 +269,7 @@ def month_start():
 # ---- staff side -------------------------------------------------------------------------------
 
 @router.post("/customers/{cid}/passcode")
-def staff_set_passcode(request: Request, cid: int, passcode: str = Form(""), confirm: str = Form(""),
-                       remove: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+def staff_set_passcode(request: Request, cid: int, passcode: str = Form(""), remove: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
     c = conn.execute("SELECT * FROM customers WHERE id = ?", (cid,)).fetchone()
     if c is None:
         raise HTTPException(404)
@@ -265,7 +278,7 @@ def staff_set_passcode(request: Request, cid: int, passcode: str = Form(""), con
         msg = "Passcode removed - they can't sign in to the student site until a new one is set."
     else:
         try:
-            set_passcode(conn, c, passcode, confirm, who)
+            set_passcode(conn, c, passcode, who)
         except ValueError as e:
             request.session["flash"] = str(e)
             return RedirectResponse(f"/customers/{cid}", status_code=303)

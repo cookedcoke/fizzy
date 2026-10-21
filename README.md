@@ -277,16 +277,19 @@ Students can check their own **points, rewards, tab and recent activity**, plus 
 **leaderboard**, on their phone. It's read-only: nothing they do there changes anything.
 
 **Setting a passcode (at the stall only).** On the customer's page, open **Student site
-passcode**, hand them the device, and they type a passcode twice (at least 6 characters; not
-too obvious, not their name or student number). That's how Fizzy knows the passcode belongs
-to them. To change it, they set a new one at the stall. **Remove** turns their sign-in off.
+passcode**, ask them what they'd like, and type it in once (at least 4 characters). It's a
+convenience, not a vault, so tell them not to reuse a password from anywhere else. Setting it
+in person is how Fizzy knows it's theirs. Fizzy still stores it hashed, so it can't be read
+back - if they forget it, just set a new one. To change it, they ask at the stall. **Remove** turns their sign-in off.
 There's no "forgot passcode" or sign-up online, on purpose: nobody can take over someone
 else's account from home.
 
 **Signing in.** On the student site they enter their **full name** (or student number) and
 passcode. Names must match exactly (no fuzzy search), and a wrong name and a wrong passcode
 get the same answer, so the site can't be used to find out who's a customer. After 5 wrong
-tries a name is locked for 15 minutes. Sessions last 12 hours; setting a new passcode or
+tries an account is locked for 15 minutes (name and student number count together), and each
+network gets 20 tries. Only a few sign-ins are checked at once, so a flood of guesses can't
+slow down the staff side. Sessions last 12 hours; setting a new passcode or
 removing it signs them out everywhere.
 
 **What they see:**
@@ -295,8 +298,9 @@ removing it signs them out everywhere.
   spend to unlock one;
 - recent activity in plain words (staff notes and names are never shown);
 - **Leaderboard**, this month and all time, ranked by points *earned* (redeeming rewards
-  doesn't drop you down). Names are shortened to first name + last initial, e.g. *Nora F.*,
-  and it's only shown to signed-in students. Everyone also sees their own rank.
+  doesn't drop you down). Only students with a passcode are on it - getting one is opting
+  in. Names are shortened to first name + last initial, e.g. *Nora F.*, and it's only shown
+  to signed-in students. Everyone also sees their own rank.
 
 Before signing in, anyone can see the list of rewards that are on, and nothing else.
 
@@ -305,7 +309,8 @@ Before signing in, anyone can see the list of rewards that are on, and nothing e
    `http://fizzy:8000`. Don't put Cloudflare Access in front of it.
 2. Set `FIZZY_PUBLIC_HOST=my.cookedcoke.co` in `.env`, then `docker compose up -d`.
 
-That host only serves the student pages; every staff page is "not found" there, and it
+The sign-in limits use the visitor address Cloudflare passes on (`CF-Connecting-IP`), so
+keep the student site behind the tunnel. That host only serves the student pages; every staff page is "not found" there, and it
 isn't affected by the device lock. Without `FIZZY_PUBLIC_HOST`, the student pages are at
 `/me` on the staff site (handy for trying it out, but behind the device lock if that's on).
 
@@ -676,8 +681,9 @@ Most customers are under 18, so Fizzy keeps the minimum:
 - **Not stored:** year group, phone numbers, addresses, or anything else in the school CSV.
 - **Who can see it:** staff with the password (optionally only from registered devices or
   through Cloudflare Access). Each student can see their own points, tab and activity on the
-  student site, once staff set a passcode for them at the stall. Other students only ever
-  see them as *first name + last initial* with points earned, on the leaderboard.
+  student site, once staff set a passcode for them at the stall. Other signed-in students
+  see them only as *first name + last initial* with points earned, on the leaderboard, and
+  only if they have a passcode.
 - **Passcodes** are stored hashed (scrypt), never in plain text, and never in the logs.
 - **Never committed to git:** `.env`, the database, backups and CSVs (see `.gitignore`).
 - **Leaving school:** archive them (Tools → Archive many). Their history stays for the

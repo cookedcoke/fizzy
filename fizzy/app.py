@@ -146,7 +146,7 @@ def create_app(background=True):
         """The student site's host serves only the student pages (and static files): its paths
         map onto /me, so no staff page is reachable there. With a student host set, /me isn't
         served on the staff hosts. Added last, so it runs before the device gate."""
-        host = (request.headers.get("host") or "").split(":")[0].lower()
+        host = (request.headers.get("host") or "").split(":")[0].strip().rstrip(".").lower()
         path = request.url.path
         if config.PUBLIC_HOST and host == config.PUBLIC_HOST:
             if path == "/robots.txt":

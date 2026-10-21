@@ -19,7 +19,7 @@ def setup_student(client, name="Nora Le Fevre", sid="rns5", points=1500):
     cid = client.get("/api/index").json()[-1]["id"]
     if points:
         client.post(f"/customers/{cid}/points", data={"delta": str(points), "note": "staff-only note xyz"})
-    r = client.post(f"/customers/{cid}/passcode", data={"passcode": PC, "confirm": PC})
+    r = client.post(f"/customers/{cid}/passcode", data={"passcode": PC})
     assert "Passcode set" in r.text
     return cid
 
@@ -30,17 +30,14 @@ def me_login(client, who, pc=PC):
 
 def test_passcode_rules(conn, cust):
     c = cust(name="Nora Le Fevre", email="rns5@reddamnorthshore.nsw.edu.au")
-    for bad, msg in [("12345", "at least 6"), ("111111", "too easy"), ("123456", "too easy"), ("abcdef", "too easy"),
-                     ("rns5", "at least"), ("norale fevre".replace(" ", ""), "name")]:
-        assert msg in (portal.passcode_problem(bad, c) or ""), bad
-    assert portal.passcode_problem(PC, c) is None
-    with pytest.raises(ValueError, match="don't match"):
-        portal.set_passcode(conn, c, PC, PC + "x", "Will")
-    portal.set_passcode(conn, c, PC, PC, "Will")
+    assert "at least 4" in portal.passcode_problem("123")
+    assert "at most" in portal.passcode_problem("x" * 65)
+    assert portal.passcode_problem("1234") is None                    # relaxed on purpose: staff type it in
+    portal.set_passcode(conn, c, "  1234 ", "Will")                    # stray spaces ignored
     stored = conn.execute("SELECT passcode_hash FROM customers").fetchone()[0]
-    assert stored.startswith("scrypt$") and PC not in stored
-    assert portal.check_passcode(PC, stored) and not portal.check_passcode("nope-nope", stored)
-    assert PC not in str([tuple(r) for r in conn.execute("SELECT * FROM audit_log")])
+    assert stored.startswith("scrypt$") and "1234" not in stored
+    assert portal.check_passcode("1234", stored) and not portal.check_passcode("1235", stored)
+    assert "1234" not in str([tuple(r) for r in conn.execute("SELECT * FROM audit_log")])
 
 
 def test_student_signs_in_and_sees_only_their_own_stats(client):
@@ -82,7 +79,7 @@ def test_too_many_wrong_tries_locks_that_name(client):
 def test_new_passcode_signs_out_old_sessions_and_remove_blocks(client):
     cid = setup_student(client)
     assert "Hi Nora" in me_login(client, "Nora Le Fevre").text
-    client.post(f"/customers/{cid}/passcode", data={"passcode": "new-code-99", "confirm": "new-code-99"})
+    client.post(f"/customers/{cid}/passcode", data={"passcode": "new-code-99"})
     assert "See my stats" in client.get("/me").text                  # old session gone
     assert "Hi Nora" in me_login(client, "Nora Le Fevre", "new-code-99").text
     client.post(f"/customers/{cid}/passcode", data={"remove": "1"})
@@ -124,9 +121,11 @@ def test_leaderboard(conn, cust):
     a = cust(name="Nora Le Fevre", email="rns1@x", sq="A")
     b = cust(name="Hugo Williams", email="rns2@x", sq="B")
     c = cust(name="Cher", email="rns3@x", sq="C")
+    d = cust(name="Not Signedup", email="rns4@x", sq="D")
+    conn.execute("UPDATE customers SET passcode_hash = 'x' WHERE id != ?", (d["id"],))
     ts = db.now_iso()
     for cid, pts, reason in [(a["id"], 500, "purchase"), (b["id"], 900, "purchase"), (b["id"], -800, "redeem"),
-                             (c["id"], 500, "purchase")]:
+                             (c["id"], 500, "purchase"), (d["id"], 9999, "purchase")]:
         conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
                      (cid, pts, reason, ts))
     board, mine = portal.leaderboard(conn, me=a["id"], limit=2)
@@ -146,11 +145,43 @@ def test_merge_carries_the_passcode(client):
     assert "name and passcode don" in me_login(client, "Kim Dup").text
 
 
-def test_spraying_one_passcode_across_names_hits_the_overall_cap(client, monkeypatch):
+def test_parallel_guesses_cant_skip_the_limits(client, monkeypatch):
+    import asyncio
+
+    import httpx
+    setup_student(client)
+    monkeypatch.setattr(portal, "FAIL_DELAY", 0)
+
+    async def burst():
+        transport = httpx.ASGITransport(app=client.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            reqs = [ac.post("/me/login", data={"who": "Nora Le Fevre", "passcode": f"wrong-{i}"}) for i in range(30)]
+            reqs.append(ac.post("/me/login", data={"who": "Nora Le Fevre", "passcode": PC}))
+            return await asyncio.gather(*reqs)
+    rs = asyncio.run(burst())
+    tried = sum("name and passcode don" in r.text for r in rs)
+    assert tried <= portal.LIMIT_PER_NAME                               # the rest were refused before checking
+    assert rs[-1].status_code != 303                                    # the right one, late in the burst, didn't get in
+
+
+def test_name_and_student_number_share_one_allowance(client, monkeypatch):
     setup_student(client)
     client.post("/logout")
     monkeypatch.setattr(portal, "FAIL_DELAY", 0)
-    monkeypatch.setattr(portal, "LIMIT_ALL", 3)
-    for i in range(3):
-        me_login(client, f"Someone {i}", "guess-1234", )
-    assert "Too many tries" in me_login(client, "Nora Le Fevre").text
+    for i in range(portal.LIMIT_PER_NAME):
+        me_login(client, "Nora Le Fevre" if i % 2 else "rns5", "wrong-one")
+    assert "Too many tries" in me_login(client, "RNS5").text
+
+
+def test_right_passcode_doesnt_use_up_the_allowance(client, monkeypatch):
+    setup_student(client)
+    monkeypatch.setattr(portal, "FAIL_DELAY", 0)
+    for _ in range(portal.LIMIT_PER_NAME + 2):
+        assert "Hi Nora" in me_login(client, "Nora Le Fevre").text
+        client.post("/me/logout")
+
+
+def test_trailing_dot_host_is_still_the_public_host(client, monkeypatch):
+    login(client)
+    monkeypatch.setattr(config, "PUBLIC_HOST", "my.example")
+    assert client.get("/api/index", headers={"host": "my.example."}).status_code == 404
