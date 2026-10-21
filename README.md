@@ -635,3 +635,6 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
 ## License
 
 [MIT](LICENSE) © 2026 Cooked Coke Co.
+
+The MIT licence covers the code. The Cooked Coke Co. name and logo (`fizzy/static/logo.svg`,
+the favicons) are the business's own branding and aren't included in that licence.

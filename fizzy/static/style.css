@@ -25,7 +25,7 @@ header {
   padding: 0 var(--s4); height: 48px; position: sticky; top: 0; z-index: 20;
 }
 header .brand { display: flex; align-items: center; gap: 9px; color: #fff; text-decoration: none; flex: none }
-header .brand svg { width: 24px; height: 24px; display: block }
+header .brand img { width: 26px; height: 26px; display: block }
 header .brand span { font-weight: 700; font-size: 15px; letter-spacing: .01em }
 header .brand small { color: #8B919B; font-weight: 400; font-size: 12px; margin-left: 2px }
 header nav { display: flex; overflow-x: auto; scrollbar-width: none; min-width: 0 }
@@ -201,7 +201,7 @@ details.tool.danger > summary > span:first-child { color: var(--red-ink) }
 /* ---- login ---- */
 .login { max-width: 360px; margin: 10vh auto 0 }
 .login .mark { display: flex; align-items: center; gap: 10px; margin-bottom: var(--s5) }
-.login .mark svg { width: 34px; height: 34px }
+.login .mark img { width: 40px; height: 40px }
 .login .mark b { font-size: 22px; display: block; line-height: 1.1 }
 .login .mark span { color: var(--muted); font-size: 13px }
 .login .panel { padding: var(--s5) }
