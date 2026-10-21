@@ -37,13 +37,19 @@ their tab?*
    - **Green tick:** they can, up to the amount shown.
    - **Red cross:** no (overdue, rejected, revoked, or at the limit). The line underneath says why.
    - **Grey dash:** not yet (hasn't spent $30, waiting for approval, or tabs are paused).
-3. If green: on the Terminal, attach their profile, then pay with **Other Payment Types**.
-   Fizzy adds it to their tab automatically.
+3. If green: on the Terminal, ring up the items, **attach their profile**, apply the **Fizzy
+   Tab** discount, and complete the $0 sale. Fizzy adds it to their tab automatically.
+   - Only part of it on the tab? Apply the discount to just those items and charge the rest
+     as normal.
 
 **Someone pays off their tab**
-1. Open them in Fizzy and press `R`. The amount is pre-filled with what they owe.
-2. Pick **Cash** or **PayID**, then press `Enter`.
-3. **Don't ring repayments through Square** (see [why](#repayments-fizzy-only)).
+1. On the Terminal: **attach their profile**, add the **Tab repayment** item, and type the
+   amount (their Fizzy page shows what they owe).
+2. Take **cash, card, or Other for PayID**. They can buy something in the same sale too.
+   Fizzy splits it: the repayment pays off the tab, and the rest is a normal sale with points.
+3. Fizzy records the repayment automatically. There's nothing to do in Fizzy.
+4. Money that doesn't go through Square (rare) can be recorded on the customer's page under
+   **Record without Square**.
 
 **Who's on the counter**: the name in the top-right is recorded against everything you do.
 Switch it with `W` or the dropdown. **Lock** signs the device out.
@@ -81,7 +87,7 @@ Switch it with `W` or the dropdown. **Lock** signs the device out.
   customer's page as a "late payment on record", even after it's cleared.
 - **Refunds and exchanges** in Square are reversed automatically:
   - a refunded sale loses its points;
-  - a refunded tab sale reduces what's owed;
+  - items returned from a tab sale reduce what's owed;
   - if they'd already repaid those items, the points from the repayment come off.
 - **Rule breaks are flagged, not blocked.** Square can't stop a tab sale. So if someone
   not allowed, over the limit or overdue gets one anyway, it's still recorded as owing and
@@ -92,20 +98,58 @@ Switch it with `W` or the dropdown. **Lock** signs the device out.
 ## 3. How Square and Fizzy fit together
 
 ```
-Square Terminal ── sale (customer attached) ──────────► Fizzy: points
-                ── "Other Payment Types" (attached) ──► Fizzy: tab charge, due in 7 days
-                ── refund ────────────────────────────► Fizzy: reverses the above
-Fizzy ───────────── repayment (cash / PayID) ─────────► stays in Fizzy only
+Square Terminal ── sale (customer attached) ───────────────► Fizzy: points
+                ── sale with "Fizzy Tab" discount ─────────► Fizzy: tab charge, due in 7 days
+                ── "Tab repayment" item (cash/card/PayID) ─► Fizzy: repayment + points
+                ── refund / return ────────────────────────► Fizzy: reverses the above
 ```
 
 Fizzy reads Square through its API: webhooks for near-instant updates, plus polling every
-5 minutes as a safety net. It never changes anything in Square.
+5 minutes as a safety net. It never changes anything in Square. **Everything goes through
+Square**, so Square's reports and the till always match.
 
-### Tab sales: "Other Payment Types" is the tab button
+### Tab sales: the "Fizzy Tab" discount
 
-Square in Australia doesn't let you rename the **Other Payment Types** tender. So **Other is
-reserved for tabs**, and Fizzy treats every Other payment as a tab charge. Don't use Other
-for anything else.
+A tab sale is rung up normally with a **100% discount called "Fizzy Tab"**, so Square records
+a **$0 sale**: the items, the customer, and a discount equal to their price.
+
+- **Fizzy:** sees the discount and puts that amount on the customer's tab.
+- **Inventory:** Square counts the stock as sold.
+- **Paying part now:** apply the discount to only some items. The discounted part goes on
+  the tab, and what's paid is a normal sale with points.
+- **Customer names:** you name the discount, so nothing else in Square gets mistaken for a
+  tab, and **Other Payment Types** is free to use for PayID.
+
+Fizzy finds these sales through Square's order history, because a $0 sale has no payment.
+
+### Repayments: the "Tab repayment" item
+
+Paying off a tab is a normal Square sale of a custom-amount item called **Tab repayment**, by
+cash, card or Other (PayID). Fizzy records it as a repayment, oldest charge first, and gives
+the points then. If the same sale also has other items, Fizzy splits it: the repayment part
+pays the tab, and the rest is a normal sale.
+
+### How the money adds up
+
+Each dollar is counted in Square's **net sales** exactly once, when it's actually paid:
+
+| When | Square shows | Net sales |
+|---|---|---|
+| $3 Coke on the tab | Coke $3, Fizzy Tab discount −$3 | $0 |
+| Tab paid off | Tab repayment $3 (cash/card/PayID) | $3 |
+| **Total** | | **$3** |
+
+- **Net sales and money collected** are right: the till and the bank match Square.
+- **Gross sales** include both the Coke and the repayment ($6 here), because Square counts
+  an item's full price before discounts. Use **net** sales for takings.
+- **The "Fizzy Tab" discount total** in Square's reports is what went on tabs in that period.
+- **Tabs never repaid** never become sales in Square. They show in Fizzy as owing, or as
+  written off.
+- **Item reports** show the Coke when it was sold (at $0 net), and the money arrives later as
+  "Tab repayment".
+- **GST:** if Cooked Coke Co. is ever registered for GST, check the GST setting on the Tab
+  repayment item with whoever does the books. (Below $75,000 a year, registration is
+  optional.)
 
 ### Why not Square House Accounts?
 
@@ -115,43 +159,17 @@ system, and it doesn't suit this:
 | | Square House Accounts | Fizzy tabs |
 |---|---|---|
 | Setup | An account created by hand for each customer in Square (no way to bulk-create them) | Everyone is imported once; staff approve with one click |
-| Collecting money | Square sends invoices, paid by card, bank or card on file. Square's House Accounts page says outstanding balances can't be paid at the point of sale | Cash or PayID at the counter |
+| Collecting money | Square sends invoices, paid by card, bank or card on file. Square's House Accounts page says outstanding balances can't be paid at the point of sale | Cash, card or PayID at the counter |
 | Overdue | Square sends reminders; you lock accounts by hand | Blocked automatically until paid, with a permanent late record |
 | Points, the $30 rule, approvals | None | Built in |
 | Your experience | It's the invoice flow you already shut down because people paid late | Built around a 7-day, $10 counter tab |
 
 House Account suits a business billing regular adult customers monthly. For students paying
-a few dollars back at the counter, it's the wrong tool. If someone taps it by mistake, Fizzy
-still counts it as a tab charge (`SQUARE_TAB_TENDERS` includes it). Then you'd have to clear
-it in Square too, so it's best to leave House Account disabled.
+a few dollars back at the counter, it's the wrong tool, so leave it disabled.
 
 Sources: [Square help: House Accounts](https://squareup.com/help/us/en/article/8034-create-and-charge-square-house-accounts),
 [Square House Accounts for retail](https://squareup.com/us/en/house-accounts/retail),
 [Square developer docs](https://developer.squareup.com/docs/payments-api/take-payments/house-accounts).
-
-### Repayments: Fizzy only
-
-The sale was already recorded in Square once (paid with Other). Ringing the repayment through
-Square as well would count the same money as a **second sale** in Square's reports. So
-repayments are recorded in Fizzy only.
-
-How the money adds up at the end of the day:
-
-| Figure | Where | What it is |
-|---|---|---|
-| Gross sales | Square | Correct: every sale appears once, tab sales included |
-| "Other" tender total | Square | What went **on tabs**. Not money in hand |
-| Cash and card | Square | Money collected at the till for normal sales |
-| Tab repayments | Fizzy (Tools → Takings summary) | Money collected for tabs: cash in the till, PayID in the bank |
-
-**Money actually collected = Square cash and card + Fizzy repayments.**
-
-Take repayments as **cash or PayID**. A card repayment can only go through Square, which
-would double-count the sale. If one ever has to happen, record it in Fizzy as *Card* and
-allow for it when reconciling.
-
-(`SQUARE_REPAYMENT_ITEM` makes Fizzy recognise repayments rung up in Square as an item. It's
-off by default for the reason above.)
 
 ### Customers in Square
 
@@ -166,6 +184,15 @@ attention**.
 On the **Square** page, every payment has a **Counted as** dropdown (Sale / Tab charge /
 Tab repayment). Changing it undoes what Fizzy did with that payment and redoes it the new
 way, including any refunds. **Raw** shows exactly what Square sent.
+
+- **Forgot the discount**, so a tab sale was charged as a normal sale: refund it in Square
+  and ring it up again with the discount. Or, if the money really wasn't paid, use
+  **Tools → Add tab charge by hand**.
+- **Forgot to attach the customer:** the sale shows under **Needs attention**. Paste the
+  customer's Square ID into their **Edit customer** box, or use **Counted as**.
+- **Repayment recorded twice:** Fizzy refuses a hand-entered repayment that matches one
+  already rung up in Square in the last 24 hours. If it really is a second payment, tick
+  *This is a separate payment*.
 
 ---
 
@@ -302,12 +329,18 @@ newer list adds new students and updates changed names, and never deletes anyone
 2. Square Dashboard → Customers → Import customers → upload it.
 3. On the next sync, Fizzy links each Square profile back to its Fizzy customer.
 
-### 7.4 Square payment types
+### 7.4 Square: the discount, the item, and payment types
+
+In the Square Dashboard → Items:
+
+1. **Discounts → Create discount:** name **Fizzy Tab**, **100%**, applied manually. (Fizzy
+   matches any discount whose name contains "fizzy tab".)
+2. **Items → Create item:** name **Tab repayment**, variable price (entered at checkout), not
+   tracked in inventory. The name must be exactly that.
 
 Square app → Settings → Checkout → Payment types:
-- **Other Payment Types**: enabled. This is the tab button.
+- **Other Payment Types**: use it for **PayID** repayments and sales.
 - **House Account**: leave disabled ([why](#why-not-square-house-accounts)).
-- **Invoice**: your call. Fizzy treats invoice payments as normal sales.
 
 ### 7.5 Square API access
 
@@ -318,25 +351,36 @@ Square app → Settings → Checkout → Payment types:
 |---|---|---|
 | Access token | Credentials | `SQUARE_ACCESS_TOKEN` |
 | Location ID | Locations | `SQUARE_LOCATION_ID` |
-| Webhook (optional) | Webhooks → Add subscription. URL `https://fizzy.cookedcoke.co/square/webhook`; events `payment.created`, `payment.updated`, `refund.created`, `refund.updated`, `customer.created`, `customer.updated` | Signature key → `SQUARE_WEBHOOK_SIGNATURE_KEY` |
+| Webhook (optional) | Webhooks → Add subscription. URL `https://fizzy.cookedcoke.co/square/webhook`; events `order.created`, `order.updated`, `payment.created`, `payment.updated`, `refund.created`, `refund.updated`, `customer.created`, `customer.updated` | Signature key → `SQUARE_WEBHOOK_SIGNATURE_KEY` |
 
-The token needs read access to Payments, Orders and Customers. Fizzy never writes to Square.
+The token needs read access to Payments, Orders, Customers and Merchant profile (locations).
+Fizzy never writes to Square.
 
 `SQUARE_SYNC_FROM=YYYY-MM-DD` sets how far back the **first** sync reaches. Use it to give
 points for sales made before Fizzy existed; otherwise it starts from the day before.
 
 ### 7.6 Test before going live
 
-With a real customer attached each time:
+Square doesn't document everything about $0 sales, so test this once on the real Terminal,
+with a real customer attached each time. After each step, open Fizzy's **Square** page and
+press **Sync now**.
 
-1. A 50c **cash** sale → on Fizzy's **Square** page, **Sync now** → it shows as *Sale* and
-   the customer has 50 points.
-2. A 50c **Other Payment Types** sale → shows as *Tab charge*, and the customer owes $0.50.
-3. Refund both in Square → sync → points and tab go back to zero.
-4. Record a 50c **repayment** in Fizzy on a third test → owing goes to $0 and points go up.
+1. **Normal sale:** 50c cash. It shows as *Sale*, and the customer gets 50 points.
+2. **Tab sale:** a 50c item with the **Fizzy Tab** discount. Check the Terminal lets you
+   complete a $0 sale with a customer attached. It shows as *Tab charge* with tender
+   "Fizzy Tab discount", and the customer owes $0.50.
+3. **Part tab:** two 50c items, the discount on one only, and 50c paid by card. The customer
+   owes another $0.50, and the paid part gives 50 points.
+4. **Repayment by card:** a **Tab repayment** of $1.00, paid by card. Owing goes to $0, and
+   points go up by 100.
+5. **Repayment plus a purchase:** a 50c tab sale first, then a Tab repayment of 50c plus a
+   50c item in one cash sale. Fizzy shows two rows: *Tab repayment* 50c and *Sale* 50c.
+6. **Return from a tab sale:** return the item from step 2 in Square. The tab drops by 50c.
+7. **Refund a normal sale:** refund step 1. The 50 points come off.
 
-If step 2 shows as *Sale*, open **Raw** on that payment and check `source_type`. Add that
-value to `SQUARE_TAB_TENDERS` and restart.
+If step 2 doesn't appear at all, open **Raw** on a nearby payment and check whether Square
+recorded the $0 sale. If the Terminal won't complete a $0 sale, tell Claude: the fallback is
+**Other Payment Types** as the tab button (`SQUARE_TAB_TENDERS=EXTERNAL`).
 
 ---
 
@@ -428,13 +472,14 @@ All configuration is environment variables, in `.env`. Never commit `.env`.
 | `FIZZY_SECURE_COOKIES` | `1` | Set `0` only for plain `http://localhost` testing |
 | `SQUARE_ACCESS_TOKEN` | *(off)* | Square production access token. Without it, nothing syncs |
 | `SQUARE_ENVIRONMENT` | `production` | `sandbox` for Square's test environment |
-| `SQUARE_LOCATION_ID` | *(all)* | Only read payments from this location |
+| `SQUARE_LOCATION_ID` | *(all)* | Only read this location's sales |
 | `SQUARE_WEBHOOK_SIGNATURE_KEY` | *(off)* | Turns on webhooks |
 | `SQUARE_WEBHOOK_URL` | `https://fizzy.cookedcoke.co/square/webhook` | Must exactly match the URL in Square, or signatures fail |
 | `SQUARE_POLL_SECONDS` | `300` | How often to poll Square |
 | `SQUARE_SYNC_FROM` | *(1 day back)* | `YYYY-MM-DD`: how far back the first sync reaches |
-| `SQUARE_TAB_TENDERS` | `EXTERNAL,SQUARE_ACCOUNT` | Square payment types that mean "on the tab" (Other Payment Types, House Account) |
-| `SQUARE_REPAYMENT_ITEM` | *(off)* | Item name that marks a Square sale as a tab repayment. Leave off |
+| `SQUARE_TAB_DISCOUNT` | `fizzy tab` | A sale with a discount whose name contains this goes on the tab (the discounted amount) |
+| `SQUARE_REPAYMENT_ITEM` | `tab repayment` | Item name that marks part of a sale as a tab repayment |
+| `SQUARE_TAB_TENDERS` | *(off)* | Optional extra: payment types that also mean "on the tab", e.g. `EXTERNAL` (Other Payment Types) or `SQUARE_ACCOUNT` (House Account). Only if the discount can't be used |
 | `CLOUDFLARE_TUNNEL_TOKEN` | — | Used by the `cloudflared` container |
 
 The tab limit, days to pay and spend threshold live in the database and are changed on the
@@ -447,8 +492,8 @@ The tab limit, days to pay and spend threshold live in the database and are chan
 Most customers are under 18, so Fizzy keeps the minimum:
 
 - **Stored:** name, school email, Square customer ID, tab decisions (with notes), tab
-  charges and repayments, points history, and Square payment details (amount, items,
-  payment type, time).
+  charges and repayments, points history, and Square payment and order details (amount,
+  items, payment type, time).
 - **Not stored:** year group, phone numbers, addresses, or anything else in the school CSV.
 - **Who can see it:** only staff with the password. There's no customer login.
 - **Never committed to git:** `.env`, the database, backups and CSVs (see `.gitignore`).
@@ -468,7 +513,8 @@ them up by email. Nothing in the data model would need to change.
 | "Square isn't connected" on the dashboard | `SQUARE_ACCESS_TOKEN` is set in `.env`, then `docker compose up -d` |
 | "Last Square sync failed" | The error text is shown on the Square page. Usually an expired or wrong token, or the wrong `SQUARE_ENVIRONMENT` |
 | A sale didn't give points | Was the customer attached on the Terminal? Check the **Square** page → *Only unlinked* |
-| A tab sale shows as *Sale* | It wasn't paid with Other Payment Types. Change **Counted as** to *Tab charge* |
+| A tab sale isn't on their tab | Was the **Fizzy Tab** discount applied, and the customer attached? Check the **Square** page. See [Fixing a mistake](#fixing-a-mistake) |
+| A repayment didn't clear the tab | The item must be called exactly **Tab repayment**, with the customer attached |
 | A customer shows "Not in Square yet" | Import the Square CSV (7.3), then sync. Or paste their Square customer ID into **Edit customer** |
 | Webhooks not arriving | `SQUARE_WEBHOOK_URL` must match Square's subscription URL exactly; no Cloudflare Access on `/square/webhook`. Polling still catches everything within 5 minutes |
 | Can't log in after an update | Check `FIZZY_SECURE_COOKIES=1` and that you're using `https://` |

@@ -53,3 +53,25 @@ def test_search_index_matches_customer_page(client):
     assert rows["Adeline Yates"]["status"] == "approved" and rows["Adeline Yates"]["owing"] == 300
     assert rows["Adam Fenn"]["status"] == "locked" and rows["Adam Fenn"]["sid"] == "rns2"
     assert "app.js?v=" in client.get("/").text
+
+
+def test_repayment_already_rung_up_in_square_is_not_entered_twice(client):
+    from fizzy import config, db, square
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Test Kid", "email": "rns9@reddamnorthshore.nsw.edu.au"})
+    conn = db.connect(config.DB_PATH)
+    conn.execute("UPDATE customers SET square_customer_id = 'SQ9' WHERE id = 1")
+    now = db.now_iso()
+    square.process_order(conn, {"id": "o1", "state": "COMPLETED", "customer_id": "SQ9", "closed_at": now, "created_at": now,
+                                "line_items": [], "discounts": [{"name": "Fizzy Tab", "applied_money": {"amount": 300}}]})
+    square.process_payment(conn, {"id": "p1", "status": "COMPLETED", "amount_money": {"amount": 300}, "source_type": "CASH",
+                                  "customer_id": "SQ9", "created_at": now, "order_id": "o2"},
+                           {"line_items": [{"name": "Tab repayment", "total_money": {"amount": 300}}]})
+    conn.commit()
+    r = client.post("/customers/1/repay", data={"amount": "3.00", "method": "cash"})
+    assert "already recorded from Square" in r.text
+    assert conn.execute("SELECT COUNT(*) FROM tab_repayments").fetchone()[0] == 1
+    client.post("/customers/1/repay", data={"amount": "3.00", "method": "cash", "confirm_dup": "1"})
+    assert conn.execute("SELECT COUNT(*) FROM tab_repayments").fetchone()[0] == 2
+    page = client.post("/tools/takings", data={"start": "2020-01-01", "end": "2030-01-01"}).text
+    assert "Put on tabs" in page and "recorded without Square" in page

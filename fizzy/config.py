@@ -22,13 +22,15 @@ SQUARE_LOCATION_ID = _env("SQUARE_LOCATION_ID")
 SQUARE_WEBHOOK_KEY = _env("SQUARE_WEBHOOK_SIGNATURE_KEY")
 SQUARE_WEBHOOK_URL = _env("SQUARE_WEBHOOK_URL", "https://fizzy.cookedcoke.co/square/webhook")
 SQUARE_POLL_SECONDS = int(_env("SQUARE_POLL_SECONDS", "300"))
-# Square payment source types that mean "put it on the tab". Square AU can't rename the
-# "Other Payment Types" tender, so Other is reserved for tabs (EXTERNAL in the API);
-# House Account (SQUARE_ACCOUNT) is counted too in case someone uses it. See README.
-SQUARE_TAB_TENDERS = {t.strip().upper() for t in _env("SQUARE_TAB_TENDERS", "EXTERNAL,SQUARE_ACCOUNT").split(",") if t.strip()}
-# Repayments are recorded in Fizzy only. Set this to an item name only if you ever ring
-# repayments through Square (that counts the money as a second sale in Square's reports).
-SQUARE_REPAYMENT_ITEM = _env("SQUARE_REPAYMENT_ITEM", "")
+# How Fizzy recognises tab activity in Square. See README "How Square and Fizzy fit together".
+# Tab sale: an order with this discount (a 100% discount called "Fizzy Tab"). The discounted
+# amount goes on the customer's tab; Square records a $0 (or reduced) sale.
+SQUARE_TAB_DISCOUNT = _env("SQUARE_TAB_DISCOUNT", "fizzy tab")
+# Tab repayment: an order containing this item (custom amount), paid by cash, card or Other.
+SQUARE_REPAYMENT_ITEM = _env("SQUARE_REPAYMENT_ITEM", "tab repayment")
+# Optional: payment types that also mean "on the tab" (e.g. EXTERNAL for Other Payment Types,
+# SQUARE_ACCOUNT for House Account). Off by default - the discount is the tab button.
+SQUARE_TAB_TENDERS = {t.strip().upper() for t in _env("SQUARE_TAB_TENDERS", "").split(",") if t.strip()}
 
 SQUARE_BASE = (
     "https://connect.squareupsandbox.com" if SQUARE_ENV == "sandbox" else "https://connect.squareup.com"

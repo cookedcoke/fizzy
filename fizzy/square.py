@@ -40,6 +40,11 @@ class SquareClient:
         r.raise_for_status()
         return r.json()
 
+    def _post(self, path, body):
+        r = self.http.post(path, json=body)
+        r.raise_for_status()
+        return r.json()
+
     def _paged(self, path, key, params):
         cursor = None
         while True:
@@ -56,6 +61,30 @@ class SquareClient:
     def refunds(self, begin_time):
         return self._paged("/v2/refunds", "refunds",
                            {"begin_time": begin_time, "sort_order": "ASC", "location_id": config.SQUARE_LOCATION_ID})
+
+    def location_ids(self):
+        if config.SQUARE_LOCATION_ID:
+            return [config.SQUARE_LOCATION_ID]
+        return [loc["id"] for loc in self._get("/v2/locations").get("locations", [])]
+
+    def orders(self, begin_time):
+        """Completed orders closed since begin_time, oldest first. Tab sales are $0 orders with
+        no payment, so they only show up here."""
+        body = {
+            "location_ids": self.location_ids(),
+            "limit": 500,
+            "query": {
+                "filter": {"state_filter": {"states": ["COMPLETED"]},
+                           "date_time_filter": {"closed_at": {"start_at": begin_time}}},
+                "sort": {"sort_field": "CLOSED_AT", "sort_order": "ASC"},
+            },
+        }
+        while True:
+            data = self._post("/v2/orders/search", body)
+            yield from data.get("orders", [])
+            if not data.get("cursor"):
+                return
+            body["cursor"] = data["cursor"]
 
     def customers(self):
         return self._paged("/v2/customers", "customers", {})
@@ -75,21 +104,34 @@ class SquareClient:
 # ---- classification -------------------------------------------------------------------------
 
 def classify(payment, order):
-    """Decide whether a payment is a normal sale, a tab charge, or a tab repayment.
-
-    - Tab charge: paid with a tender in SQUARE_TAB_TENDERS ("Other Payment Types" = EXTERNAL,
-      House Account = SQUARE_ACCOUNT). Square AU can't name the Other tender, so Other is
-      reserved for tabs at the counter.
-    - Tab repayment: only if SQUARE_REPAYMENT_ITEM is set and the order contains that item.
-    - Otherwise a sale.
-    """
-    if config.SQUARE_REPAYMENT_ITEM:
-        for li in (order or {}).get("line_items", []) or []:
-            if (li.get("name") or "").strip().lower() == config.SQUARE_REPAYMENT_ITEM.lower():
-                return "tab_repayment"
+    """What a payment is for: "tab_repayment" if its order has the repayment item, "tab_charge"
+    if paid with one of SQUARE_TAB_TENDERS (off by default), otherwise "sale".
+    Tab sales themselves are found from orders (see process_order), not payments."""
+    if repayment_total(order):
+        return "tab_repayment"
     if (payment.get("source_type") or "").upper() in config.SQUARE_TAB_TENDERS:
         return "tab_charge"
     return "sale"
+
+
+def _money(obj, key):
+    return int(((obj or {}).get(key) or {}).get("amount", 0))
+
+
+def repayment_total(order):
+    """Total of the "Tab repayment" line items in an order (0 if none or not configured)."""
+    if not config.SQUARE_REPAYMENT_ITEM:
+        return 0
+    return sum(_money(li, "total_money") for li in (order or {}).get("line_items", []) or []
+               if (li.get("name") or "").strip().lower() == config.SQUARE_REPAYMENT_ITEM.lower())
+
+
+def tab_discount_total(order):
+    """How much of an order was put on the tab: the amount the "Fizzy Tab" discount took off."""
+    if not config.SQUARE_TAB_DISCOUNT:
+        return 0
+    return sum(_money(d, "applied_money") for d in (order or {}).get("discounts", []) or []
+               if config.SQUARE_TAB_DISCOUNT.lower() in (d.get("name") or "").lower())
 
 
 def describe_tender(payment):
@@ -111,13 +153,15 @@ def repayment_method(payment):
         return "cash"
     if st in ("CARD", "WALLET"):
         return "card"
-    src = ((payment.get("external_details") or {}).get("source") or "").lower()
-    return "payid" if "payid" in src else "other"
+    # With the discount as the tab button, "Other Payment Types" is free for PayID repayments.
+    return "payid" if st == "EXTERNAL" else "other"
 
 
-def describe_items(order):
+def describe_items(order, skip_repayment=False):
     parts = []
     for li in (order or {}).get("line_items", []) or []:
+        if skip_repayment and (li.get("name") or "").strip().lower() == config.SQUARE_REPAYMENT_ITEM.lower():
+            continue
         q = li.get("quantity", "1")
         parts.append(f"{q}x {li.get('name') or 'Custom amount'}")
     return ", ".join(parts)
@@ -156,7 +200,7 @@ def apply_payment_effects(conn, sp):
             conn.execute("UPDATE tab_repayments SET square_payment_id = ? WHERE id = ?", (pid, manual["id"]))
             conn.execute("UPDATE points_ledger SET square_payment_id = ? WHERE repayment_id = ?", (pid, manual["id"]))
         else:
-            logic.add_repayment(conn, customer["id"], amt, repayment_method(sp_raw(sp)), "Recorded in Square",
+            logic.add_repayment(conn, customer["id"], amt, repayment_method(sp_raw(sp).get("payment") or {}), "Recorded in Square",
                                 None, pid, sp["created_at"])
 
 
@@ -214,8 +258,20 @@ def apply_refund_effects(conn, sp, amount, created_at):
         audit(conn, "square", "repayment_refund", cid, f"-${amount / 100:.2f}")
 
 
+def _insert_sp(conn, sp):
+    conn.execute(
+        "INSERT INTO square_payments VALUES (:square_payment_id, :square_order_id, :square_customer_id, :customer_id, "
+        ":kind, :amount_cents, :tender, :items, :raw_json, :created_at, :processed_at)",
+        sp,
+    )
+    apply_payment_effects(conn, sp)
+
+
 def process_payment(conn, payment, order):
-    """Record one Square payment. Returns the kind, or None if skipped/duplicate."""
+    """Record one Square payment. Returns the kind, or None if skipped/duplicate.
+
+    A payment for an order that both repays the tab and buys something is split in two:
+    the repayment part (row id = payment id) and the rest as a sale (row id = "<id>:sale")."""
     if payment.get("status") != "COMPLETED":
         return None
     pid = payment["id"]
@@ -224,26 +280,73 @@ def process_payment(conn, payment, order):
     sq_cust = payment.get("customer_id") or (order or {}).get("customer_id")
     customer = _customer_for(conn, sq_cust)
     kind = classify(payment, order)
-    sp = {
-        "square_payment_id": pid,
+    amount = int((payment.get("amount_money") or {}).get("amount", 0))
+    base = {
         "square_order_id": payment.get("order_id"),
         "square_customer_id": sq_cust,
         "customer_id": customer["id"] if customer else None,
-        "kind": kind,
-        "amount_cents": int((payment.get("amount_money") or {}).get("amount", 0)),
         "tender": describe_tender(payment),
-        "items": describe_items(order),
         "raw_json": json.dumps({"payment": payment, "order": order}),
         "created_at": norm_ts(payment["created_at"]),
         "processed_at": now_iso(),
     }
-    conn.execute(
-        "INSERT INTO square_payments VALUES (:square_payment_id, :square_order_id, :square_customer_id, :customer_id, "
-        ":kind, :amount_cents, :tender, :items, :raw_json, :created_at, :processed_at)",
-        sp,
-    )
-    apply_payment_effects(conn, sp)
+    sale_part = 0
+    if kind == "tab_repayment":
+        # With split tenders, earlier payments for the same order may already cover the repayment.
+        done = conn.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM square_payments WHERE square_order_id = ? AND kind = 'tab_repayment'",
+            (payment.get("order_id"),),
+        ).fetchone()[0]
+        rep_part = max(0, min(amount, repayment_total(order) - done))
+        sale_part = amount - rep_part
+        if rep_part == 0:
+            kind, sale_part = "sale", 0
+        else:
+            amount = rep_part
+    _insert_sp(conn, {**base, "square_payment_id": pid, "kind": kind, "amount_cents": amount,
+                      "items": "Tab repayment" if kind == "tab_repayment" else describe_items(order)})
+    if sale_part > 0:
+        _insert_sp(conn, {**base, "square_payment_id": f"{pid}:sale", "kind": "sale", "amount_cents": sale_part,
+                          "items": describe_items(order, skip_repayment=True), "raw_json": None})
     return kind
+
+
+def process_order(conn, order):
+    """Record the tab part of a completed order (the "Fizzy Tab" discount), and any returns of
+    items from earlier tab orders. Returns True if anything new was recorded."""
+    if order.get("state") != "COMPLETED":
+        return False
+    new = False
+    tab = tab_discount_total(order)
+    oid = f"order:{order['id']}"
+    if tab > 0 and not conn.execute("SELECT 1 FROM square_payments WHERE square_payment_id = ?", (oid,)).fetchone():
+        sq_cust = order.get("customer_id")
+        customer = _customer_for(conn, sq_cust)
+        _insert_sp(conn, {
+            "square_payment_id": oid, "square_order_id": order["id"], "square_customer_id": sq_cust,
+            "customer_id": customer["id"] if customer else None, "kind": "tab_charge", "amount_cents": tab,
+            "tender": "Fizzy Tab discount", "items": describe_items(order), "raw_json": json.dumps({"order": order}),
+            "created_at": norm_ts(order.get("closed_at") or order["created_at"]), "processed_at": now_iso(),
+        })
+        new = True
+    # Returns: items handed back from a tab order reduce what's owed by the tab discount on them.
+    for ret in order.get("returns", []) or []:
+        src = ret.get("source_order_id")
+        rid = f"return:{order['id']}:{src}"
+        if not src or conn.execute("SELECT 1 FROM square_refunds WHERE square_refund_id = ?", (rid,)).fetchone():
+            continue
+        sp = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (f"order:{src}",)).fetchone()
+        if sp is None:
+            continue
+        amount = sum(_money(li, "total_discount_money") for li in ret.get("return_line_items", []) or [])
+        if amount <= 0:
+            continue
+        ts = norm_ts(order.get("closed_at") or order["created_at"])
+        conn.execute("INSERT INTO square_refunds VALUES (?, ?, ?, ?, ?, ?)",
+                     (rid, sp["square_payment_id"], amount, json.dumps(ret), ts, now_iso()))
+        apply_refund_effects(conn, sp, amount, ts)
+        new = True
+    return new
 
 
 def process_refund(conn, refund):
@@ -337,13 +440,19 @@ def sync(conn, client=None):
         # Overlap the window by an hour; processing is idempotent.
         begin = (logic.parse_ts(start) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         newest = start
-        counts = {"sale": 0, "tab_charge": 0, "tab_repayment": 0, "refunds": 0}
+        counts = {"sale": 0, "tab_charge": 0, "tab_repayment": 0, "refunds": 0, "tab_orders": 0}
         for p in client.payments(begin):
             kind = process_payment(conn, p, client.order(p.get("order_id")) if p.get("status") == "COMPLETED" else None)
             if kind:
                 counts[kind] += 1
             newest = max(newest, norm_ts(p["created_at"]))
             conn.commit()
+        if config.SQUARE_TAB_DISCOUNT:
+            for o in client.orders(begin):
+                if process_order(conn, o):
+                    counts["tab_orders"] += 1
+                newest = max(newest, norm_ts(o.get("closed_at") or o["created_at"]))
+                conn.commit()
         for rf in client.refunds(begin):
             if rf.get("payment_id") and not conn.execute(
                 "SELECT 1 FROM square_payments WHERE square_payment_id = ?", (rf["payment_id"],)

@@ -10,8 +10,8 @@
 </div>
 <div class="panel"><h2>How Fizzy reads Square</h2>
   <table>
-    <tr><td style="width:180px">Tab sale</td><td>Paid with <b>Other Payment Types</b>{% if 'SQUARE_ACCOUNT' in tab_tenders %} or House Account{% endif %}. Only use Other for tabs.</td></tr>
-    <tr><td>Tab repayment</td><td>{% if repay_item %}Any sale containing an item called <code>{{ repay_item }}</code>{% else %}Recorded in Fizzy only - not in Square{% endif %}</td></tr>
+    <tr><td style="width:180px">Tab sale</td><td>{% if tab_discount %}A sale with the <code>{{ tab_discount }}</code> discount - the discounted amount goes on the tab{% endif %}{% if tab_tenders %}{{ ', or ' if tab_discount }}paid with {{ tab_tenders|join(' / ') }}{% endif %}{% if not tab_discount and not tab_tenders %}Not set up{% endif %}</td></tr>
+    <tr><td>Tab repayment</td><td>{% if repay_item %}A sale containing an item called <code>{{ repay_item }}</code> (any other items in it count as a normal sale){% else %}Recorded in Fizzy only{% endif %}</td></tr>
     <tr><td>Everything else</td><td>A normal sale - earns points if a customer is attached</td></tr>
   </table>
 </div>

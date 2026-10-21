@@ -10,7 +10,7 @@
 
 {% if st.can_charge %}
 <div class="verdict yes"><div class="mark">✓</div><div><b>Can use tab - up to {{ st.available_cents|money }}</b>
-  <span>In Square: attach {{ c.name.split(' ')[0] }}'s profile, then pay with Other Payment Types.</span></div></div>
+  <span>In Square: attach {{ c.name.split(' ')[0] }}'s profile, apply the <strong>Fizzy Tab</strong> discount to what goes on the tab, then charge the rest (usually $0).</span></div></div>
 {% else %}
 {% set waiting = st.status in ('locked', 'eligible', 'paused') %}
 <div class="verdict {{ 'wait' if waiting else 'no' }}"><div class="mark">{{ '–' if waiting else '✕' }}</div><div><b>{{ 'No tab yet' if waiting else 'No tab' }}</b><span>
@@ -35,14 +35,17 @@
 </div>
 
 <div class="grid">
-  <form class="panel" method="post" action="/customers/{{ c.id }}/repay"><h2>Record repayment <kbd>R</kbd></h2>
+  <form class="panel" method="post" action="/customers/{{ c.id }}/repay"><h2>Repayment <kbd>R</kbd></h2>
+    <p class="small" style="margin:0">{% if led.owing_cents %}<b>In Square:</b> attach {{ c.name.split(' ')[0] }}'s profile, add <b>Tab repayment</b> for
+      <b>{{ led.owing_cents|money }}</b>, and take cash, card, or Other for PayID. Fizzy records it automatically.{% else %}Nothing owing.{% endif %}</p>
+    <p class="hint" style="margin-top:8px">Only use the form below for money that <b>didn't</b> go through Square.</p>
     <div class="row">
-      <div><label>Amount ($)</label><input type="text" name="amount" inputmode="decimal" data-key="r" data-key-label="Record repayment" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
+      <div><label>Amount ($)</label><input type="text" name="amount" inputmode="decimal" data-key="r" data-key-label="Record a repayment without Square" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
       <div><label>Paid by</label><select name="method"><option value="cash">Cash</option><option value="payid">PayID</option><option value="card">Card</option><option value="other">Other</option></select></div>
     </div>
     <label>Note</label><input type="text" name="note" placeholder="Optional">
-    <div class="actions"><button class="primary" title="Enter in the amount box also saves">Record repayment <kbd>Enter</kbd></button></div>
-    <p class="hint">Record it here only - don't put repayments through Square, or they count as a second sale.</p>
+    <label class="check"><input type="checkbox" name="confirm_dup" value="1"> This is a separate payment (not one already rung up in Square)</label>
+    <div class="actions"><button title="Enter in the amount box also saves">Record without Square <kbd>Enter</kbd></button></div>
   </form>
 
   <form class="panel" method="post" action="/customers/{{ c.id }}/tab"><h2>Tab approval</h2>

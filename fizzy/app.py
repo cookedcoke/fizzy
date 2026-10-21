@@ -14,7 +14,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, logic, square, tools
-from .web import HERE, LoginRequired, back, cents, get_conn, money, render, session_gen, staff
+from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff
 
 log = logging.getLogger("fizzy")
 
@@ -253,11 +253,20 @@ def register(app):
 
     @app.post("/customers/{cid}/repay")
     def repay(request: Request, cid: int, amount: str = Form(...), method: str = Form(...), note: str = Form(""),
-              who=Depends(staff), conn=Depends(get_conn)):
+              confirm_dup: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         load_customer(conn, cid)
         if method not in ("cash", "payid", "card", "other"):
             raise HTTPException(400, "bad method")
         amt = cents(amount)
+        # Repayments are normally rung up in Square and recorded automatically; don't let the
+        # same money be entered twice. (A hand entry made first is matched when Square's arrives.)
+        since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
+        dup = conn.execute(
+            "SELECT created_at FROM tab_repayments WHERE customer_id = ? AND amount_cents = ? AND note = 'Recorded in Square' "
+            "AND created_at >= ?", (cid, amt, since)).fetchone()
+        if dup and not confirm_dup:
+            return back(request, f"/customers/{cid}", f"A {money(amt)} repayment was already recorded from Square at "
+                        f"{local(dup['created_at'])}. Nothing added. If this is a second payment, tick 'This is a separate payment'.")
         try:
             logic.add_repayment(conn, cid, amt, method, note, who)
         except ValueError as e:
@@ -347,6 +356,7 @@ def register(app):
             last_sync=db.get_setting(conn, "square_last_sync"), sync_error=db.get_setting(conn, "square_last_error"),
             cursor=db.get_setting(conn, "square_cursor"), unlinked_customers=unlinked_customers,
             tab_tenders=sorted(config.SQUARE_TAB_TENDERS), repay_item=config.SQUARE_REPAYMENT_ITEM,
+            tab_discount=config.SQUARE_TAB_DISCOUNT,
             webhook_on=bool(config.SQUARE_WEBHOOK_KEY),
         )
 

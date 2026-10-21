@@ -324,7 +324,7 @@ def h_manual_charge(request, conn, who, form):
         raise ToolError("Amount must be more than $0.")
     items = form.get("items", "").strip() or "Manual charge"
     logic.add_tab_charge(conn, c, amt, f"{items} (entered by hand)", db.now_iso(), who)
-    return done(request, "manual_charge", f"Charged {money(amt)} to {c['name']}'s tab. Only use this if the sale isn't in Square - if it is, Fizzy picks it up and this would count it twice.")
+    return done(request, "manual_charge", f"Charged {money(amt)} to {c['name']}'s tab. Only use this if the sale isn't in Square with the Fizzy Tab discount - if it is, Fizzy already has it.")
 
 
 def h_write_off(request, conn, who, form):
@@ -420,7 +420,8 @@ def h_takings(request, conn, who, form):
         "SELECT kind, tender, COUNT(*) AS n, SUM(amount_cents) AS total FROM square_payments "
         "WHERE created_at >= ? AND created_at < ? GROUP BY kind, tender ORDER BY kind, total DESC", (start, end)
     ):
-        rows.append(["Square: " + r["kind"].replace("_", " "), r["tender"], r["n"], money(r["total"])])
+        label = {"sale": "Square: sales", "tab_charge": "Put on tabs (not money)", "tab_repayment": "Square: tab repayments"}[r["kind"]]
+        rows.append([label, r["tender"], r["n"], money(r["total"])])
     for r in conn.execute(
         "SELECT SUM(r.amount_cents) AS total, COUNT(*) AS n FROM square_refunds r WHERE r.created_at >= ? AND r.created_at < ?",
         (start, end),
@@ -429,13 +430,14 @@ def h_takings(request, conn, who, form):
             rows.append(["Square: refunds", "", r["n"], money(-r["total"])])
     for r in conn.execute(
         "SELECT method, COUNT(*) AS n, SUM(amount_cents) AS total FROM tab_repayments WHERE created_at >= ? AND created_at < ? "
-        "GROUP BY method", (start, end)
+        "AND square_payment_id IS NULL GROUP BY method", (start, end)
     ):
-        rows.append(["Fizzy: tab repayments", r["method"], r["n"], money(r["total"])])
+        label = "Fizzy: debts written off" if r["method"] == "writeoff" else "Fizzy: repayments recorded without Square"
+        rows.append([label, r["method"], r["n"], money(r["total"])])
     return report(request, f"Takings {form['start']} to {form['end']}", ["What", "Tender / method", "Count", "Total"], rows,
-                  note="Square 'tab charge' rows are sales put on tabs (no money yet). Money actually collected = "
-                       "Square cash/card sales + Fizzy tab repayments (cash and PayID go in the till, not Square). "
-                       "Write-offs aren't money.")
+                  note="Square sales are what was paid at the time (tab sales were discounted, so they add $0). "
+                       "Square tab repayments are tabs paid off through Square. Fizzy repayments were recorded by hand "
+                       "without Square - add those to the till count. Write-offs aren't money.")
 
 
 def _balances(conn):
