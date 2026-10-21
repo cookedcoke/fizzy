@@ -26,6 +26,9 @@ def parse_directory_csv(text):
         email = _pick(row, "email", "school email").lower()
         if not name and not email:
             continue
+        if not name:
+            errors.append(f"Line {i}: {email} has no name - skipped")
+            continue
         if not EMAIL_RE.match(email):
             errors.append(f"Line {i}: '{email}' isn't a school email - skipped")
             continue

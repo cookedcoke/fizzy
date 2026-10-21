@@ -81,6 +81,8 @@ Switch it with `W` or the dropdown. **Lock** signs the device out.
 - **What counts as "spent":** completed sales with the customer attached, plus tab
   repayments, minus refunds. Manual point adjustments don't count.
 - **Points on tab purchases** are earned when the tab is **repaid**, not when charged.
+  If someone has credit (paid more than they owed), it pays their next tab sale
+  straight away and earns its points then.
   Money that leaves a customer in credit earns nothing, and neither do write-offs.
 - **Repayments pay off the oldest charge first.** Paying more than owed leaves them in credit.
 - **Late payments are remembered.** A charge paid after its due date stays on the
@@ -107,6 +109,17 @@ Square Terminal ── sale (customer attached) ──────────�
 Fizzy reads Square through its API: webhooks for near-instant updates, plus polling every
 5 minutes as a safety net. It never changes anything in Square. **Everything goes through
 Square**, so Square's reports and the till always match.
+
+- **What gets read:** everything Square has *updated* since the last sync, so sales the
+  Terminal took offline and uploaded later, and refunds that finish processing later, are
+  still picked up.
+- **Problem items:** if one sale can't be processed, it's skipped and listed on the
+  **Square** page, and everything else still syncs.
+- **Duplicate Square profiles:** if a Square profile uses an email that's already someone
+  else's in Fizzy, it's listed there too instead of being added.
+- **Failing syncs:** a sync that fails waits until the next 5-minute check before retrying.
+- **Overlapping syncs:** a sync requested while another is running (a webhook, **Sync now**,
+  **Re-sync**) runs straight after it, so nothing is dropped.
 
 ### Tab sales: the "Fizzy Tab" discount
 
@@ -224,13 +237,14 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 does, and click its name to open it. Tools in red change a lot at once or can't be undone,
 and the biggest ones make you type a word (`RESET`, `REVOKE`, `SIGN OUT`) to confirm.
 Everything is written to the activity log. Wherever a tool needs a customer, the box
-suggests names as you type. If a name matches more than one person, the tool stops and
-lists who it could be.
+suggests names as you type. Pick from that list (it fills in "Name <email>"), or type an exact
+name, email or student number. Anything less exact never acts on its own: the tool stops and
+says who you might mean, so a typo can't hit the wrong student.
 
 | Section | Tool | Use it for |
 |---|---|---|
 | Points | Give points to many | Event prizes: a list of names/emails/student numbers, or everyone |
-| | Bonus points for a period | Double-points day: tops up points on purchases between two dates. Don't run the same dates twice |
+| | Bonus points for a period | Double-points day: tops up points on purchases between two dates. Tab purchases count by the date they were bought, for the part already repaid. Don't run the same dates twice |
 | | Move points | Points went to the wrong person |
 | | Reset all points | End of year. Spend history and tab eligibility are kept |
 | Tabs | Pause all tabs | Holidays, end of term. Approvals come back when unpaused |
@@ -240,10 +254,10 @@ lists who it could be.
 | | Write off a debt | Clear some or all of what someone owes. Earns no points |
 | | Give more time to pay | Push back the due date on all of someone's unpaid charges |
 | Customers | Add a customer | New student, teacher, anyone not in the school list |
-| | Merge duplicates | Two records for one person: everything moves to the one you keep |
+| | Merge duplicates | Two records for one person: everything moves to the one you keep, including the duplicate's Square profile (its future sales land on the kept person) and its tab approval if the kept one had none |
 | | Archive many | Left school or graduated: hidden from search, history kept |
 | | Restore archived | Bring them back |
-| Reports | Takings summary | Counting up: Square sales by type, plus Fizzy repayments by method |
+| Reports | Takings summary | Counting up: Square sales, what went on tabs, tab repayments, refunds, items returned from tabs (not money), and anything recorded without Square |
 | | Who to chase | Everyone owing, oldest first, with their emails ready to copy |
 | | All balances | Everyone who owes or is in credit |
 | | Points leaderboard | Printable top-N for events |
@@ -408,16 +422,24 @@ docker compose logs -f fizzy      # watch it start
 `docker-compose.yml` runs two containers: **fizzy** (the app) and **cloudflared** (the
 tunnel). No ports are opened on the PC.
 
+On Linux, the `data` and `backups` folders on the PC can be owned by root or your own user.
+The container fixes their ownership when it starts, then runs Fizzy as an unprivileged
+`fizzy` user (uid 10001).
+
 **Updating:** `git pull && docker compose up -d --build`. The database lives in `./data` and
-survives rebuilds. New tables are created automatically on start.
+survives rebuilds. New tables and columns are added automatically on start, so updating
+never needs a manual database step.
 
 ### Cloudflare Tunnel
 
 1. Cloudflare Zero Trust → Networks → Tunnels → **Create a tunnel** (cloudflared). Copy the
    token into `CLOUDFLARE_TUNNEL_TOKEN`.
 2. Add a public hostname: `fizzy.cookedcoke.co` → service `http://fizzy:8000`.
-3. Optional: a Cloudflare WAF rate-limit rule on `/login`. Fizzy also blocks an address for
-   15 minutes after 10 wrong passwords.
+3. Optional: a Cloudflare WAF rate-limit rule on `/login`. Fizzy limits wrong passwords
+   itself:
+   - **Browsers that have signed in before** (like the counter) are only limited by their
+     own mistakes, so nobody else on the school network can lock them out.
+   - **Unknown browsers** get 10 tries per 15 minutes per network, with an overall cap.
 4. Don't put Cloudflare Access in front of `fizzy.cookedcoke.co` itself. Square's webhook
    has to reach `/square/webhook` there, and Fizzy checks every request against Square's
    signature. To restrict which devices can use Fizzy, see the next section.
@@ -463,7 +485,7 @@ thing with **registered devices**:
       name it → **Make link**.
    2. Open that link on the counter device within 15 minutes and press **Register this
       device**.
-   3. Or, from the PC: `docker compose exec fizzy python -m fizzy device-link "Counter iPad"`.
+   3. Or, from the PC: `docker compose exec -u fizzy fizzy python -m fizzy device-link "Counter iPad"`.
 
 **Good to know**
 
@@ -471,7 +493,8 @@ thing with **registered devices**:
   window, or clearing site data means registering again.
 - **Lost or replaced device:** Settings → Devices → **Remove**. Also use **Tools → Sign
   everyone out** if it was signed in.
-- **Turning it off:** remove `FIZZY_ACCESS_HOST` and restart. Everything goes back to
+- **Turning it off:** remove `FIZZY_ACCESS_HOST`, then `docker compose up -d` (a plain
+  `restart` doesn't re-read `.env`). Everything goes back to
   password-only.
 - **Heavier alternative:** Cloudflare's WARP client with device posture checks can tie
   access to specific managed devices, but it needs an app installed and managed on each
@@ -513,13 +536,22 @@ python -m fizzy sync                   # run one Square sync
 python -m fizzy device-link "Counter iPad"   # registration link for the device lock
 ```
 
-In Docker, prefix these with `docker compose exec fizzy`.
+In Docker, run them inside the container as the `fizzy` user (`-u fizzy` matters: files
+written as root could stop the app writing to its database). Paths are inside the
+container, so put files in `./data` (that's `/data` inside):
+
+```sh
+cp directory.csv data/
+docker compose exec -u fizzy fizzy python -m fizzy import /data/directory.csv
+docker compose exec -u fizzy fizzy python -m fizzy backup /backups
+```
 
 ---
 
 ## 9. Configuration reference
 
-All configuration is environment variables, in `.env`. Never commit `.env`.
+All configuration is environment variables, in `.env`. Never commit `.env`. A setting left
+blank (`KEY=`) counts as not set and uses its default.
 
 | Variable | Default | What it does |
 |---|---|---|

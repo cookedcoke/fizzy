@@ -2,17 +2,17 @@
 {% set DANGER = ['reset_points', 'revoke_all', 'write_off', 'merge', 'sign_out_all', 'bulk_archive'] %}
 
 {% macro who(name='customer', label='Customer', list='people') -%}
-<label>{{ label }}</label><input type="text" name="{{ name }}" list="{{ list }}" placeholder="Start typing a name…" autocomplete="off" required>
+<label>{{ label }}<input type="text" name="{{ name }}" list="{{ list }}" placeholder="Start typing a name…" autocomplete="off" required></label>
 {%- endmacro %}
 {% macro dates(start=week_ago, end=today) -%}
-<div class="row"><div><label>From</label><input type="date" name="start" value="{{ start }}" required></div>
-<div><label>To</label><input type="date" name="end" value="{{ end }}" required></div></div>
+<div class="row"><div><label>From<input type="date" name="start" value="{{ start }}" required></label></div>
+<div><label>To<input type="date" name="end" value="{{ end }}" required></label></div></div>
 {%- endmacro %}
 {% macro note(label='Note (optional)', required=False) -%}
-<label>{{ label }}</label><input type="text" name="note" {{ 'required' if required }}>
+<label>{{ label }}<input type="text" name="note" {{ 'required' if required }}></label>
 {%- endmacro %}
 {% macro confirm(word) -%}
-<label>Type <b>{{ word }}</b> to confirm</label><input type="text" name="confirm" autocomplete="off" required>
+<label>Type <b>{{ word }}</b> to confirm<input type="text" name="confirm" autocomplete="off" required></label>
 {%- endmacro %}
 
 {% macro form(id) %}
@@ -24,16 +24,16 @@
 {% else %}
 <form method="post" action="/tools/{{ id }}">
 {% if id == 'bulk_points' %}
-  <div class="row"><div><label>Points (+ add / − take)</label><input type="number" name="delta" required></div></div>
+  <div class="row"><div><label>Points (+ add / − take)<input type="number" name="delta" required></label></div></div>
   {{ note('Reason (required)', True) }}
-  <label>People - one per line (names, emails or student numbers)</label><textarea name="people" rows="4"></textarea>
+  <label>People - one per line (names, emails or student numbers)<textarea name="people" rows="4"></textarea></label>
   <label class="check"><input type="checkbox" name="everyone" value="1"> Everyone (all active customers) instead</label>
 {% elif id == 'bonus_points' %}
-  <div class="row"><div><label>Multiplier</label><input type="number" name="multiplier" value="2" min="1.1" step="0.1" required></div></div>
+  <div class="row"><div><label>Multiplier<input type="number" name="multiplier" value="2" min="1.1" step="0.1" required></label></div></div>
   {{ dates(today, today) }}{{ note() }}
 {% elif id == 'transfer_points' %}
   {{ who('from', 'From') }}{{ who('to', 'To') }}
-  <label>Points</label><input type="number" name="points" min="1" required>{{ note() }}
+  <label>Points<input type="number" name="points" min="1" required></label>{{ note() }}
 {% elif id == 'reset_points' %}
   {{ note('Reason', False) }}{{ confirm('RESET') }}
 {% elif id == 'pause_tabs' %}
@@ -45,43 +45,42 @@
 {% elif id == 'revoke_all' %}
   {{ note('Reason') }}{{ confirm('REVOKE') }}
 {% elif id == 'manual_charge' %}
-  {{ who() }}<label>Amount ($)</label><input type="text" name="amount" inputmode="decimal" required>
-  <label>Items</label><input type="text" name="items">
+  {{ who() }}<label>Amount ($)<input type="text" name="amount" inputmode="decimal" required></label>
+  <label>Items<input type="text" name="items"></label>
 {% elif id == 'write_off' %}
-  {{ who() }}<label>Amount ($) - leave blank for everything owed</label><input type="text" name="amount" inputmode="decimal">
+  {{ who() }}<label>Amount ($) - leave blank for everything owed<input type="text" name="amount" inputmode="decimal"></label>
   {{ note('Reason (required)', True) }}
 {% elif id == 'extend_due' %}
-  {{ who() }}<label>Extra days</label><input type="number" name="days" value="7" min="1" required>{{ note() }}
+  {{ who() }}<label>Extra days<input type="number" name="days" value="7" min="1" required></label>{{ note() }}
 {% elif id == 'add_customer' %}
-  <label>Name</label><input type="text" name="name" required>
-  <label>Email</label><input type="text" name="email" inputmode="email" required>
+  <label>Name<input type="text" name="name" required></label>
+  <label>Email<input type="text" name="email" inputmode="email" required></label>
 {% elif id == 'merge' %}
   {{ who('keep', 'Keep this one') }}{{ who('dup', 'Merge this duplicate into it') }}
 {% elif id == 'bulk_archive' %}
-  <label>People - one per line</label><textarea name="people" rows="4" required></textarea>{{ note() }}
+  <label>People - one per line<textarea name="people" rows="4" required></textarea></label>{{ note() }}
 {% elif id == 'restore' %}
-  <label>People - one per line ({{ archived|length }} archived)</label><textarea name="people" rows="3"></textarea>
+  <label>People - one per line ({{ archived|length }} archived)<textarea name="people" rows="3"></textarea></label>
   <label class="check"><input type="checkbox" name="all" value="1"> Restore everyone archived</label>
 {% elif id == 'takings' %}
   {{ dates(today, today) }}
 {% elif id == 'chase' or id == 'balances' or id == 'integrity' %}
 {% elif id == 'leaderboard' %}
-  <label>How many</label><input type="number" name="n" value="10" min="1">
+  <label>How many<input type="number" name="n" value="10" min="1"></label>
 {% elif id == 'raffle' %}
-  <label>Who's in the draw</label>
-  <select name="pool"><option value="bought">Bought something between these dates</option>
-    <option value="points">Anyone with points</option><option value="all">Every active customer</option></select>
+  <label>Who's in the draw<select name="pool"><option value="bought">Bought something between these dates</option>
+    <option value="points">Anyone with points</option><option value="all">Every active customer</option></select></label>
   {{ dates() }}
-  <div class="row"><div><label>Winners</label><input type="number" name="n" value="1" min="1"></div></div>
+  <div class="row"><div><label>Winners<input type="number" name="n" value="1" min="1"></label></div></div>
   <label class="check"><input type="checkbox" name="weighted" value="1"> Weight by points</label>
 {% elif id == 'sync_now' %}
   {% if not square_on %}<p class="red small">Square isn't configured.</p>{% endif %}
 {% elif id == 'resync' %}
-  <label>From</label><input type="date" name="start" value="{{ week_ago }}" required>
+  <label>From<input type="date" name="start" value="{{ week_ago }}" required></label>
 {% elif id == 'find_payment' %}
-  <label>Square payment ID</label><input type="text" name="payment_id" required>
+  <label>Square payment ID<input type="text" name="payment_id" required></label>
 {% elif id == 'notice' %}
-  <label>Message (empty to clear)</label><textarea name="notice" rows="3">{{ notice.split('\n— ')[0] if notice }}</textarea>
+  <label>Message (empty to clear)<textarea name="notice" rows="3">{{ notice.split('\n— ')[0] if notice }}</textarea></label>
 {% elif id == 'sign_out_all' %}
   {{ confirm('SIGN OUT') }}
 {% endif %}
@@ -97,7 +96,7 @@
 {# Fixed columns so tall and short sections pack neatly; stacks in reading order on a phone. #}
 {% for col in [[0, 2, 4], [1, 3], [5, 6, 7]] %}<div class="toolcol">
 {% for i in col %}{% set section, items = tools[i] %}
-  <section class="panel">
+  <section class="panel" data-n="{{ i + 1 }}">
     <h2>{{ section }} <kbd>{{ i + 1 }}</kbd></h2>
     {% for id, label, tip in items %}
     <details class="tool{{ ' danger' if id in DANGER }}" id="{{ id }}">
@@ -116,8 +115,8 @@
 document.addEventListener("keydown", function (e) {
   var a = document.activeElement;
   if (e.ctrlKey || e.metaKey || e.altKey || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;
-  var n = parseInt(e.key, 10), secs = document.querySelectorAll(".toolgrid section");
-  if (n >= 1 && n <= secs.length) { var s = secs[n - 1].querySelector("summary"); s.focus(); s.scrollIntoView({block: "nearest"}); }
+  var sec = document.querySelector('.toolgrid section[data-n="' + e.key + '"]');
+  if (sec) { var s = sec.querySelector("summary"); s.focus(); s.scrollIntoView({block: "nearest"}); }
 });
 // Re-open the tool you just used (redirects land on /tools#id).
 if (location.hash) { var d = document.querySelector(location.hash); if (d && d.tagName === "DETAILS") d.open = true; }

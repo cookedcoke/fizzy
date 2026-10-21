@@ -24,7 +24,7 @@ router = APIRouter(prefix="/tools")
 TOOLS = [
     ("Points", [
         ("bulk_points", "Give points to many", "Add or take points from a list of people, or everyone, in one go - e.g. event prizes."),
-        ("bonus_points", "Bonus points for a period", "Double/triple points day: tops up points on purchases made between two dates."),
+        ("bonus_points", "Bonus points for a period", "Double/triple points day: tops up points on purchases made between two dates. Tab purchases count by purchase date, for the part already repaid."),
         ("transfer_points", "Move points", "Move points from one customer to another (e.g. a mix-up at the counter)."),
         ("reset_points", "Reset all points", "Set everyone's points back to 0, e.g. end of year. Spend history and tab eligibility are kept."),
     ]),
@@ -85,39 +85,55 @@ class ToolError(Exception):
 # ---- helpers ----------------------------------------------------------------------------------
 
 def resolve(conn, text, archived_ok=False):
-    """Find exactly one customer from 'Name <email>', an email, a student number, or a name."""
-    text = (text or "").strip()
+    """Find exactly one customer. Only an exact match is acted on: 'Name <email>' (what the
+    suggestion list fills in), an email, a full student number, or an exact unique name.
+    Anything fuzzier stops with suggestions, so a typo can't hit the wrong student."""
+    text = " ".join((text or "").split())
     if not text:
         raise ToolError("Pick a customer.")
+    arch = "" if archived_ok else " AND archived_at IS NULL"
     m = re.search(r"<([^>]+)>", text)
     email = (m.group(1) if m else text if "@" in text else "").strip().lower()
-    arch = "" if archived_ok else " AND archived_at IS NULL"
     if email:
         row = conn.execute(f"SELECT * FROM customers WHERE email = ?{arch}", (email,)).fetchone()
         if row:
             return row
         raise ToolError(f"No customer with email {email}.")
+    sid = text.lower()
+    if re.fullmatch(r"(rns)?\d+", sid):
+        sid = sid if sid.startswith("rns") else f"rns{sid}"
+        rows = conn.execute(f"SELECT * FROM customers WHERE email LIKE ? || '@%'{arch}", (sid,)).fetchall()
+        if len(rows) == 1:
+            return rows[0]
+        raise ToolError(f"No customer with student number {sid}.")
     rows = conn.execute(f"SELECT * FROM customers WHERE lower(name) = ?{arch}", (text.lower(),)).fetchall()
     if len(rows) == 1:
         return rows[0]
     hits = rows or customers.search(conn, text, 5)
-    if len(hits) == 1:
-        return hits[0]
     if not hits:
         raise ToolError(f"No customer matches '{text}'.")
-    raise ToolError(f"'{text}' matches several people: " + "; ".join(f"{h['name']} <{h['email']}>" for h in hits[:5]))
+    who = "; ".join(f"{h['name']} <{h['email']}>" for h in hits[:5])
+    if rows:
+        raise ToolError(f"More than one '{text}': {who}. Pick one from the list.")
+    raise ToolError(f"No exact match for '{text}'. Did you mean: {who}? Pick one from the list.")
 
 
 def resolve_many(conn, text, archived_ok=False):
+    """One person per line (or separated by ';'). Commas are kept, so 'Surname, Given' works."""
     found, missing = [], []
-    for line in re.split(r"[\n,;]+", text or ""):
+    for line in re.split(r"[\n;]+", text or ""):
         if line.strip():
-            try:
-                c = resolve(conn, line, archived_ok)
-                if c["id"] not in {f["id"] for f in found}:
-                    found.append(c)
-            except ToolError as e:
-                missing.append(str(e))
+            parts = [p.strip() for p in line.split(",")]
+            candidates = [line] + ([f"{parts[1]} {parts[0]}"] if len(parts) == 2 and all(parts) else [])
+            for i, cand in enumerate(candidates):
+                try:
+                    c = resolve(conn, cand, archived_ok)
+                    if c["id"] not in {f["id"] for f in found}:
+                        found.append(c)
+                    break
+                except ToolError as e:
+                    if i == len(candidates) - 1:
+                        missing.append(str(e))
     return found, missing
 
 
@@ -175,7 +191,7 @@ async def run_tool(tool: str, request: Request, who=Depends(staff), conn=Depends
         result = handler(request, conn, who, form)
         conn.commit()
         return result
-    except ToolError as e:
+    except (ToolError, ValueError) as e:  # ValueError: rule checks in logic.py (e.g. a 0-point change)
         conn.rollback()
         return done(request, tool, f"{tool_names()[tool]}: {e}")
 
@@ -228,6 +244,8 @@ def _confirm(form, word):
 
 def h_bulk_points(request, conn, who, form):
     delta = _int(form, "delta")
+    if delta == 0:
+        raise ToolError("Points can't be 0.")
     note = form.get("note", "").strip()
     if not note:
         raise ToolError("A reason is required.")
@@ -245,6 +263,19 @@ def h_bulk_points(request, conn, who, form):
     return done(request, "bulk_points", msg)
 
 
+def _purchases_in(conn, start, end):
+    """Points-earning spend per customer for purchases made between start and end. Tab purchases
+    count by when they were bought (not repaid), for the part that has been repaid so far."""
+    totals = {r["customer_id"]: r["pts"] for r in conn.execute(
+        "SELECT customer_id, SUM(delta) AS pts FROM points_ledger WHERE reason IN ('purchase', 'refund') "
+        "AND created_at >= ? AND created_at < ? GROUP BY customer_id", (start, end))}
+    for (cid,) in conn.execute("SELECT DISTINCT customer_id FROM tab_charges WHERE charged_at >= ? AND charged_at < ?",
+                               (start, end)).fetchall():
+        paid = sum(ch["paid_cents"] for ch in logic.tab_ledger(conn, cid)["charges"] if start <= ch["charged_at"] < end)
+        totals[cid] = totals.get(cid, 0) + paid
+    return totals
+
+
 def h_bonus_points(request, conn, who, form):
     try:
         mult = float(form.get("multiplier") or 0)
@@ -253,17 +284,16 @@ def h_bonus_points(request, conn, who, form):
     if mult <= 1:
         raise ToolError("Multiplier must be more than 1 (e.g. 2 for double points).")
     start, end = day_start(form.get("start")), day_start(form.get("end"), end=True)
-    rows = conn.execute(
-        "SELECT customer_id, SUM(delta) AS pts FROM points_ledger WHERE reason IN ('purchase', 'refund', 'tab_repaid', 'tab_refund') "
-        "AND created_at >= ? AND created_at < ? GROUP BY customer_id HAVING pts > 0", (start, end)
-    ).fetchall()
     note = f"x{mult:g} bonus {form['start']} to {form['end']}" + (f" - {form['note'].strip()}" if form.get("note", "").strip() else "")
-    total = 0
-    for r in rows:
-        extra = round(r["pts"] * (mult - 1))
-        logic.adjust_points(conn, r["customer_id"], extra, note, who)
+    total = given = 0
+    for cid, pts in _purchases_in(conn, start, end).items():
+        extra = round(pts * (mult - 1))
+        if extra <= 0:
+            continue
+        logic.adjust_points(conn, cid, extra, note, who)
         total += extra
-    return done(request, "bonus_points", f"Gave {total} bonus points to {len(rows)} customer(s). (Don't run the same period twice.)")
+        given += 1
+    return done(request, "bonus_points", f"Gave {total} bonus points to {given} customer(s). (Don't run the same period twice.)")
 
 
 def h_transfer_points(request, conn, who, form):
@@ -271,6 +301,9 @@ def h_transfer_points(request, conn, who, form):
     if src["id"] == dst["id"]:
         raise ToolError("Pick two different customers.")
     pts = _int(form, "points", 1)
+    have = logic.points_balance(conn, src["id"])
+    if pts > have:
+        raise ToolError(f"{src['name']} only has {have} points.")
     note = form.get("note", "").strip() or "Points moved"
     logic.adjust_points(conn, src["id"], -pts, f"{note} (to {dst['name']})", who)
     logic.adjust_points(conn, dst["id"], pts, f"{note} (from {src['name']})", who)
@@ -375,16 +408,26 @@ def h_merge(request, conn, who, form):
     keep, dup = resolve(conn, form.get("keep")), resolve(conn, form.get("dup"))
     if keep["id"] == dup["id"]:
         raise ToolError("Pick two different customers.")
-    for table in ("points_ledger", "tab_charges", "tab_repayments", "square_payments", "tab_decisions", "audit_log"):
+    for table in ("points_ledger", "tab_charges", "tab_repayments", "square_payments", "tab_decisions", "audit_log",
+                  "square_aliases"):
         conn.execute(f"UPDATE {table} SET customer_id = ? WHERE customer_id = ?", (keep["id"], dup["id"]))
-    sq = keep["square_customer_id"] or dup["square_customer_id"]
-    conn.execute("UPDATE customers SET square_customer_id = NULL, archived_at = ? WHERE id = ?", (db.now_iso(), dup["id"]))
-    conn.execute("UPDATE customers SET square_customer_id = ? WHERE id = ?", (sq, keep["id"]))
+    # Square profiles: keep's stays primary; the duplicate's becomes an alias, so its future sales
+    # (and the next customer sync) still land on the kept customer.
+    if keep["square_customer_id"] is None:
+        conn.execute("UPDATE customers SET square_customer_id = NULL WHERE id = ?", (dup["id"],))
+        conn.execute("UPDATE customers SET square_customer_id = ? WHERE id = ?", (dup["square_customer_id"], keep["id"]))
+    elif dup["square_customer_id"]:
+        conn.execute("INSERT OR REPLACE INTO square_aliases(square_customer_id, customer_id) VALUES (?, ?)",
+                     (dup["square_customer_id"], keep["id"]))
+    # Tab approval: if only the duplicate had a decision, the kept customer takes it over.
+    if keep["tab_decision"] is None and dup["tab_decision"] is not None:
+        conn.execute("UPDATE customers SET tab_decision = ?, tab_decision_note = ?, tab_decision_by = ?, tab_decision_at = ? "
+                     "WHERE id = ?", (dup["tab_decision"], dup["tab_decision_note"], dup["tab_decision_by"],
+                                      dup["tab_decision_at"], keep["id"]))
+    conn.execute("UPDATE customers SET square_customer_id = NULL, archived_at = ?, merged_into = ?, tab_decision = NULL "
+                 "WHERE id = ?", (db.now_iso(), keep["id"], dup["id"]))
     db.audit(conn, who, "merge", keep["id"], f"merged #{dup['id']} {dup['name']} <{dup['email']}> into this customer")
-    note = ""
-    if keep["square_customer_id"] and dup["square_customer_id"] and keep["square_customer_id"] != dup["square_customer_id"]:
-        note = f" Note: the duplicate's Square profile ({dup['square_customer_id']}) is no longer linked - merge it in Square too."
-    return back(request, f"/customers/{keep['id']}", f"Merged {dup['name']} into {keep['name']}.{note}")
+    return back(request, f"/customers/{keep['id']}", f"Merged {dup['name']} into {keep['name']}.")
 
 
 def h_bulk_archive(request, conn, who, form):
@@ -423,11 +466,18 @@ def h_takings(request, conn, who, form):
         label = {"sale": "Square: sales", "tab_charge": "Put on tabs (not money)", "tab_repayment": "Square: tab repayments"}[r["kind"]]
         rows.append([label, r["tender"], r["n"], money(r["total"])])
     for r in conn.execute(
-        "SELECT SUM(r.amount_cents) AS total, COUNT(*) AS n FROM square_refunds r WHERE r.created_at >= ? AND r.created_at < ?",
+        "SELECT SUM(r.amount_cents) AS total, COUNT(*) AS n FROM square_refunds r "
+        "WHERE r.created_at >= ? AND r.created_at < ? AND r.square_refund_id NOT LIKE 'return:%'",
         (start, end),
     ):
         if r["n"]:
             rows.append(["Square: refunds", "", r["n"], money(-r["total"])])
+    for r in conn.execute(
+        "SELECT SUM(amount_cents) AS total, COUNT(*) AS n FROM square_refunds WHERE created_at >= ? AND created_at < ? "
+        "AND square_refund_id LIKE 'return:%'", (start, end),
+    ):
+        if r["n"]:
+            rows.append(["Returned from tabs (not money)", "", r["n"], money(-r["total"])])
     for r in conn.execute(
         "SELECT method, COUNT(*) AS n, SUM(amount_cents) AS total FROM tab_repayments WHERE created_at >= ? AND created_at < ? "
         "AND square_payment_id IS NULL GROUP BY method", (start, end)
@@ -490,8 +540,9 @@ def h_raffle(request, conn, who, form):
         start, end = day_start(form.get("start")), day_start(form.get("end"), end=True)
         pool = conn.execute(
             "SELECT c.id, c.name, (SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = c.id) AS pts "
-            "FROM customers c WHERE c.archived_at IS NULL AND EXISTS (SELECT 1 FROM points_ledger p WHERE p.customer_id = c.id "
-            "AND p.reason IN ('purchase', 'tab_repaid') AND p.created_at >= ? AND p.created_at < ?)", (start, end)
+            "FROM customers c WHERE c.archived_at IS NULL AND (EXISTS (SELECT 1 FROM points_ledger p WHERE p.customer_id = c.id "
+            "AND p.reason = 'purchase' AND p.created_at >= ? AND p.created_at < ?) OR EXISTS (SELECT 1 FROM tab_charges t "
+            "WHERE t.customer_id = c.id AND t.charged_at >= ? AND t.charged_at < ?))", (start, end, start, end)
         ).fetchall()
     else:
         pool = conn.execute(
@@ -524,16 +575,16 @@ def h_raffle(request, conn, who, form):
 def h_sync_now(request, conn, who, form):
     if not config.SQUARE_TOKEN:
         raise ToolError("Square isn't configured (SQUARE_ACCESS_TOKEN).")
-    return done(request, "sync_now", f"Sync: {square.sync(conn)}")
+    return done(request, "sync_now", square.describe_sync(square.sync(conn, wait=True)))
 
 
 def h_resync(request, conn, who, form):
     if not config.SQUARE_TOKEN:
         raise ToolError("Square isn't configured (SQUARE_ACCESS_TOKEN).")
-    db.set_setting(conn, "square_cursor", day_start(form.get("start")))
+    square.request_resync(conn, day_start(form.get("start")))
     db.audit(conn, who, "square_resync", None, f"from {form.get('start')}")
     conn.commit()
-    return done(request, "resync", f"Re-synced from {form['start']}: {square.sync(conn)}")
+    return done(request, "resync", f"Re-sync from {form['start']}: " + square.describe_sync(square.sync(conn, wait=True)))
 
 
 def h_find_payment(request, conn, who, form):

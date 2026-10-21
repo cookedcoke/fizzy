@@ -21,7 +21,14 @@ CREATE TABLE IF NOT EXISTS customers (
     tab_decision_by TEXT,
     tab_decision_at TEXT,
     created_at TEXT NOT NULL,
-    archived_at TEXT
+    archived_at TEXT,
+    merged_into INTEGER REFERENCES customers(id)   -- set on the archived side of a merge
+);
+
+-- Extra Square profiles that belong to a customer (e.g. the duplicate's profile after a merge).
+CREATE TABLE IF NOT EXISTS square_aliases (
+    square_customer_id TEXT PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id)
 );
 
 -- Permanent history of every tab decision (approve / reject / revoke / reset).
@@ -159,8 +166,19 @@ def connect(path=None):
     return conn
 
 
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS never changes an existing
+# table, so databases created before these existed get them added here on start-up.
+MIGRATIONS = [
+    ("customers", "merged_into", "INTEGER REFERENCES customers(id)"),
+]
+
+
 def init(conn):
     conn.executescript(SCHEMA)
+    for table, column, decl in MIGRATIONS:
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
     conn.commit()

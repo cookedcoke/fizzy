@@ -1,0 +1,300 @@
+"""Regression tests for the full-stack review findings (one or more per fix)."""
+import json
+import sqlite3
+import threading
+
+import pytest
+
+from fizzy import config, db, logic, square, tools
+from tests.test_rules import iso, order, pay, tab_order
+
+
+class FakeSquare:
+    """Stands in for SquareClient: records the query params it was asked for."""
+
+    def __init__(self, customers=(), payments=(), orders=(), refunds=(), order_by_id=None):
+        self._c, self._p, self._o, self._r = list(customers), list(payments), list(orders), list(refunds)
+        self._orders = order_by_id or {}
+        self.calls = []
+
+    def customers(self):
+        return iter(self._c)
+
+    def payments(self, since):
+        self.calls.append(("payments", since))
+        return iter(self._p)
+
+    def orders(self, since):
+        self.calls.append(("orders", since))
+        return iter(self._o)
+
+    def refunds(self, since):
+        self.calls.append(("refunds", since))
+        return iter(self._r)
+
+    def order(self, oid):
+        return self._orders.get(oid)
+
+    def payment(self, pid):
+        return next((p for p in self._p if p["id"] == pid), None)
+
+
+def reload(conn, c):
+    return conn.execute("SELECT * FROM customers WHERE id = ?", (c["id"],)).fetchone()
+
+
+# ---- refunds of a repayment + purchase sale ---------------------------------------------------
+
+def _mixed_sale(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 500))
+    square.process_payment(conn, pay("p1", 800, source="CARD", order_id="o2"),
+                           order(("Tab repayment", 500), ("Coke", 300), oid="o2"))
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 0 and logic.points_balance(conn, c["id"]) == 800
+    return c
+
+
+def refund(rid, pid, amount, oid=None):
+    return {"id": rid, "payment_id": pid, "status": "COMPLETED", "amount_money": {"amount": amount},
+            "created_at": iso(), "order_id": oid}
+
+
+def test_refunding_the_drink_in_a_repayment_sale_leaves_the_tab_paid(conn, cust):
+    c = _mixed_sale(conn, cust)
+    square.process_refund(conn, refund("r1", "p1", 300))            # Square doesn't say which item: drink first
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 0
+    assert logic.points_balance(conn, c["id"]) == 500
+
+
+def test_refund_naming_the_repayment_item_reopens_the_tab(conn, cust):
+    c = _mixed_sale(conn, cust)
+    ret = {"returns": [{"return_line_items": [{"name": "Tab repayment", "total_money": {"amount": 500}}]}]}
+    square.process_refund(conn, refund("r1", "p1", 500), ret)
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 500
+    assert logic.points_balance(conn, c["id"]) == 300                # the drink keeps its points
+
+
+def test_full_refund_of_mixed_sale_is_capped_per_part(conn, cust):
+    c = _mixed_sale(conn, cust)
+    square.process_refund(conn, refund("r1", "p1", 800))
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 500      # not 800
+    assert logic.points_balance(conn, c["id"]) == 0
+    assert not square.process_refund(conn, refund("r1", "p1", 800))   # still idempotent
+
+
+def test_partial_refunds_of_a_repayment_never_take_more_points_than_it_earned(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 300))
+    square.process_payment(conn, pay("p1", 500, source="CARD", order_id="o2"), order(("Tab repayment", 500), oid="o2"))
+    assert logic.points_balance(conn, c["id"]) == 300                 # $2 of it is credit, no points
+    square.process_refund(conn, refund("r1", "p1", 200))
+    square.process_refund(conn, refund("r2", "p1", 200))
+    assert logic.points_balance(conn, c["id"]) == 0                   # was -100 before the fix
+
+
+# ---- points ordering, write-offs, returns -----------------------------------------------------
+
+def test_repayment_seen_before_its_tab_sale_still_earns_points(conn, cust):
+    c = cust()
+    square.process_payment(conn, pay("p1", 400, source="CARD", order_id="o2"), order(("Tab repayment", 400), oid="o2"))
+    assert logic.points_balance(conn, c["id"]) == 0
+    square.process_order(conn, tab_order("o1", 400))
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 0
+    assert logic.points_balance(conn, c["id"]) == 400
+
+
+def test_sync_processes_tab_sales_before_later_repayments(conn, cust):
+    cust()
+    early, late = iso(hours=2), iso()
+    fake = FakeSquare(payments=[pay("p1", 400, source="CARD", order_id="o2", ts=late)],
+                      orders=[tab_order("o1", 400, ts=early)],
+                      order_by_id={"o2": order(("Tab repayment", 400), oid="o2")})
+    assert "error" not in square.sync(conn, fake)
+    assert conn.execute("SELECT SUM(delta) FROM points_ledger WHERE reason = 'tab_repaid'").fetchone()[0] == 400
+
+
+def test_square_repayment_is_never_matched_to_a_write_off(conn, cust):
+    c = cust()
+    logic.add_tab_charge(conn, c, 300, "x", iso(hours=1))
+    logic.add_repayment(conn, c["id"], 300, "writeoff", "forgiven", "Bru")
+    square.process_payment(conn, pay("p1", 300, order_id="o2"), order(("Tab repayment", 300), oid="o2"))
+    assert conn.execute("SELECT COUNT(*) FROM tab_repayments").fetchone()[0] == 2
+    assert logic.tab_ledger(conn, c["id"])["balance_cents"] == -300
+
+
+def test_return_from_a_written_off_tab_reverses_the_write_off_not_credit(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 400))
+    logic.add_repayment(conn, c["id"], 400, "writeoff", "forgiven", "Bru")
+    ret = {"source_order_id": "o1", "return_line_items": [{"total_discount_money": {"amount": 400}}]}
+    square.process_order(conn, {"id": "o9", "state": "COMPLETED", "closed_at": iso(), "created_at": iso(), "returns": [ret]})
+    assert logic.tab_ledger(conn, c["id"])["balance_cents"] == 0       # not $4 credit
+    assert logic.points_balance(conn, c["id"]) == 0
+
+
+def test_return_only_reduces_the_tab_part_of_a_discounted_item(conn, cust):
+    c = cust()
+    # Pie $6 ($1 staff discount, $3 on the tab, $2 paid) + Coke $3 on the tab = $6 owed.
+    # Returning the pie should take $3 off the tab, leaving the Coke's $3.
+    src = tab_order("o1", 600, ("Pie", 600), ("Coke", 300))
+    src["discounts"].append({"name": "Staff", "uid": "d2", "applied_money": {"amount": 100}})
+    square.process_order(conn, src)
+    ret = {"source_order_id": "o1",
+           "return_discounts": [{"uid": "rd1", "name": "Fizzy Tab"}, {"uid": "rd2", "name": "Staff"}],
+           "return_line_items": [{"name": "Pie", "total_discount_money": {"amount": 400},
+                                  "applied_discounts": [{"discount_uid": "rd1", "applied_money": {"amount": 300}},
+                                                        {"discount_uid": "rd2", "applied_money": {"amount": 100}}]}]}
+    square.process_order(conn, {"id": "o9", "state": "COMPLETED", "closed_at": iso(), "created_at": iso(), "returns": [ret]})
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 300     # was 200: the $1 staff discount came off the tab too
+
+
+def test_reclassify_round_trip_does_not_double_refund_a_hand_charge(conn, cust):
+    c = cust()
+    logic.add_tab_charge(conn, c, 400, "by hand", iso(), "Mike")
+    square.process_order(conn, tab_order("o1", 400))                  # links to the hand charge
+    ret = {"source_order_id": "o1", "return_line_items": [{"total_discount_money": {"amount": 100}}]}
+    square.process_order(conn, {"id": "o9", "state": "COMPLETED", "closed_at": iso(), "created_at": iso(), "returns": [ret]})
+    square.reclassify(conn, "order:o1", "sale", "Bru")
+    square.reclassify(conn, "order:o1", "tab_charge", "Bru")
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 300
+
+
+# ---- sync robustness --------------------------------------------------------------------------
+
+def test_duplicate_square_profile_does_not_stop_syncing(conn, cust):
+    c = cust(email="rns1@reddamnorthshore.nsw.edu.au", sq="SQ1")
+    fake = FakeSquare(customers=[{"id": "SQ2", "given_name": "Dup", "email_address": "RNS1@reddamnorthshore.nsw.edu.au"}],
+                      payments=[pay("p1", 250)])
+    result = square.sync(conn, fake)
+    assert "error" not in result and result["conflicts"] == 1
+    assert logic.points_balance(conn, c["id"]) == 250
+    assert json.loads(db.get_setting(conn, "square_customer_conflicts"))[0]["existing"] == c["name"]
+
+
+def test_one_bad_payment_is_skipped_and_reported(conn, cust, monkeypatch):
+    c = cust()
+    real = square.process_payment
+
+    def flaky(conn_, p, o):
+        if p["id"] == "bad":
+            raise RuntimeError("boom")
+        return real(conn_, p, o)
+    monkeypatch.setattr(square, "process_payment", flaky)
+    result = square.sync(conn, FakeSquare(payments=[pay("bad", 100), pay("good", 200)]))
+    assert result["skipped_items"] == 1 and logic.points_balance(conn, c["id"]) == 200
+    assert "boom" in db.get_setting(conn, "square_item_errors")
+
+
+def test_sync_window_is_by_last_update(conn, cust):
+    cust()
+    fake = FakeSquare()
+    square.sync(conn, fake)
+    assert {k for k, _ in fake.calls} == {"payments", "orders", "refunds"}
+    # The client is asked by update time (see SquareClient); offline sales uploaded late have an
+    # old created_at but a new updated_at, so they're still inside the window.
+    import inspect
+    src = inspect.getsource(square.SquareClient)
+    assert '"updated_at_begin_time": since' in src and '"sort_field": "UPDATED_AT"' in src
+    assert '"updated_at": {"start_at": since}' in src
+
+
+def test_resync_requested_during_a_running_sync_is_not_lost(conn, cust):
+    cust()
+    square._sync_lock.acquire()
+    try:
+        assert "queued" in square.sync(conn, FakeSquare())               # busy: queued, not dropped
+        square.request_resync(conn, "2020-01-01T00:00:00+00:00")
+    finally:
+        square._sync_lock.release()
+    fake = FakeSquare()
+    square.sync(conn, fake)
+    assert fake.calls[0][1].startswith("2019-12-31T23")                  # honoured (minus the 1h overlap)
+    assert db.get_setting(conn, "square_resync_from") == ""
+
+
+def test_merge_keeps_the_duplicates_square_profile_pointing_at_the_kept_customer(conn, cust):
+    keep = cust("Keep Kid", "rns1@reddamnorthshore.nsw.edu.au", "SQK")
+    dup = cust("Dup Kid", "rns2@reddamnorthshore.nsw.edu.au", "SQD")
+    logic.set_tab_decision(conn, dup["id"], "approved", "ok", "Bru")
+    req = type("R", (), {"session": {}})()
+    tools.h_merge(req, conn, "Bru", {"keep": "Keep Kid <rns1@reddamnorthshore.nsw.edu.au>",
+                                     "dup": "Dup Kid <rns2@reddamnorthshore.nsw.edu.au>"})
+    # Next sync sees both Square profiles again; the duplicate's must not attach to the archived record.
+    square.sync(conn, FakeSquare(customers=[{"id": "SQK", "email_address": "rns1@reddamnorthshore.nsw.edu.au"},
+                                            {"id": "SQD", "email_address": "rns2@reddamnorthshore.nsw.edu.au", "reference_id": f"fizzy-{dup['id']}"}],
+                                 payments=[pay("p1", 300, cust="SQD")]))
+    assert logic.points_balance(conn, keep["id"]) == 300
+    k, d = reload(conn, keep), reload(conn, dup)
+    assert k["tab_decision"] == "approved" and d["tab_decision"] is None and d["merged_into"] == keep["id"]
+
+
+# ---- tools -----------------------------------------------------------------------------------
+
+def test_takings_puts_tab_returns_on_their_own_line(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 400))
+    ret = {"source_order_id": "o1", "return_line_items": [{"total_discount_money": {"amount": 400}}]}
+    square.process_order(conn, {"id": "o9", "state": "COMPLETED", "closed_at": iso(), "created_at": iso(), "returns": [ret]})
+    captured = {}
+    monkey_report = tools.report
+    tools.report = lambda request, title, headers, rows, **kw: captured.setdefault("rows", rows)
+    try:
+        tools.h_takings(None, conn, "Bru", {"start": "2020-01-01", "end": "2030-01-01"})
+    finally:
+        tools.report = monkey_report
+    labels = [r[0] for r in captured["rows"]]
+    assert "Returned from tabs (not money)" in labels and "Square: refunds" not in labels
+
+
+def test_bonus_points_count_tab_purchases_by_purchase_date(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 400, ts="2026-01-05T01:00:00+00:00"))   # bought in the bonus week
+    logic.add_repayment(conn, c["id"], 400, "cash", "", "Bru", created_at="2026-02-01T01:00:00+00:00")  # repaid later
+    tools.h_bonus_points(type("R", (), {"session": {}})(), conn, "Bru",
+                         {"multiplier": "2", "start": "2026-01-01", "end": "2026-01-10"})
+    assert logic.points_balance(conn, c["id"]) == 800
+
+
+def test_strict_customer_matching(conn, cust):
+    c = cust("Nora Zhang", "rns00000042@reddamnorthshore.nsw.edu.au")
+    assert tools.resolve(conn, "nora zhang")["id"] == c["id"]
+    assert tools.resolve(conn, "Nora Zhang <rns00000042@reddamnorthshore.nsw.edu.au>")["id"] == c["id"]
+    assert tools.resolve(conn, "00000042")["id"] == c["id"]
+    for fuzzy in ("Nora Zang", "nora", "42"):
+        with pytest.raises(tools.ToolError):
+            tools.resolve(conn, fuzzy)
+    found, missing = tools.resolve_many(conn, "Zhang, Nora")
+    assert [f["id"] for f in found] == [c["id"]] and not missing
+
+
+def test_move_points_cannot_overdraw(conn, cust):
+    a = cust("Ann A", "rns1@reddamnorthshore.nsw.edu.au", "S1")
+    cust("Bob B", "rns2@reddamnorthshore.nsw.edu.au", "S2")
+    logic.adjust_points(conn, a["id"], 50, "seed", "Bru")
+    with pytest.raises(tools.ToolError):
+        tools.h_transfer_points(None, conn, "Bru", {"from": "Ann A", "to": "Bob B", "points": "60"})
+
+
+def test_csv_row_with_no_name_is_skipped_not_blanked():
+    from fizzy.customers import parse_directory_csv
+    rows, errors = parse_directory_csv("Cleaned Name,Email\n,rns1@reddamnorthshore.nsw.edu.au\n")
+    assert rows == [] and "no name" in errors[0]
+
+
+def test_blank_env_value_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("SOME_SETTING", "")
+    assert config._env("SOME_SETTING", "300") == "300"
+    monkeypatch.setenv("SOME_SETTING", "  ")
+    assert config._env("SOME_SETTING", "x") == "x"
+
+
+def test_old_database_gets_new_columns(tmp_path):
+    path = str(tmp_path / "old.db")
+    raw = sqlite3.connect(path)
+    raw.executescript("CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, "
+                      "square_customer_id TEXT UNIQUE, tab_decision TEXT, tab_decision_note TEXT, tab_decision_by TEXT, "
+                      "tab_decision_at TEXT, created_at TEXT NOT NULL, archived_at TEXT);")
+    raw.close()
+    conn = db.connect(path)
+    db.init(conn)
+    assert "merged_into" in {r["name"] for r in conn.execute("PRAGMA table_info(customers)")}

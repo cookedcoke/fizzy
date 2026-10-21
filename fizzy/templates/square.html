@@ -9,6 +9,19 @@
   <div class="stat"><div class="k">Synced up to</div><div class="v sm">{{ cursor|local or '-' }}</div></div>
   <div class="stat {{ 'alert' if unlinked_customers }}"><div class="k">Not in Square</div><div class="v">{{ unlinked_customers }}</div><div class="sub"><a href="/export/square-customers.csv">Download import CSV</a></div></div>
 </div>
+{% if conflicts %}
+<div class="panel" style="border-color:#F0DFAE"><h2>Square profiles not linked <span class="count">{{ conflicts|length }}</span></h2>
+  <p class="small" style="margin-top:0">These Square profiles use an email that already belongs to someone in Fizzy, so they weren't added.
+    Usually it's a duplicate profile in Square: merge it in Square (Customers → select both → Merge), or assign its sales here.</p>
+  <div class="scroll"><table><tr><th>Square profile</th><th>Email</th><th>Already in Fizzy as</th></tr>
+    {% for c in conflicts %}<tr><td>{{ c.name }}</td><td class="mono small">{{ c.email }}</td><td>{{ c.existing }}</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endif %}
+{% if item_errors %}
+<div class="err">Last sync skipped {{ item_errors|length }} item(s) it couldn't process - everything else synced.
+  {% for e in item_errors %}<br><span class="mono small">{{ e }}</span>{% endfor %}</div>
+{% endif %}
 <div class="panel"><h2>How Fizzy reads Square</h2>
   <table>
     <tr><td style="width:180px">Tab sale</td><td>{% if tab_discount %}A sale with the <code>{{ tab_discount }}</code> discount - the discounted amount goes on the tab{% endif %}{% if tab_tenders %}{{ ', or ' if tab_discount }}paid with {{ tab_tenders|join(' / ') }}{% endif %}{% if not tab_discount and not tab_tenders %}Not set up{% endif %}</td></tr>
@@ -30,7 +43,7 @@
         </form>{% endif %}</td>
       <td class="n">{{ p.amount_cents|money }}</td><td class="small">{{ p.tender }}</td><td class="small hide-sm">{{ p['items'] }}</td>
       <td><form class="inline" method="post" action="/square/payments/{{ p.square_payment_id }}/kind">
-        <select name="kind" style="height:28px;width:auto" onchange="if(confirm('Change how this payment is counted?'))this.form.submit()">
+        <select name="kind" style="height:28px;width:auto" data-was="{{ p.kind }}" onchange="if(confirm('Change how this payment is counted?'))this.form.submit();else this.value=this.dataset.was">
           {% for k, l in [('sale','Sale'),('tab_charge','Tab charge'),('tab_repayment','Tab repayment')] %}<option value="{{ k }}" {{ 'selected' if k == p.kind }}>{{ l }}</option>{% endfor %}
         </select></form></td>
       <td class="n"><a class="small" href="/square/payments/{{ p.square_payment_id }}" target="_blank" title="What Square sent">Raw</a></td></tr>

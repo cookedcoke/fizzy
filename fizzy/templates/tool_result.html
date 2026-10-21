@@ -8,7 +8,6 @@
   {% else %}<tr><td colspan="{{ headers|length }}" class="empty">Nothing to show.</td></tr>{% endfor %}
 </table></div></div>
 {% for label, text in copy or [] %}{% if text %}
-<div class="panel noprint"><label>{{ label }} - click to select, then copy</label>
-  <textarea rows="3" readonly onclick="this.select()">{{ text }}</textarea></div>
+<div class="panel noprint"><label>{{ label }} - click to select, then copy<textarea rows="3" readonly onclick="this.select()">{{ text }}</textarea></label></div>
 {% endif %}{% endfor %}
 {% endblock %}

@@ -131,6 +131,7 @@ def tab_status(conn, customer, ledger=None, cfg=None):
         "available_cents": available,
         "spend_cents": spent,
         "unlock_spend_cents": cfg["unlock_spend_cents"],
+        "limit_cents": cfg["tab_limit_cents"],
     }
 
 
@@ -173,11 +174,20 @@ def add_tab_charge(conn, customer, amount_cents, items, charged_at, staff=None, 
     elif amount_cents > st["available_cents"]:
         breach = f"Over limit (available ${st['available_cents'] / 100:.2f})"
     due_at = (parse_ts(charged_at) + timedelta(days=cfg["tab_due_days"])).isoformat(timespec="seconds")
+    # Credit the customer already had (they paid before this was charged, e.g. a repayment seen
+    # before its tab sale on a re-sync) pays this charge now - and earns the points now.
+    credit_used = min(amount_cents, max(0, -ledger["balance_cents"]))
     cur = conn.execute(
         "INSERT INTO tab_charges(customer_id, amount_cents, items, charged_at, due_at, square_payment_id, staff, breach) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (customer["id"], amount_cents, items, charged_at, due_at, square_payment_id, staff, breach),
     )
+    if credit_used > 0:
+        conn.execute(
+            "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, square_payment_id, staff, created_at) "
+            "VALUES (?, ?, ?, 'credit_used', 'Tab paid from credit', ?, ?, ?)",
+            (customer["id"], credit_used, credit_used, square_payment_id, staff or "square", charged_at),
+        )
     audit(conn, staff or "square", "tab_charge", customer["id"],
           f"${amount_cents / 100:.2f} {items or ''}" + (f" [{breach}]" if breach else ""))
     return cur.lastrowid
@@ -217,6 +227,18 @@ def refund_tab_charge(conn, charge, refund_cents, staff="square", created_at=Non
     conn.execute("UPDATE tab_charges SET refunded_cents = refunded_cents + ? WHERE id = ?", (refund_cents, charge["id"]))
     after = before - refund_cents
     credit_increase = max(0, -after) - max(0, -before)
+    if credit_increase > 0:
+        # Items returned from a debt that was written off: undo the write-off first, so the
+        # customer isn't left in credit for money they never paid.
+        written_off = conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM tab_repayments "
+                                   "WHERE customer_id = ? AND method = 'writeoff'", (charge["customer_id"],)).fetchone()[0]
+        undo = min(credit_increase, max(0, written_off))
+        if undo > 0:
+            conn.execute(
+                "INSERT INTO tab_repayments(customer_id, amount_cents, method, note, staff, created_at) "
+                "VALUES (?, ?, 'writeoff', 'Write-off reversed: items returned', ?, ?)",
+                (charge["customer_id"], -undo, staff, created_at or now_iso()))
+            credit_increase -= undo
     if credit_increase > 0:
         conn.execute(
             "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, square_payment_id, staff, created_at) "

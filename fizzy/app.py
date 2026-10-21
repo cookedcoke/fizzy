@@ -1,5 +1,7 @@
 """Fizzy web app (staff only, shared password)."""
+import asyncio
 import hmac
+import secrets
 from html import escape
 import json
 import logging
@@ -11,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -40,7 +43,9 @@ def _poller():
     while not _stop.wait(5):
         conn = db.connect()
         try:
-            last = db.get_setting(conn, "square_last_sync")
+            # The last sync *or failed attempt*: a failing sync waits a full poll interval before
+            # retrying instead of re-reading Square every minute.
+            last = max(db.get_setting(conn, "square_last_sync") or "", db.get_setting(conn, "square_last_attempt") or "")
             due = not last or datetime.now(timezone.utc) - logic.parse_ts(last) >= timedelta(seconds=config.SQUARE_POLL_SECONDS)
             if config.SQUARE_TOKEN and due:
                 square.sync(conn)
@@ -144,7 +149,53 @@ def create_app(background=True):
 
 # ---- auth -------------------------------------------------------------------------------------
 
+# ---- login rate limiting --------------------------------------------------------------------
+# Browsers that have signed in before carry a signed "known browser" cookie and are only limited
+# by their own failures, so someone guessing from the same school network can't lock the counter
+# out. Unknown browsers are limited per network (IPv6 per /64) and all together.
+KNOWN_COOKIE = "fizzy_known"
+FAIL_WINDOW = 900
+LIMIT_PER_BUCKET = 10
+LIMIT_ALL_UNKNOWN = 60
+FAIL_DELAY = 1  # seconds after a wrong password
 _fails = {}
+
+
+def _known_serializer():
+    return URLSafeSerializer(config.SECRET_KEY, salt="fizzy-known-browser")
+
+
+def _fail_buckets(request):
+    token = request.cookies.get(KNOWN_COOKIE)
+    if token:
+        try:
+            return [("known", _known_serializer().loads(token))]
+        except BadSignature:
+            pass
+    ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
+    if ":" in ip:  # IPv6: one household/school gets a whole /64
+        ip = ":".join(ip.split(":")[:4]) + "::/64"
+    return [("ip", ip), ("unknown", "*")]
+
+
+def _recent(key, now):
+    return [t for t in _fails.get(key, []) if t > now - FAIL_WINDOW]
+
+
+def _locked(buckets, now):
+    for b in buckets:
+        limit = LIMIT_ALL_UNKNOWN if b[0] == "unknown" else LIMIT_PER_BUCKET
+        if len(_recent(b, now)) >= limit:
+            return True
+    return False
+
+
+def _record_fail(buckets, now):
+    for b in buckets:
+        _fails[b] = _recent(b, now) + [now]
+    if len(_fails) > 5000:  # forget old entries
+        for k in [k for k, v in _fails.items() if not v or v[-1] < now - FAIL_WINDOW]:
+            del _fails[k]
 
 
 def register(app):
@@ -157,16 +208,17 @@ def register(app):
         return render(request, "login.html", next=next, error=None)
 
     @app.post("/login")
-    def login(request: Request, password: str = Form(...), who: str = Form(...), next: str = Form("/")):
-        ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
-        fails = [t for t in _fails.get(ip, []) if t > time.time() - 900]
-        if len(fails) >= 10:
+    async def login(request: Request, password: str = Form(...), who: str = Form(...), next: str = Form("/")):
+        now, buckets = time.time(), _fail_buckets(request)
+        if _locked(buckets, now):
             return render(request, "login.html", next=next, error="Too many attempts. Wait 15 minutes.")
         if not hmac.compare_digest(password.encode(), config.PASSWORD.encode()) or who not in config.STAFF_NAMES:
-            _fails[ip] = fails + [time.time()]
-            time.sleep(1)
+            _record_fail(buckets, now)
+            await asyncio.sleep(FAIL_DELAY)
             return render(request, "login.html", next=next, error="Wrong password.")
-        _fails.pop(ip, None)
+        for b in buckets:
+            if b[0] != "unknown":
+                _fails.pop(b, None)
         conn = db.connect()
         try:
             request.session.update(auth=True, staff=who, gen=session_gen(conn))
@@ -175,7 +227,12 @@ def register(app):
             conn.commit()
         finally:
             conn.close()
-        return RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
+        safe_next = next if next.startswith("/") and not next.startswith("//") and "\\" not in next else "/"
+        response = RedirectResponse(safe_next, status_code=303)
+        if not request.cookies.get(KNOWN_COOKIE):
+            response.set_cookie(KNOWN_COOKIE, _known_serializer().dumps(secrets.token_urlsafe(16)),
+                                max_age=400 * 86400, httponly=True, secure=config.SECURE_COOKIES, samesite="lax")
+        return response
 
     @app.post("/switch")
     def switch(request: Request, who: str = Form(...), _=Depends(staff)):
@@ -217,12 +274,12 @@ def register(app):
 
         eligible = conn.execute(
             "SELECT c.*, SUM(p.spend_cents) AS spent FROM customers c JOIN points_ledger p ON p.customer_id = c.id "
-            "WHERE c.tab_decision IS NULL GROUP BY c.id HAVING spent >= ? ORDER BY spent DESC",
+            "WHERE c.tab_decision IS NULL AND c.archived_at IS NULL GROUP BY c.id HAVING spent >= ? ORDER BY spent DESC",
             (cfg["unlock_spend_cents"],),
         ).fetchall()
         top = conn.execute(
             "SELECT c.id, c.name, SUM(p.delta) AS points, SUM(p.spend_cents) AS spent FROM customers c "
-            "JOIN points_ledger p ON p.customer_id = c.id GROUP BY c.id ORDER BY spent DESC LIMIT 10"
+            "JOIN points_ledger p ON p.customer_id = c.id WHERE c.archived_at IS NULL GROUP BY c.id ORDER BY spent DESC LIMIT 10"
         ).fetchall()
         breaches = conn.execute(
             "SELECT t.*, c.name FROM tab_charges t JOIN customers c ON c.id = t.customer_id "
@@ -413,6 +470,8 @@ def register(app):
             tab_tenders=sorted(config.SQUARE_TAB_TENDERS), repay_item=config.SQUARE_REPAYMENT_ITEM,
             tab_discount=config.SQUARE_TAB_DISCOUNT,
             webhook_on=bool(config.SQUARE_WEBHOOK_KEY), people=people,
+            item_errors=json.loads(db.get_setting(conn, "square_item_errors") or "[]"),
+            conflicts=json.loads(db.get_setting(conn, "square_customer_conflicts") or "[]"),
         )
 
     @app.get("/square/payments/{pid}", response_class=PlainTextResponse)
@@ -443,8 +502,7 @@ def register(app):
     def square_sync_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         if not config.SQUARE_TOKEN:
             return back(request, "/square", "Square isn't configured (SQUARE_ACCESS_TOKEN).")
-        result = square.sync(conn)
-        return back(request, "/square", f"Sync: {result}")
+        return back(request, "/square", square.describe_sync(square.sync(conn, wait=True)))
 
     @app.post("/square/webhook")
     async def square_webhook(request: Request):

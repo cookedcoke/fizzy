@@ -24,6 +24,7 @@
   {% if p not in ('/', '/customers') %}
   <div class="hsearch"><input type="search" data-search placeholder="Search  /" title="Search customers - press / or S" autocomplete="off" aria-label="Find a customer"><div class="results"></div></div>
   {% endif %}
+  <a class="msearch" href="/customers" title="Find a customer" aria-label="Find a customer"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8.5" cy="8.5" r="6"/><path d="m13 13 5 5"/></svg></a>
   <div class="who">
     <button type="button" id="keys-btn" class="keys-btn" title="Keyboard shortcuts (?)">?</button>
     <form class="inline" method="post" action="/switch">

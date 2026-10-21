@@ -4,7 +4,9 @@ from zoneinfo import ZoneInfo
 
 
 def _env(name, default=""):
-    return os.environ.get(name, default).strip()
+    """A setting from the environment. Blank counts as unset (a `KEY=` line in .env), so it
+    falls back to the default instead of turning a feature off or crashing on int("")."""
+    return os.environ.get(name, "").strip() or default
 
 
 DB_PATH = _env("FIZZY_DB", "data/fizzy.db")

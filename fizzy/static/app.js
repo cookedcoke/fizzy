@@ -18,13 +18,17 @@
   }
 
   // ---- search -------------------------------------------------------------------------------
-  var index = null, indexReq = null;
+  var index = null, indexReq = null, indexError = null;
   function loadIndex() {
     if (!indexReq) {
-      indexReq = fetch("/api/index", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (rows) {
-        index = rows;
+      indexReq = fetch("/api/index", { credentials: "same-origin" }).then(function (r) {
+        if (r.redirected && r.url.indexOf("/login") >= 0) throw new Error("signed-out");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then(function (rows) {
+        index = rows; indexError = null;
         return rows;
-      }).catch(function () { indexReq = null; });
+      }).catch(function (err) { indexReq = null; indexError = String(err && err.message || err); });
     }
     return indexReq;
   }
@@ -67,7 +71,16 @@
     function render() {
       var q = box.value.trim();
       if (!q) { out.innerHTML = ""; rows = []; return; }
-      if (!index) { loadIndex().then(render); return; }
+      if (!index) {
+        if (indexError) {
+          out.innerHTML = indexError === "signed-out"
+            ? '<div class="none">Signed out. <a href="/login">Sign in again</a>.</div>'
+            : '<div class="none">Couldn\'t load the customer list. Press Enter to search on the server.</div>';
+          indexError = null;  // try again on the next keystroke
+          return;
+        }
+        loadIndex().then(render); return;
+      }
       var hits = rank(q, index, 8); rows = hits.map(function (h) { return h[0]; }); sel = 0;
       out.innerHTML = rows.length ? hits.map(function (h, i) {
         var r = h[0];
@@ -89,7 +102,7 @@
       else if (e.key === "ArrowUp") { sel = Math.max(sel - 1, 0); mark(); e.preventDefault(); }
       else if (e.key === "Enter") {
         e.preventDefault();
-        if (!index) { loadIndex().then(function () { render(); if (rows[0]) location.href = "/customers/" + rows[0].id; }); }
+        if (!index) { location.href = "/customers?q=" + encodeURIComponent(box.value.trim()); }  // server search fallback
         else if (rows[sel]) location.href = "/customers/" + rows[sel].id;
       }
       else if (e.key === "Escape") { e.stopPropagation(); if (box.value) { box.value = ""; render(); } else box.blur(); }
@@ -107,7 +120,6 @@
   var pendingG = 0;
 
   function trigger(el) {
-    if (el.dataset.confirm && !confirm(el.dataset.confirm)) return;
     if (el.tagName === "DETAILS") { el.open = !el.open; var f = el.open && $("input,textarea,select", el); if (f) f.focus(); return; }
     if (typing(el) || el.tagName === "SELECT") { el.focus(); if (el.select) el.select(); return; }
     el.click();
@@ -125,10 +137,12 @@
 
   document.addEventListener("keydown", function (e) {
     if (e.defaultPrevented || e.altKey) return;
-    // Ctrl/Cmd+Enter submits whatever form you're in.
+    // Ctrl/Cmd+Enter submits the form you're in - only when it has one plain submit button.
+    // Forms with a choice of buttons (e.g. approve / reject) need the button picked.
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       var form = document.activeElement && document.activeElement.form;
-      if (form) { e.preventDefault(); form.requestSubmit(); }
+      var btns = form ? $$("button:not([type=button]):not([disabled]), input[type=submit]", form) : [];
+      if (btns.length === 1 && !btns[0].name) { e.preventDefault(); form.requestSubmit(btns[0]); }
       return;
     }
     if (e.ctrlKey || e.metaKey) return;
@@ -164,6 +178,11 @@
   $$("form button:not([type=button]):not([title])").forEach(function (b) {
     if (b.form && b.form.method === "post") b.title = "Ctrl+Enter submits from anywhere in this form";
   });
+  // Any button with data-confirm asks first, however it's pressed (click, shortcut, Enter).
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-confirm]");
+    if (b && b.tagName !== "DETAILS" && !confirm(b.dataset.confirm)) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
   $$("input[data-search]").forEach(bindSearch);
   var hb = $("#keys-btn"); if (hb) hb.addEventListener("click", help);
   // Warm the index as soon as the page is idle so the first keystroke is instant.

@@ -17,8 +17,9 @@ from . import config, logic
 from .db import audit, get_setting, now_iso, set_setting
 
 log = logging.getLogger("fizzy.square")
-SQUARE_VERSION = "2025-01-23"
+SQUARE_VERSION = "2026-09-16"
 _sync_lock = threading.Lock()
+_sync_pending = threading.Event()   # a sync was requested while one was running: run again after
 
 
 def norm_ts(s):
@@ -54,29 +55,33 @@ class SquareClient:
             if not cursor:
                 return
 
-    def payments(self, begin_time):
-        return self._paged("/v2/payments", "payments",
-                           {"begin_time": begin_time, "sort_order": "ASC", "location_id": config.SQUARE_LOCATION_ID})
+    # Windows are by *last update*, not creation: a sale taken offline on the Terminal is uploaded
+    # later with its original created_at, and a refund can complete after it was created.
+    def payments(self, since):
+        return self._paged("/v2/payments", "payments", {
+            "updated_at_begin_time": since, "sort_field": "UPDATED_AT", "sort_order": "ASC",
+            "location_id": config.SQUARE_LOCATION_ID})
 
-    def refunds(self, begin_time):
-        return self._paged("/v2/refunds", "refunds",
-                           {"begin_time": begin_time, "sort_order": "ASC", "location_id": config.SQUARE_LOCATION_ID})
+    def refunds(self, since):
+        return self._paged("/v2/refunds", "refunds", {
+            "updated_at_begin_time": since, "sort_field": "UPDATED_AT", "sort_order": "ASC",
+            "location_id": config.SQUARE_LOCATION_ID})
 
     def location_ids(self):
         if config.SQUARE_LOCATION_ID:
             return [config.SQUARE_LOCATION_ID]
         return [loc["id"] for loc in self._get("/v2/locations").get("locations", [])]
 
-    def orders(self, begin_time):
-        """Completed orders closed since begin_time, oldest first. Tab sales are $0 orders with
+    def orders(self, since):
+        """Completed orders updated since `since`, oldest first. Tab sales are $0 orders with
         no payment, so they only show up here."""
         body = {
             "location_ids": self.location_ids(),
             "limit": 500,
             "query": {
                 "filter": {"state_filter": {"states": ["COMPLETED"]},
-                           "date_time_filter": {"closed_at": {"start_at": begin_time}}},
-                "sort": {"sort_field": "CLOSED_AT", "sort_order": "ASC"},
+                           "date_time_filter": {"updated_at": {"start_at": since}}},
+                "sort": {"sort_field": "UPDATED_AT", "sort_order": "ASC"},
             },
         }
         while True:
@@ -88,6 +93,9 @@ class SquareClient:
 
     def customers(self):
         return self._paged("/v2/customers", "customers", {})
+
+    def refund(self, refund_id):
+        return self._get(f"/v2/refunds/{refund_id}").get("refund")
 
     def payment(self, payment_id):
         return self._get(f"/v2/payments/{payment_id}").get("payment")
@@ -131,7 +139,31 @@ def tab_discount_total(order):
     if not config.SQUARE_TAB_DISCOUNT:
         return 0
     return sum(_money(d, "applied_money") for d in (order or {}).get("discounts", []) or []
-               if config.SQUARE_TAB_DISCOUNT.lower() in (d.get("name") or "").lower())
+               if _is_tab_discount(d.get("name")))
+
+
+def _is_tab_discount(name):
+    return bool(config.SQUARE_TAB_DISCOUNT) and config.SQUARE_TAB_DISCOUNT.lower() in (name or "").lower()
+
+
+def return_tab_total(ret):
+    """How much of a return came off the tab: only the "Fizzy Tab" discount on the returned items,
+    not other discounts (a returned item that was partly paid only reduces the tab part)."""
+    discounts = {d.get("uid"): d for d in ret.get("return_discounts", []) or []}
+    total, itemised = 0, False
+    for li in ret.get("return_line_items", []) or []:
+        for ad in li.get("applied_discounts", []) or []:
+            itemised = True
+            d = discounts.get(ad.get("discount_uid"))
+            if d and _is_tab_discount(d.get("name")):
+                total += _money(ad, "applied_money")
+    if itemised:
+        return total
+    # Older/simpler payloads without per-discount detail: fall back to the line's discount total,
+    # but only when every discount on the return is the tab discount.
+    if discounts and not all(_is_tab_discount(d.get("name")) for d in discounts.values()):
+        return 0
+    return sum(_money(li, "total_discount_money") for li in ret.get("return_line_items", []) or [])
 
 
 def describe_tender(payment):
@@ -169,9 +201,17 @@ def describe_items(order, skip_repayment=False):
 # ---- applying effects -----------------------------------------------------------------------
 
 def _customer_for(conn, square_customer_id):
+    """The Fizzy customer for a Square profile, following merges (square_aliases)."""
     if not square_customer_id:
         return None
-    return conn.execute("SELECT * FROM customers WHERE square_customer_id = ?", (square_customer_id,)).fetchone()
+    row = conn.execute("SELECT * FROM customers WHERE square_customer_id = ?", (square_customer_id,)).fetchone()
+    if row is None:
+        row = conn.execute("SELECT c.* FROM square_aliases a JOIN customers c ON c.id = a.customer_id "
+                           "WHERE a.square_customer_id = ?", (square_customer_id,)).fetchone()
+    return row
+
+
+MATCH_WINDOW = timedelta(hours=2)
 
 
 def apply_payment_effects(conn, sp):
@@ -188,27 +228,31 @@ def apply_payment_effects(conn, sp):
             (customer["id"], amt, amt, sp["items"] or "Purchase", pid, sp["created_at"]),
         )
     elif kind == "tab_charge":
-        # If staff already added this charge by hand (Tools), link to it rather than charge twice.
-        lo = (logic.parse_ts(sp["created_at"]) - timedelta(hours=24)).isoformat(timespec="seconds")
-        hi = (logic.parse_ts(sp["created_at"]) + timedelta(hours=24)).isoformat(timespec="seconds")
+        # If staff added this same charge by hand around the same time (Tools), link to it rather
+        # than charge twice. Kept to a short window so a genuinely separate sale isn't swallowed.
+        lo = (logic.parse_ts(sp["created_at"]) - MATCH_WINDOW).isoformat(timespec="seconds")
+        hi = (logic.parse_ts(sp["created_at"]) + MATCH_WINDOW).isoformat(timespec="seconds")
         manual = conn.execute(
             "SELECT id FROM tab_charges WHERE customer_id = ? AND amount_cents = ? AND square_payment_id IS NULL "
             "AND charged_at BETWEEN ? AND ? ORDER BY charged_at LIMIT 1", (customer["id"], amt, lo, hi)).fetchone()
         if manual:
             conn.execute("UPDATE tab_charges SET square_payment_id = ? WHERE id = ?", (pid, manual["id"]))
+            audit(conn, "square", "linked_hand_charge", customer["id"], f"{pid} -> charge #{manual['id']}")
         else:
             logic.add_tab_charge(conn, customer, amt, sp["items"], sp["created_at"], None, pid)
     elif kind == "tab_repayment":
         # If staff already recorded this repayment by hand in Fizzy, link to it rather than double-count.
-        since = (logic.parse_ts(sp["created_at"]) - timedelta(hours=24)).isoformat(timespec="seconds")
+        lo = (logic.parse_ts(sp["created_at"]) - MATCH_WINDOW).isoformat(timespec="seconds")
+        hi = (logic.parse_ts(sp["created_at"]) + MATCH_WINDOW).isoformat(timespec="seconds")
         manual = conn.execute(
             "SELECT id FROM tab_repayments WHERE customer_id = ? AND amount_cents = ? AND square_payment_id IS NULL "
-            "AND created_at >= ? ORDER BY created_at DESC LIMIT 1",
-            (customer["id"], amt, since),
+            "AND method != 'writeoff' AND created_at BETWEEN ? AND ? ORDER BY created_at DESC LIMIT 1",
+            (customer["id"], amt, lo, hi),
         ).fetchone()
         if manual:
             conn.execute("UPDATE tab_repayments SET square_payment_id = ? WHERE id = ?", (pid, manual["id"]))
             conn.execute("UPDATE points_ledger SET square_payment_id = ? WHERE repayment_id = ?", (pid, manual["id"]))
+            audit(conn, "square", "linked_hand_repayment", customer["id"], f"{pid} -> repayment #{manual['id']}")
         else:
             logic.add_repayment(conn, customer["id"], amt, repayment_method(sp_raw(sp).get("payment") or {}), "Recorded in Square",
                                 None, pid, sp["created_at"])
@@ -223,9 +267,13 @@ def sp_raw(sp):
 
 def undo_payment_effects(conn, sp):
     pid = sp["square_payment_id"]
-    conn.execute("DELETE FROM points_ledger WHERE square_payment_id = ? AND reason IN ('purchase', 'refund', 'tab_refund')", (pid,))
+    conn.execute("DELETE FROM points_ledger WHERE square_payment_id = ? AND reason IN ('purchase', 'refund', 'tab_refund', 'credit_used')", (pid,))
     conn.execute("DELETE FROM tab_charges WHERE square_payment_id = ? AND staff IS NULL", (pid,))
-    conn.execute("UPDATE tab_charges SET square_payment_id = NULL WHERE square_payment_id = ?", (pid,))  # hand-entered: keep
+    # A hand-entered charge linked to this payment is kept, but the refunds this payment applied
+    # to it come off again (they're re-applied wherever the payment ends up).
+    refunded = conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM square_refunds WHERE square_payment_id = ?", (pid,)).fetchone()[0]
+    conn.execute("UPDATE tab_charges SET refunded_cents = MAX(0, refunded_cents - ?), square_payment_id = NULL "
+                 "WHERE square_payment_id = ?", (refunded, pid))
     for r in conn.execute("SELECT id, note FROM tab_repayments WHERE square_payment_id = ?", (pid,)).fetchall():
         if r["note"] == "Recorded in Square" or r["note"] == "Square refund":
             conn.execute("DELETE FROM points_ledger WHERE repayment_id = ?", (r["id"],))
@@ -256,10 +304,10 @@ def apply_refund_effects(conn, sp, amount, created_at):
             "VALUES (?, ?, 'other', 'Square refund', 'square', ?, ?)",
             (cid, -amount, pid, created_at),
         )
-        earned = conn.execute(
-            "SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE square_payment_id = ? AND reason = 'tab_repaid'", (pid,)
-        ).fetchone()[0]
-        take = min(amount, earned)
+        held = conn.execute(  # points this repayment still has, after any earlier partial refunds
+            "SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE square_payment_id = ? AND reason IN ('tab_repaid', 'tab_refund')",
+            (pid,)).fetchone()[0]
+        take = min(amount, max(0, held))
         if take > 0:
             conn.execute(
                 "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, repayment_id, square_payment_id, staff, created_at) "
@@ -349,7 +397,7 @@ def process_order(conn, order):
         sp = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (f"order:{src}",)).fetchone()
         if sp is None:
             continue
-        amount = sum(_money(li, "total_discount_money") for li in ret.get("return_line_items", []) or [])
+        amount = return_tab_total(ret)
         if amount <= 0:
             continue
         ts = norm_ts(order.get("closed_at") or order["created_at"])
@@ -360,22 +408,59 @@ def process_order(conn, order):
     return new
 
 
-def process_refund(conn, refund):
-    """Record a completed refund against a payment Fizzy already knows. Returns True if new."""
+def _refunded_so_far(conn, row_id):
+    return conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM square_refunds WHERE square_payment_id = ?",
+                        (row_id,)).fetchone()[0]
+
+
+def _record_refund(conn, refund_id, sp, amount, raw, ts):
+    amount = min(amount, max(0, sp["amount_cents"] - _refunded_so_far(conn, sp["square_payment_id"])))
+    if amount <= 0:
+        return
+    conn.execute("INSERT INTO square_refunds VALUES (?, ?, ?, ?, ?, ?)",
+                 (refund_id, sp["square_payment_id"], amount, raw, ts, now_iso()))
+    apply_refund_effects(conn, sp, amount, ts)
+
+
+def process_refund(conn, refund, return_order=None):
+    """Record a completed refund against a payment Fizzy already knows. Returns True if new.
+
+    For a payment that was split into a tab repayment plus a purchase, the refund is shared out
+    using the returned items when Square says which they were (return_order), otherwise the
+    purchase part is refunded first. Each part is capped at what's left of it."""
     if refund.get("status") != "COMPLETED":
         return False
-    if conn.execute("SELECT 1 FROM square_refunds WHERE square_refund_id = ?", (refund["id"],)).fetchone():
+    rid = refund["id"]
+    if conn.execute("SELECT 1 FROM square_refunds WHERE square_refund_id IN (?, ?, ?)",
+                    (rid, f"{rid}:sale", f"{rid}:rep")).fetchone():
         return False
     sp = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (refund["payment_id"],)).fetchone()
     if sp is None:
         return False
     amount = int((refund.get("amount_money") or {}).get("amount", 0))
     ts = norm_ts(refund.get("updated_at") or refund["created_at"])
-    conn.execute(
-        "INSERT INTO square_refunds VALUES (?, ?, ?, ?, ?, ?)",
-        (refund["id"], refund["payment_id"], amount, json.dumps(refund), ts, now_iso()),
-    )
-    apply_refund_effects(conn, sp, amount, ts)
+    raw = json.dumps(refund)
+    sale = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (f"{sp['square_payment_id']}:sale",)).fetchone()
+    if sale is None or sp["kind"] != "tab_repayment":
+        _record_refund(conn, rid, sp, amount, raw, ts)
+        return True
+    sale_left = sale["amount_cents"] - _refunded_so_far(conn, sale["square_payment_id"])
+    rep_left = sp["amount_cents"] - _refunded_so_far(conn, sp["square_payment_id"])
+    returned_rep = None
+    if return_order:
+        returned_rep = sum(_money(li, "total_money") for ret in return_order.get("returns", []) or []
+                           for li in ret.get("return_line_items", []) or []
+                           if config.SQUARE_REPAYMENT_ITEM and (li.get("name") or "").strip().lower() == config.SQUARE_REPAYMENT_ITEM.lower())
+    if returned_rep is None:
+        sale_part = min(amount, sale_left)
+        rep_part = min(amount - sale_part, rep_left)
+    else:
+        rep_part = min(returned_rep, amount, rep_left)
+        sale_part = min(amount - rep_part, sale_left)
+    if sale_part > 0:
+        _record_refund(conn, f"{rid}:sale", sale, sale_part, raw, ts)
+    if rep_part > 0:
+        _record_refund(conn, f"{rid}:rep", sp, rep_part, raw, ts)
     return True
 
 
@@ -427,86 +512,183 @@ def link_pending(conn):
 
 
 def sync_customers(conn, sq_customers):
-    """Link Square profiles to Fizzy customers by Reference ID (fizzy-N) or email."""
+    """Link Square profiles to Fizzy customers by Reference ID (fizzy-N) or email; add new people.
+
+    A profile that can't be linked or added (e.g. a second Square profile with an email already
+    used by someone in Fizzy) is skipped and listed on the Square page instead of failing the sync."""
     linked = created = 0
+    conflicts = []
     for sc in sq_customers:
         sid = sc["id"]
-        if conn.execute("SELECT 1 FROM customers WHERE square_customer_id = ?", (sid,)).fetchone():
+        if conn.execute("SELECT 1 FROM customers WHERE square_customer_id = ? UNION "
+                        "SELECT 1 FROM square_aliases WHERE square_customer_id = ?", (sid, sid)).fetchone():
             continue
         ref = (sc.get("reference_id") or "").strip()
         email = (sc.get("email_address") or "").strip().lower()
+        name = " ".join(filter(None, [sc.get("given_name"), sc.get("family_name")])).strip()
         row = None
         if ref.startswith("fizzy-") and ref[6:].isdigit():
-            row = conn.execute("SELECT id FROM customers WHERE id = ? AND square_customer_id IS NULL", (int(ref[6:]),)).fetchone()
+            row = conn.execute("SELECT id, merged_into, square_customer_id, archived_at FROM customers WHERE id = ?",
+                               (int(ref[6:]),)).fetchone()
+            if row is not None and row["merged_into"]:  # exported before a merge: follow it
+                row = conn.execute("SELECT id, merged_into, square_customer_id, archived_at FROM customers WHERE id = ?",
+                                   (row["merged_into"],)).fetchone()
+            if row is not None and (row["square_customer_id"] or row["archived_at"]):
+                row = None
         if row is None and email:
-            row = conn.execute("SELECT id FROM customers WHERE email = ? AND square_customer_id IS NULL", (email,)).fetchone()
+            row = conn.execute("SELECT id FROM customers WHERE email = ? AND square_customer_id IS NULL "
+                               "AND archived_at IS NULL", (email,)).fetchone()
         if row:
             conn.execute("UPDATE customers SET square_customer_id = ? WHERE id = ?", (sid, row["id"]))
             linked += 1
-        else:
-            name = " ".join(filter(None, [sc.get("given_name"), sc.get("family_name")])).strip()
-            if not name:
-                continue
-            conn.execute(
-                "INSERT INTO customers(name, email, square_customer_id, created_at) VALUES (?, ?, ?, ?)",
-                (name, email or f"square:{sid}", sid, now_iso()),
-            )
-            created += 1
-    return {"linked": linked, "created": created}
+            continue
+        if not name:
+            continue
+        clash = email and conn.execute("SELECT name FROM customers WHERE email = ?", (email,)).fetchone()
+        if clash:
+            conflicts.append({"square_id": sid, "name": name, "email": email, "existing": clash["name"]})
+            continue
+        conn.execute("INSERT INTO customers(name, email, square_customer_id, created_at) VALUES (?, ?, ?, ?)",
+                     (name, email or f"square:{sid}", sid, now_iso()))
+        created += 1
+    set_setting(conn, "square_customer_conflicts", json.dumps(conflicts[:50]))
+    return {"linked": linked, "created": created, "conflicts": len(conflicts)}
 
 
-def sync(conn, client=None):
-    """Full poll: customers, then payments and refunds since the cursor."""
-    if not _sync_lock.acquire(blocking=False):
-        return {"skipped": "sync already running"}
+def _safely(conn, errors, label, fn):
+    """Run one item's processing in a savepoint, so a bad item is skipped and reported rather
+    than stopping the whole sync."""
+    conn.execute("SAVEPOINT item")
     try:
-        client = client or SquareClient()
-        result = sync_customers(conn, client.customers())
+        result = fn()
+        conn.execute("RELEASE item")
         conn.commit()
-        start = get_setting(conn, "square_cursor")
-        if not start:
-            start = config_start()
-        # Overlap the window by an hour; processing is idempotent.
-        begin = (logic.parse_ts(start) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        newest = start
-        counts = {"sale": 0, "tab_charge": 0, "tab_repayment": 0, "refunds": 0, "tab_orders": 0}
-        for p in client.payments(begin):
-            kind = process_payment(conn, p, client.order(p.get("order_id")) if p.get("status") == "COMPLETED" else None)
+        return result
+    except Exception as e:
+        conn.execute("ROLLBACK TO item")
+        conn.execute("RELEASE item")
+        log.exception("Square sync: %s failed", label)
+        errors.append(f"{label}: {e}")
+        return None
+
+
+def _ts(obj):
+    return norm_ts(obj.get("updated_at") or obj.get("closed_at") or obj["created_at"])
+
+
+def _sync_once(conn, client):
+    errors = []
+    result = sync_customers(conn, client.customers())
+    conn.commit()
+    start = get_setting(conn, "square_cursor") or config_start()
+    resync = get_setting(conn, "square_resync_from")
+    if resync:
+        start = min(start, resync)
+    # Overlap the window by an hour; processing is idempotent.
+    since = (logic.parse_ts(start) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    newest = start
+    counts = {"sale": 0, "tab_charge": 0, "tab_repayment": 0, "refunds": 0, "tab_orders": 0}
+
+    # Payments and tab orders are processed together in time order, so a tab sale is recorded
+    # before the repayment that pays it off (matters on a re-sync or backfill).
+    items = []
+    for p in client.payments(since):
+        items.append((norm_ts(p["created_at"]), "payment", p))
+        newest = max(newest, _ts(p))
+    if config.SQUARE_TAB_DISCOUNT:
+        for o in client.orders(since):
+            items.append((norm_ts(o.get("closed_at") or o["created_at"]), "order", o))
+            newest = max(newest, _ts(o))
+    items.sort(key=lambda x: x[0])
+    for _, typ, obj in items:
+        if typ == "payment":
+            if obj.get("status") != "COMPLETED":
+                continue
+            kind = _safely(conn, errors, f"payment {obj['id']}",
+                           lambda p=obj: process_payment(conn, p, client.order(p.get("order_id"))))
             if kind:
                 counts[kind] += 1
-            newest = max(newest, norm_ts(p["created_at"]))
-            conn.commit()
-        if config.SQUARE_TAB_DISCOUNT:
-            for o in client.orders(begin):
-                if process_order(conn, o):
-                    counts["tab_orders"] += 1
-                newest = max(newest, norm_ts(o.get("closed_at") or o["created_at"]))
-                conn.commit()
-        for rf in client.refunds(begin):
+        elif _safely(conn, errors, f"order {obj['id']}", lambda o=obj: process_order(conn, o)):
+            counts["tab_orders"] += 1
+
+    for rf in client.refunds(since):
+        newest = max(newest, _ts(rf))
+
+        def one(rf=rf):
             if rf.get("payment_id") and not conn.execute(
-                "SELECT 1 FROM square_payments WHERE square_payment_id = ?", (rf["payment_id"],)
-            ).fetchone():
+                    "SELECT 1 FROM square_payments WHERE square_payment_id = ?", (rf["payment_id"],)).fetchone():
                 p = client.payment(rf["payment_id"])
                 if p:
                     process_payment(conn, p, client.order(p.get("order_id")))
-            if process_refund(conn, rf):
-                counts["refunds"] += 1
-            conn.commit()
-        result.update(counts)
-        result["relinked"] = link_pending(conn)
-        set_setting(conn, "square_cursor", newest)
-        set_setting(conn, "square_last_sync", now_iso())
-        set_setting(conn, "square_last_error", "")
-        conn.commit()
-        return result
-    except Exception as e:  # keep the poller alive; show the error on the Square page
-        conn.rollback()
-        log.exception("Square sync failed")
-        set_setting(conn, "square_last_error", f"{now_iso()}: {e}")
-        conn.commit()
-        return {"error": str(e)}
-    finally:
-        _sync_lock.release()
+            return process_refund(conn, rf, client.order(rf.get("order_id")) if rf.get("status") == "COMPLETED" else None)
+        if _safely(conn, errors, f"refund {rf['id']}", one):
+            counts["refunds"] += 1
+
+    result.update(counts)
+    result["relinked"] = link_pending(conn)
+    set_setting(conn, "square_cursor", newest)
+    if resync:
+        set_setting(conn, "square_resync_from", "")
+    set_setting(conn, "square_last_sync", now_iso())
+    set_setting(conn, "square_last_error", "")
+    set_setting(conn, "square_item_errors", json.dumps(errors[-20:]))
+    conn.commit()
+    if errors:
+        result["skipped_items"] = len(errors)
+    return result
+
+
+def sync(conn, client=None, wait=False):
+    """Full poll: customers, then payments, tab orders and refunds since the cursor.
+
+    If a sync is already running, the request is queued and the running sync goes round once
+    more when it finishes (wait=True blocks up to a minute instead, for staff-triggered syncs)."""
+    got = _sync_lock.acquire(timeout=60) if wait else _sync_lock.acquire(blocking=False)
+    if not got:
+        _sync_pending.set()
+        return {"queued": "a sync is already running; this one will run straight after"}
+    result = {}
+    while True:
+        try:
+            _sync_pending.clear()
+            try:
+                result = _sync_once(conn, client or SquareClient())
+            except Exception as e:  # keep the poller alive; show the error on the Square page
+                conn.rollback()
+                log.exception("Square sync failed")
+                set_setting(conn, "square_last_error", f"{now_iso()}: {e}")
+                set_setting(conn, "square_last_attempt", now_iso())
+                conn.commit()
+                result = {"error": str(e)}
+        finally:
+            _sync_lock.release()
+        # Someone asked for a sync while this one ran: go again, unless another thread took over.
+        if not _sync_pending.is_set() or not _sync_lock.acquire(blocking=False):
+            return result
+
+
+def describe_sync(result):
+    """A sync result as one line for staff."""
+    if "error" in result:
+        return f"Sync failed: {result['error']}"
+    if "queued" in result:
+        return "A sync was already running - it'll go round again straight after with your request."
+    parts = [f"{result.get('sale', 0)} sales", f"{result.get('tab_orders', 0)} tab sales",
+             f"{result.get('tab_repayment', 0)} repayments", f"{result.get('refunds', 0)} refunds/returns"]
+    msg = "Synced: " + ", ".join(parts) + "."
+    if result.get("linked") or result.get("created"):
+        msg += f" Customers: {result.get('linked', 0)} linked, {result.get('created', 0)} added."
+    if result.get("conflicts"):
+        msg += f" {result['conflicts']} Square profile(s) clash with existing emails - see below."
+    if result.get("skipped_items"):
+        msg += f" {result['skipped_items']} item(s) couldn't be processed - see below."
+    return msg
+
+
+def request_resync(conn, start_iso):
+    """Re-read Square from start_iso on the next sync (even if one is running right now)."""
+    set_setting(conn, "square_resync_from", start_iso)
+    conn.commit()
 
 
 def config_start():

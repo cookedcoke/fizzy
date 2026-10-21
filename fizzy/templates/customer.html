@@ -14,7 +14,7 @@
 {% else %}
 {% set waiting = st.status in ('locked', 'eligible', 'paused') %}
 <div class="verdict {{ 'wait' if waiting else 'no' }}"><div class="mark">{{ '–' if waiting else '✕' }}</div><div><b>{{ 'No tab yet' if waiting else 'No tab' }}</b><span>
-  {% if st.status == 'approved' %}At the {{ (st.available_cents + led.owing_cents)|money }} limit - needs to pay some off first.
+  {% if st.status == 'approved' %}Owes {{ led.owing_cents|money }}, at or over the {{ st.limit_cents|money }} limit - needs to pay some off first.
   {% elif st.status == 'paused' %}All tabs are paused right now.
   {% elif st.status == 'blocked_overdue' %}Has an overdue charge. Clears as soon as it's paid.
   {% elif st.status == 'eligible' %}Eligible - waiting for staff approval below.
@@ -36,22 +36,25 @@
 
 <div class="grid">
   <form class="panel" method="post" action="/customers/{{ c.id }}/repay"><h2>Repayment <kbd>R</kbd></h2>
-    <p class="small" style="margin:0">{% if led.owing_cents %}<b>In Square:</b> attach {{ c.name.split(' ')[0] }}'s profile, add <b>Tab repayment</b> for
-      <b>{{ led.owing_cents|money }}</b>, type the amount, and take cash or card. Fizzy records it automatically.{% else %}Nothing owing.{% endif %}</p>
+    <p class="small" style="margin:0">{% if led.owing_cents %}<b>In Square:</b> attach {{ c.name.split(' ')[0] }}'s profile, add <b>Tab repayment</b>, type in
+      <b>{{ led.owing_cents|money }}</b> (or what they're paying), and take cash or card. Fizzy records it automatically.{% else %}Nothing owing.{% endif %}</p>
     <p class="hint" style="margin-top:8px">Only use the form below for money that <b>didn't</b> go through Square.</p>
     <div class="row">
-      <div><label>Amount ($)</label><input type="text" name="amount" inputmode="decimal" data-key="r" data-key-label="Record a repayment without Square" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
-      <div><label>Paid by</label><select name="method"><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other</option></select></div>
+      <div><label for="rp-amount">Amount ($)</label><input id="rp-amount" type="text" name="amount" inputmode="decimal" data-key="r" data-key-label="Record a repayment without Square" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
+      <div><label for="rp-method">Paid by</label><select id="rp-method" name="method"><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other</option></select></div>
     </div>
-    <label>Note</label><input type="text" name="note" placeholder="Optional">
+    <label for="rp-note">Note</label><input id="rp-note" type="text" name="note" placeholder="Optional">
     <label class="check"><input type="checkbox" name="confirm_dup" value="1"> This is a separate payment (not one already rung up in Square)</label>
     <div class="actions"><button title="Enter in the amount box also saves">Record without Square <kbd>Enter</kbd></button></div>
   </form>
 
   <form class="panel" method="post" action="/customers/{{ c.id }}/tab"><h2>Tab approval</h2>
+    {# Enter in the note box would otherwise "click" the first button (approve or revoke). A disabled
+       first submit button makes Enter do nothing here: staff must choose a button. #}
+    <button type="submit" disabled hidden aria-hidden="true" tabindex="-1"></button>
     <p class="small" style="margin:0">{% if c.tab_decision %}<b>{{ c.tab_decision|capitalize }}</b> by {{ c.tab_decision_by }} · {{ c.tab_decision_at|local }}{% if c.tab_decision_note %}<br><span class="muted">“{{ c.tab_decision_note }}”</span>{% endif %}
       {% else %}<span class="muted">No decision yet.</span>{% endif %}</p>
-    <label>Note <kbd>N</kbd></label><input type="text" name="note" placeholder="Optional - why?" data-key="n" data-key-label="Note for tab decision">
+    <label for="tab-note">Note <kbd>N</kbd></label><input id="tab-note" type="text" name="note" placeholder="Optional - why? Then pick a button" data-key="n" data-key-label="Note for tab decision">
     <div class="actions">
       {% if c.tab_decision != 'approved' %}<button name="decision" value="approve" class="primary" data-key="a" data-key-label="Approve tab">Approve <kbd>A</kbd></button>{% endif %}
       {% if c.tab_decision == 'approved' %}<button name="decision" value="revoke" class="danger" data-key="x" data-key-label="Revoke tab" data-confirm="Revoke {{ c.name }}'s tab?">Revoke <kbd>X</kbd></button>
@@ -61,8 +64,8 @@
   </form>
 
   <form class="panel" method="post" action="/customers/{{ c.id }}/points"><h2>Adjust points <kbd>P</kbd></h2>
-    <div class="row"><div style="flex:0 1 130px"><label>Points</label><input type="number" name="delta" step="1" placeholder="+100 or -50" required data-key="p" data-key-label="Adjust points"></div>
-      <div style="flex:2 1 180px"><label>Reason</label><input type="text" name="note" placeholder="Required" required></div></div>
+    <div class="row"><div style="flex:0 1 130px"><label for="pt-delta">Points</label><input id="pt-delta" type="number" name="delta" step="1" placeholder="+100 or -50" required data-key="p" data-key-label="Adjust points"></div>
+      <div style="flex:2 1 180px"><label for="pt-note">Reason</label><input id="pt-note" type="text" name="note" placeholder="Required" required></div></div>
     <div class="actions"><button title="Enter in either box also applies">Apply <kbd>Enter</kbd></button></div>
   </form>
 </div>
@@ -117,8 +120,8 @@
   </details>
   <details data-key="e" data-key-label="Edit customer"><summary>Edit customer <kbd>E</kbd></summary>
     <form method="post" action="/customers/{{ c.id }}/edit" style="max-width:420px">
-      <label>Name</label><input type="text" name="name" value="{{ c.name }}">
-      <label>Square customer ID</label><input type="text" name="square_customer_id" value="{{ c.square_customer_id or '' }}" class="mono">
+      <label for="ed-name">Name</label><input id="ed-name" type="text" name="name" value="{{ c.name }}">
+      <label for="ed-sq">Square customer ID</label><input id="ed-sq" type="text" name="square_customer_id" value="{{ c.square_customer_id or '' }}" class="mono">
       <label class="check"><input type="checkbox" name="archived" value="1" {{ 'checked' if c.archived_at }}> Archived - hidden from search</label>
       <div class="actions"><button>Save</button></div>
     </form>

@@ -36,7 +36,7 @@ def test_points_tools(client):
     post(client, "bulk_points", delta="50", note="Halloween", people="Adeline Yates\nrns2\nNobody Here")
     msg = flash(client)
     assert "2 customer(s)" in msg and "Nobody Here" in msg
-    post(client, "transfer_points", **{"from": "Adeline Yates <rns1@reddamnorthshore.nsw.edu.au>", "to": "Nora", "points": "20"})
+    post(client, "transfer_points", **{"from": "Adeline Yates <rns1@reddamnorthshore.nsw.edu.au>", "to": "Nora Zhang", "points": "20"})
     c = conn_()
     assert [logic.points_balance(c, i) for i in (1, 2, 3)] == [30, 50, 20]
     post(client, "reset_points", confirm="nope")
@@ -70,7 +70,12 @@ def test_tab_tools(client):
 def test_ambiguous_name_is_rejected(client):
     setup_people(client)
     post(client, "manual_charge", customer="Ad", amount="1")
-    assert "matches several people" in flash(client)
+    msg = flash(client)
+    assert "No exact match" in msg and "Did you mean" in msg   # fuzzy input never acts on its own
+    post(client, "manual_charge", customer="adeline yates", amount="1")   # exact name (any case) is fine
+    assert "Charged" in flash(client)
+    post(client, "manual_charge", customer="Adelin Yates", amount="1")    # a typo is not
+    assert "Did you mean: Adeline Yates" in flash(client)
 
 
 def test_customer_tools(client):

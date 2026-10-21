@@ -92,3 +92,44 @@ def test_assign_from_dashboard_clears_needs_attention(client):
     assert "Assigned to Test Kid" in r.text and "with no customer attached" not in r.text
     r = client.post("/square/payments/order:o1/assign", data={"customer": "Nobody Here"}, headers={"referer": "/"})
     assert "No customer matches" in r.text
+
+
+def test_dashboard_eligible_and_top_lists_skip_archived(client):
+    from fizzy import config, db, logic
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Gone Kid", "email": "rns7@reddamnorthshore.nsw.edu.au"})
+    conn = db.connect(config.DB_PATH)
+    logic.adjust_points(conn, 1, 1, "seed", "t")
+    conn.execute("UPDATE points_ledger SET spend_cents = 5000")
+    conn.commit()
+    assert "Gone Kid" in client.get("/").text
+    conn.execute("UPDATE customers SET archived_at = '2026-01-01T00:00:00+00:00'")
+    conn.commit()
+    assert "Gone Kid" not in client.get("/").text
+
+
+def test_login_lockout_spares_known_browsers(client, monkeypatch):
+    from fizzy import app as appmod
+    monkeypatch.setattr(appmod, "FAIL_DELAY", 0)
+    appmod._fails.clear()
+    assert login(client).status_code == 303                 # counter browser signs in: gets the known-browser cookie
+    known = client.cookies.get(appmod.KNOWN_COOKIE)
+    client.post("/logout")
+    from fastapi.testclient import TestClient
+    stranger = TestClient(client.app)
+    for _ in range(10):
+        stranger.post("/login", data={"password": "nope", "who": "Mike"})
+    assert "Too many attempts" in stranger.post("/login", data={"password": "test-pw", "who": "Mike"}).text
+    client.cookies.set(appmod.KNOWN_COOKIE, known)
+    assert login(client).status_code == 303                 # same network, but the counter still gets in
+    appmod._fails.clear()
+
+
+def test_tab_note_enter_cannot_submit_a_decision(client):
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Note Kid", "email": "rns8@reddamnorthshore.nsw.edu.au"})
+    page = client.get("/customers/1").text
+    form = page[page.index('action="/customers/1/tab"'):]
+    first_button = form[form.index("<button"):form.index(">", form.index("<button")) + 1]
+    assert "disabled" in first_button                        # Enter in the note box does nothing
+    assert "onclick=\"return confirm" not in client.get("/settings").text

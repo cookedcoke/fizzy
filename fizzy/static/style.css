@@ -2,7 +2,7 @@
    reserved for the logo, the current page, and things that need attention. */
 :root {
   --red: #FE0001; --red-ink: #B30000; --red-wash: #FFF0F0;
-  --ink: #15171B; --fg: #1F2328; --muted: #6A717C; --faint: #9AA1AB;
+  --ink: #15171B; --fg: #1F2328; --muted: #6A717C; --faint: #6F7680;
   --line: #E3E5E9; --line-strong: #CDD1D7; --bg: #F2F3F5; --surface: #FFFFFF; --hover: #F7F8FA;
   --ok: #17703A; --ok-wash: #EAF6EE; --warn: #8A5A00; --warn-wash: #FFF5DB;
   --r: 4px; --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
@@ -268,3 +268,7 @@ button.primary kbd { border-color: rgba(255,255,255,.45) }
 @media (max-width: 1200px) { header .brand small { display: none } }
 .assign input { height: 28px; font-size: 13px; min-width: 170px }
 .assign input:not(:focus) { border-style: dashed }
+label > input, label > select, label > textarea { display: block; margin-top: var(--s1); font-weight: 400 }
+label.check > input { display: inline-block; margin-top: 0 }
+.msearch { display: none; align-items: center; color: #E8EAED; padding: 0 6px }
+@media (max-width: 720px) { .msearch { display: flex; margin-left: auto } header .who { margin-left: 0 } }
