@@ -151,6 +151,14 @@ def test_unlinked_payment_applied_after_customer_linked(conn, cust):
     assert logic.points_balance(conn, c["id"]) == 250
 
 
+def test_zero_dollar_cash_payment_on_a_tab_sale_records_nothing_extra(conn, cust):
+    c = cust()
+    square.process_order(conn, tab_order("o1", 300))
+    assert square.process_payment(conn, pay("p0", 0, order_id="o1"), order(("Coke", 0), oid="o1")) == "sale"
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 300
+    assert conn.execute("SELECT COUNT(*) FROM points_ledger").fetchone()[0] == 0
+
+
 def test_card_repayment_through_square(conn, cust):
     c = cust()
     square.process_order(conn, tab_order("o1", 450))

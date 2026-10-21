@@ -180,6 +180,8 @@ def apply_payment_effects(conn, sp):
     if customer is None:
         return
     kind, amt, pid = sp["kind"], sp["amount_cents"], sp["square_payment_id"]
+    if amt <= 0:
+        return  # e.g. the $0 cash "payment" that completes a fully tabbed sale - nothing to record
     if kind == "sale":
         conn.execute(
             "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, square_payment_id, staff, created_at) "

@@ -38,7 +38,7 @@ their tab?*
    - **Red cross:** no (overdue, rejected, revoked, or at the limit). The line underneath says why.
    - **Grey dash:** not yet (hasn't spent $30, waiting for approval, or tabs are paused).
 3. If green: on the Terminal, ring up the items, **attach their profile**, apply the **Fizzy
-   Tab** discount, and complete the $0 sale. Fizzy adds it to their tab automatically.
+   Tab** discount, and charge the **$0 as cash**. Fizzy adds it to their tab automatically.
    - Only part of it on the tab? Apply the discount to just those items and charge the rest
      as normal.
 
@@ -111,7 +111,7 @@ Square**, so Square's reports and the till always match.
 ### Tab sales: the "Fizzy Tab" discount
 
 A tab sale is rung up normally with a **100% discount called "Fizzy Tab"**, so Square records
-a **$0 sale**: the items, the customer, and a discount equal to their price.
+a **$0 sale** (charged as $0 cash): the items, the customer, and a discount equal to their price.
 
 - **Fizzy:** sees the discount and puts that amount on the customer's tab.
 - **Inventory:** Square counts the stock as sold.
@@ -361,14 +361,13 @@ points for sales made before Fizzy existed; otherwise it starts from the day bef
 
 ### 7.6 Test before going live
 
-Square doesn't document everything about $0 sales, so test this once on the real Terminal,
-with a real customer attached each time. After each step, open Fizzy's **Square** page and
+Test this once on the real Terminal, with a real customer attached each time. After each step, open Fizzy's **Square** page and
 press **Sync now**.
 
 1. **Normal sale:** 50c cash. It shows as *Sale*, and the customer gets 50 points.
-2. **Tab sale:** a 50c item with the **Fizzy Tab** discount. Check the Terminal lets you
-   complete a $0 sale with a customer attached. It shows as *Tab charge* with tender
-   "Fizzy Tab discount", and the customer owes $0.50.
+2. **Tab sale:** a 50c item with the **Fizzy Tab** discount, with $0 charged as cash. It
+   shows as *Tab charge* with tender "Fizzy Tab discount", and the customer owes $0.50. The
+   $0 cash payment is ignored, so no 0-point entries appear.
 3. **Part tab:** two 50c items, the discount on one only, and 50c paid by card. The customer
    owes another $0.50, and the paid part gives 50 points.
 4. **Repayment by card:** a **Tab repayment** of $1.00, paid by card. Owing goes to $0, and
@@ -378,9 +377,9 @@ press **Sync now**.
 6. **Return from a tab sale:** return the item from step 2 in Square. The tab drops by 50c.
 7. **Refund a normal sale:** refund step 1. The 50 points come off.
 
-If step 2 doesn't appear at all, open **Raw** on a nearby payment and check whether Square
-recorded the $0 sale. If the Terminal won't complete a $0 sale, tell Claude: the fallback is
-**Other Payment Types** as the tab button (`SQUARE_TAB_TENDERS=EXTERNAL`).
+If step 2 doesn't appear, check the discount's name contains "Fizzy Tab", the customer was
+attached, and the token can read Orders. If webhooks are on, check the order events are
+subscribed. Polling catches it within 5 minutes regardless.
 
 ---
 

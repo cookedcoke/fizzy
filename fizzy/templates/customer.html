@@ -10,7 +10,7 @@
 
 {% if st.can_charge %}
 <div class="verdict yes"><div class="mark">✓</div><div><b>Can use tab - up to {{ st.available_cents|money }}</b>
-  <span>In Square: attach {{ c.name.split(' ')[0] }}'s profile, apply the <strong>Fizzy Tab</strong> discount to what goes on the tab, then charge the rest (usually $0).</span></div></div>
+  <span>In Square: attach {{ c.name.split(' ')[0] }}'s profile, apply the <strong>Fizzy Tab</strong> discount to what goes on the tab, then charge the rest - if it's all on the tab, charge $0 as cash.</span></div></div>
 {% else %}
 {% set waiting = st.status in ('locked', 'eligible', 'paused') %}
 <div class="verdict {{ 'wait' if waiting else 'no' }}"><div class="mark">{{ '–' if waiting else '✕' }}</div><div><b>{{ 'No tab yet' if waiting else 'No tab' }}</b><span>
