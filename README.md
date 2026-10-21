@@ -1,209 +1,510 @@
 # Fizzy
 
-Customer directory, points and pay-later tabs for Cooked Coke Co. Staff-only, served at
-**fizzy.cookedcoke.co** through a Cloudflare Tunnel (no open ports at home).
+Customer directory, points and pay-later tabs for **Cooked Coke Co.**, the student food and
+drink stall at Reddam House North Shore. Staff-only, served at **fizzy.cookedcoke.co** from a
+home PC through a Cloudflare Tunnel (no open ports at home).
 
-- **Stack:** Python 3.13, FastAPI, Jinja templates, SQLite (WAL). One process, server-rendered HTML,
-  no build step, so it runs fine on any PC or a Raspberry Pi.
-- **Access:** one shared staff password. After signing in, pick who's on the counter from the
-  header dropdown; every action is logged against that name. The session lasts 30 days on the
-  desk machine. **Lock** signs out.
+Square stays the till. Fizzy reads Square's sales, gives points, keeps track of who owes
+what, and answers the one question that matters at the counter: *can this person put it on
+their tab?*
 
-## Rules (as built)
+**Contents**
 
-| Rule | Default | Where to change |
+1. [At the counter](#1-at-the-counter)
+2. [Rules](#2-rules)
+3. [How Square and Fizzy fit together](#3-how-square-and-fizzy-fit-together)
+4. [Pages](#4-pages)
+5. [Tools](#5-tools)
+6. [Search and keyboard shortcuts](#6-search-and-keyboard-shortcuts)
+7. [Setting up](#7-setting-up)
+8. [Running it](#8-running-it)
+9. [Configuration reference](#9-configuration-reference)
+10. [Data and privacy](#10-data-and-privacy)
+11. [Troubleshooting](#11-troubleshooting)
+12. [Development](#12-development)
+
+---
+
+## 1. At the counter
+
+**Normal sale**
+1. On the Square Terminal, **attach the customer's profile**, then take payment as usual.
+2. Points arrive in Fizzy automatically (within seconds with webhooks, otherwise within 5 minutes).
+
+**Someone wants to put it on their tab**
+1. In Fizzy: `Esc`, type their name, `Enter`.
+2. Read the answer at the top of their page:
+   - **Green tick:** they can, up to the amount shown.
+   - **Red cross:** no (overdue, rejected, revoked, or at the limit). The line underneath says why.
+   - **Grey dash:** not yet (hasn't spent $30, waiting for approval, or tabs are paused).
+3. If green: on the Terminal, attach their profile, then pay with **Other Payment Types**.
+   Fizzy adds it to their tab automatically.
+
+**Someone pays off their tab**
+1. Open them in Fizzy and press `R`. The amount is pre-filled with what they owe.
+2. Pick **Cash** or **PayID**, then press `Enter`.
+3. **Don't ring repayments through Square** (see [why](#repayments-fizzy-only)).
+
+**Who's on the counter**: the name in the top-right is recorded against everything you do.
+Switch it with `W` or the dropdown. **Lock** signs the device out.
+
+---
+
+## 2. Rules
+
+| Rule | Default | Change it in |
 |---|---|---|
-| Max owing per customer | $10 | Settings |
-| Charge due after | 7 days | Settings (applies to new charges) |
-| Tab eligibility | $30 spent (completed sales + tab repayments, minus refunds) | Settings |
-| Points | 1 per cent paid. Tab purchases earn points **when repaid**, not when charged | fixed |
+| Most a customer can owe | $10 | Settings |
+| Days to pay each tab charge | 7 | Settings (applies to new charges) |
+| Spend needed before eligible for a tab | $30 | Settings |
+| Points | 1 per cent paid ($3 = 300 points) | fixed |
 
-- **Tab status:** *Locked* (under $30) → *Eligible* (staff must approve) → *Approved*.
-  Staff can also *Reject* or *Revoke*, with an optional note. Every decision is kept in the
-  customer's history.
-- **Blocked (overdue):** an approved customer with any overdue charge is blocked
-  automatically. It clears automatically once paid. Each late payment stays permanently on
-  their page as a "late-payment record".
-- **Repayments** go to the oldest charge first. Overpaying leaves the customer in credit, and
-  credit earns no points.
-- **Refunds and exchanges** in Square are reversed automatically: points come off a sale, a
-  tab charge is reduced, and points are taken back if the customer had already repaid the
-  refunded items.
-- **Rule breaches:** Square can't stop a tab sale, so a tab charge for someone not approved,
-  over the limit or overdue is still recorded as owing. It's flagged in red on the dashboard
-  for staff to deal with.
+**Tab status**
 
-## Counter speed and keyboard shortcuts
+| Status | Meaning | Can use tab? |
+|---|---|---|
+| Locked | Hasn't spent $30 yet | No |
+| Eligible | Spent $30, waiting for a staff decision | No, until approved |
+| Approved | Staff said yes | **Yes**, up to the limit |
+| Blocked (overdue) | Approved, but has a charge past its due date | No. Clears itself when paid |
+| Paused (all tabs) | Approved, but tabs are paused for everyone (Tools) | No |
+| Rejected / Revoked | Staff said no / took it away | No |
 
-Search runs in the browser: the page loads the customer list once (a few tens of KB) and
-filters it as you type, in about 1-5 ms per keystroke with no network wait. The highlighted
-result is preloaded in Chrome/Edge, so Enter opens it straight away. Server pages render in
-about 5 ms; on the counter, most of the wait is the Cloudflare round trip.
+- **Staff have the final say.** Approve, reject or revoke in one click, with an optional
+  note. Every decision is kept in the customer's history.
+- **What counts as "spent":** completed sales with the customer attached, plus tab
+  repayments, minus refunds. Manual point adjustments don't count.
+- **Points on tab purchases** are earned when the tab is **repaid**, not when charged.
+  Money that leaves a customer in credit earns nothing, and neither do write-offs.
+- **Repayments pay off the oldest charge first.** Paying more than owed leaves them in credit.
+- **Late payments are remembered.** A charge paid after its due date stays on the
+  customer's page as a "late payment on record", even after it's cleared.
+- **Refunds and exchanges** in Square are reversed automatically:
+  - a refunded sale loses its points;
+  - a refunded tab sale reduces what's owed;
+  - if they'd already repaid those items, the points from the repayment come off.
+- **Rule breaks are flagged, not blocked.** Square can't stop a tab sale. So if someone
+  not allowed, over the limit or overdue gets one anyway, it's still recorded as owing and
+  appears in red under **Needs attention** on the dashboard.
 
-Press **?** on any page for the full list.
+---
+
+## 3. How Square and Fizzy fit together
+
+```
+Square Terminal ── sale (customer attached) ──────────► Fizzy: points
+                ── "Other Payment Types" (attached) ──► Fizzy: tab charge, due in 7 days
+                ── refund ────────────────────────────► Fizzy: reverses the above
+Fizzy ───────────── repayment (cash / PayID) ─────────► stays in Fizzy only
+```
+
+Fizzy reads Square through its API: webhooks for near-instant updates, plus polling every
+5 minutes as a safety net. It never changes anything in Square.
+
+### Tab sales: "Other Payment Types" is the tab button
+
+Square in Australia doesn't let you rename the **Other Payment Types** tender. So **Other is
+reserved for tabs**, and Fizzy treats every Other payment as a tab charge. Don't use Other
+for anything else.
+
+### Why not Square House Accounts?
+
+Square AU does have **House Account** in the payment types list. It's Square's own pay-later
+system, and it doesn't suit this:
+
+| | Square House Accounts | Fizzy tabs |
+|---|---|---|
+| Setup | An account created by hand for each customer in Square (no way to bulk-create them) | Everyone is imported once; staff approve with one click |
+| Collecting money | Square sends invoices, paid by card, bank or card on file. Square's House Accounts page says outstanding balances can't be paid at the point of sale | Cash or PayID at the counter |
+| Overdue | Square sends reminders; you lock accounts by hand | Blocked automatically until paid, with a permanent late record |
+| Points, the $30 rule, approvals | None | Built in |
+| Your experience | It's the invoice flow you already shut down because people paid late | Built around a 7-day, $10 counter tab |
+
+House Account suits a business billing regular adult customers monthly. For students paying
+a few dollars back at the counter, it's the wrong tool. If someone taps it by mistake, Fizzy
+still counts it as a tab charge (`SQUARE_TAB_TENDERS` includes it). Then you'd have to clear
+it in Square too, so it's best to leave House Account disabled.
+
+Sources: [Square help: House Accounts](https://squareup.com/help/us/en/article/8034-create-and-charge-square-house-accounts),
+[Square House Accounts for retail](https://squareup.com/us/en/house-accounts/retail),
+[Square developer docs](https://developer.squareup.com/docs/payments-api/take-payments/house-accounts).
+
+### Repayments: Fizzy only
+
+The sale was already recorded in Square once (paid with Other). Ringing the repayment through
+Square as well would count the same money as a **second sale** in Square's reports. So
+repayments are recorded in Fizzy only.
+
+How the money adds up at the end of the day:
+
+| Figure | Where | What it is |
+|---|---|---|
+| Gross sales | Square | Correct: every sale appears once, tab sales included |
+| "Other" tender total | Square | What went **on tabs**. Not money in hand |
+| Cash and card | Square | Money collected at the till for normal sales |
+| Tab repayments | Fizzy (Tools → Takings summary) | Money collected for tabs: cash in the till, PayID in the bank |
+
+**Money actually collected = Square cash and card + Fizzy repayments.**
+
+Take repayments as **cash or PayID**. A card repayment can only go through Square, which
+would double-count the sale. If one ever has to happen, record it in Fizzy as *Card* and
+allow for it when reconciling.
+
+(`SQUARE_REPAYMENT_ITEM` makes Fizzy recognise repayments rung up in Square as an item. It's
+off by default for the reason above.)
+
+### Customers in Square
+
+Fizzy links Square customer profiles to Fizzy customers by a reference ID (`fizzy-<id>`,
+added by Fizzy's export), or by school email. Profiles created in Square for people not in
+the school list (e.g. teachers) get added to Fizzy automatically. A sale with no profile
+attached earns no points, and a tab sale with no profile attached shows under **Needs
+attention**.
+
+### Fixing a mistake
+
+On the **Square** page, every payment has a **Counted as** dropdown (Sale / Tab charge /
+Tab repayment). Changing it undoes what Fizzy did with that payment and redoes it the new
+way, including any refunds. **Raw** shows exactly what Square sent.
+
+---
+
+## 4. Pages
+
+| Page | What's on it |
+|---|---|
+| **Dashboard** | Search; noticeboard; warnings (Square not connected, tabs paused); totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers; people waiting for tab approval |
+| **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend (with a progress bar to $30); record repayment; approve / reject / revoke; adjust points; tab charges with due dates and status; repayments; points history; Square payments; decision history; activity log; edit (name, Square ID, archive) |
+| **Customers** | Search with a results table; download the Square import CSV |
+| **Square** | Connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer |
+| **Tools** | Occasional jobs (next section) |
+| **Import** | Upload the school CSV: preview, then confirm |
+| **Settings** | Tab limit, days to pay, spend threshold; backups (back up now, download a copy) |
+| **Log** | Every action by every staff member, newest first; export to CSV |
+
+---
+
+## 5. Tools
+
+**Tools** in the top bar holds the occasional jobs. Hover or tap **i** to see what a tool
+does, and click its name to open it. Tools in red change a lot at once or can't be undone,
+and the biggest ones make you type a word (`RESET`, `REVOKE`, `SIGN OUT`) to confirm.
+Everything is written to the activity log. Wherever a tool needs a customer, the box
+suggests names as you type. If a name matches more than one person, the tool stops and
+lists who it could be.
+
+| Section | Tool | Use it for |
+|---|---|---|
+| Points | Give points to many | Event prizes: a list of names/emails/student numbers, or everyone |
+| | Bonus points for a period | Double-points day: tops up points on purchases between two dates. Don't run the same dates twice |
+| | Move points | Points went to the wrong person |
+| | Reset all points | End of year. Spend history and tab eligibility are kept |
+| Tabs | Pause all tabs | Holidays, end of term. Approvals come back when unpaused |
+| | Approve all eligible | Approve everyone who's reached $30 with no decision yet |
+| | Revoke all tabs | End of year |
+| | Add tab charge by hand | Only if the sale isn't in Square at all; otherwise it'd be counted twice |
+| | Write off a debt | Clear some or all of what someone owes. Earns no points |
+| | Give more time to pay | Push back the due date on all of someone's unpaid charges |
+| Customers | Add a customer | New student, teacher, anyone not in the school list |
+| | Merge duplicates | Two records for one person: everything moves to the one you keep |
+| | Archive many | Left school or graduated: hidden from search, history kept |
+| | Restore archived | Bring them back |
+| Reports | Takings summary | Counting up: Square sales by type, plus Fizzy repayments by method |
+| | Who to chase | Everyone owing, oldest first, with their emails ready to copy |
+| | All balances | Everyone who owes or is in credit |
+| | Points leaderboard | Printable top-N for events |
+| Fun | Random winner | Giveaway draw from buyers in a date range, anyone with points, or everyone. Can be weighted by points |
+| Square | Sync now / Re-sync from a date / Find a payment | After an outage, to backfill, or to look up one payment |
+| Data | Export CSV / Download backup / Health check | Spreadsheets, a copy of the database, and a list of things to tidy up |
+| Staff | Noticeboard | A message for the others at the top of the dashboard |
+| | Sign everyone out | A device was lost. Also change `FIZZY_PASSWORD` if the password leaked |
+
+---
+
+## 6. Search and keyboard shortcuts
+
+### Search
+
+Search runs in the browser: each page loads the customer list once, so typing never waits
+on the network. That takes about 1–3 ms per keystroke for the full school list. In
+Chrome/Edge the highlighted result is pre-loaded in the background, so `Enter` opens it
+straight away.
+
+Matching works like [fzf](https://github.com/junegunn/fzf), plus typo tolerance:
+
+| You type | Finds | Why |
+|---|---|---|
+| `chlo` | Chloe …, Chloey … | Start of a name |
+| `zhang chloe` | Nora Zhang | Words in any order |
+| `chzh` | **Ch**loe **Zh**ang | Letters in order with gaps, like fzf. Word starts and unbroken runs score higher |
+| `odonnell` | Jemima O'Donnell | Punctuation doesn't matter |
+| `zhnag`, `wiliam`, `jaiden` | Zhang, William, Jayden | Misspellings: swapped, missing or wrong letters (1 mistake, or 2 in long words) |
+| `0830937` or `rns0830937` | that student | Student number |
+
+Matched letters are underlined in the results. The search in the top bar, on the Customers
+page and in the Tools customer boxes all use the same matching. The Python
+(`fizzy/fuzzy.py`) and browser (`fizzy/static/fuzzy.js`) copies are tested to rank
+identically.
+
+### Shortcuts
+
+Press **`?`** on any page for the list. Shortcuts don't fire while you're typing in a box.
+`Esc` gets you out of the box first.
 
 | Key | Does |
 |---|---|
-| `/` or `S` | Search (box in the top bar on every page) |
-| `↑` `↓` `Enter` | Pick a result |
-| `Esc` | Leave the field, then back to the dashboard |
-| `R` | Customer page: repayment amount (pre-filled with what's owed; `Enter` saves) |
-| `P` | Customer page: adjust points (`Tab` to reason, `Enter` saves) |
-| `A` / `X` | Customer page: approve / reject or revoke the tab (`X` asks first) |
-| `N` `H` `L` `E` | Customer page: tab note, decision history, activity log, edit |
+| `/` or `S` | Search |
+| `↑` `↓` `Enter` | Pick a search result |
+| `Esc` | Leave the box you're in, then press again to go back to the dashboard |
+| `R` | Customer: record repayment (amount pre-filled; `Enter` saves) |
+| `P` | Customer: adjust points (`Tab` to the reason, `Enter` saves) |
+| `A` | Customer: approve tab |
+| `X` | Customer: reject, or revoke if approved (asks first) |
+| `N` | Customer: note for the tab decision |
+| `H` `L` `E` | Customer: decision history, activity log, edit |
 | `W` | Switch who's on the counter |
 | `U` | Square page: sync now |
-| `1`-`8` | Tools page: jump to a section |
+| `1`–`8` | Tools page: jump to a section |
 | `G` then `D` `C` `S` `T` `I` `L` `,` | Go to Dashboard, Customers, Square, Tools, Import, Log, Settings |
-| `Ctrl`+`Enter` | Submit the form you're in |
+| `Ctrl` + `Enter` | Submit the form you're in |
+| `?` | Show shortcuts |
 
-A typical counter lookup: `Esc`, type a name, `Enter`, read the green/red answer, then `Esc`.
+---
 
-## Tools
+## 7. Setting up
 
-**Tools** in the top bar holds the occasional jobs. Hover or tap ⓘ on a tool to see what it
-does; tap the name to open it. Tools shown in red change a lot at once or can't be undone.
-Some of these ask you to type a word (RESET, REVOKE, SIGN OUT) to confirm. Everything a tool
-changes is written to the activity log.
+Do these once, in order.
 
-| Section | Tools |
-|---|---|
-| Points | give points to many / everyone, bonus multiplier for a date range, move points, reset all |
-| Tabs | pause all tabs, approve all eligible, revoke all, add a charge by hand, write off a debt, give more time to pay |
-| Customers | add one, merge duplicates, archive many, restore archived |
-| Reports | takings summary, who to chase (with emails to copy), all balances, points leaderboard (all printable) |
-| Fun | random winner draw, optionally weighted by points |
-| Square | sync now, re-sync from a date, find a payment |
-| Data | CSV exports, download a database backup, health check |
-| Staff | dashboard noticeboard, sign everyone out |
+### 7.1 Fizzy itself
 
-## Square setup
+See [Running it](#8-running-it). You'll need a `.env` file. Copy `.env.example` and fill in
+at least `FIZZY_PASSWORD` and `FIZZY_SECRET_KEY`:
 
-### 1. Customers
+```sh
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # makes a secret key
+```
 
-1. Import the school CSV into Fizzy: **Import** page, or `python -m fizzy import directory.csv`.
-   Only name and school email are stored.
-2. On **Customers**, click **Download all customers as a Square import CSV**. Import it in
-   Square Dashboard → Customers → Import customers. Each row carries a *Reference ID*
-   `fizzy-<id>`, so Fizzy links the profiles back automatically on the next sync. Profiles
-   are also matched by email.
-3. At the counter, **attach the customer profile on the Terminal** for every sale. Without
-   it there are no points, and a tab sale lands in "Needs attention".
+### 7.2 Import the school list
 
-### 2. Tab sales: "Other Payment Types" is the tab button
+**Import** page (or `python -m fizzy import directory.csv`). The CSV needs a name column
+(`Cleaned Name` or `Name`) and `Email`. Only those two are stored; every other column is
+ignored. Emails must look like `rns<digits>@reddamnorthshore.nsw.edu.au`. Re-importing a
+newer list adds new students and updates changed names, and never deletes anyone.
 
-Square AU can't rename the **Other Payment Types** tender, so **Other is reserved for tabs**.
-Fizzy counts every Other payment as a tab charge, so don't use Other for anything else.
-**House Account** payments count as tabs too, in case someone uses it.
+### 7.3 Put everyone into Square
 
-House Account isn't used for the tab system itself. It's Square's own pay-later feature:
-each customer needs an account set up in Square, Square collects the money by invoice or
-card on file, and the balance has to be cleared within Square's time limits. That would
-compete with Fizzy rather than feed it.
+1. **Customers → Square import CSV** downloads everyone in Square's customer-import format.
+   Names are split into first and last at the first space; fix any odd ones in Square
+   afterwards.
+2. Square Dashboard → Customers → Import customers → upload it.
+3. On the next sync, Fizzy links each Square profile back to its Fizzy customer.
 
-1. Square app → Settings → Checkout → Payment types: keep **Other Payment Types** enabled.
-2. At the counter: attach the customer, then pay with **Other Payment Types**.
-3. In the API these are `source_type: EXTERNAL` (House Account is `SQUARE_ACCOUNT`). The list
-   is `SQUARE_TAB_TENDERS`.
+### 7.4 Square payment types
 
-**Verify before going live:** do one $0.50 tab sale and one cash sale with a customer
-attached. Click **Sync now** on the **Square** page, and check the tab sale is listed as
-*Tab charge*. Any payment can be re-marked from the dropdown on that page. Refund both test
-sales afterwards and check they reverse.
+Square app → Settings → Checkout → Payment types:
+- **Other Payment Types**: enabled. This is the tab button.
+- **House Account**: leave disabled ([why](#why-not-square-house-accounts)).
+- **Invoice**: your call. Fizzy treats invoice payments as normal sales.
 
-### 3. Repayments: in Fizzy only
+### 7.5 Square API access
 
-Record repayments on the customer's page in Fizzy and **don't put them through Square**. The
-sale was already recorded in Square once (paid with Other). Ringing up the repayment as well
-would count the same money as a second sale in Square's reports.
+[Square Developer Dashboard](https://developer.squareup.com/apps) → create an application →
+**Production**:
 
-How the money adds up:
+| Setting | Where | `.env` |
+|---|---|---|
+| Access token | Credentials | `SQUARE_ACCESS_TOKEN` |
+| Location ID | Locations | `SQUARE_LOCATION_ID` |
+| Webhook (optional) | Webhooks → Add subscription. URL `https://fizzy.cookedcoke.co/square/webhook`; events `payment.created`, `payment.updated`, `refund.created`, `refund.updated`, `customer.created`, `customer.updated` | Signature key → `SQUARE_WEBHOOK_SIGNATURE_KEY` |
 
-- **Square gross sales** are correct: every sale appears once.
-- **Square's "Other" total** is what went on tabs that day. It's not cash in hand.
-- **Money actually collected** = Square cash and card + Fizzy repayments. Cash repayments go
-  in the till and PayID goes to the bank account. **Tools → Takings summary** shows both side
-  by side for counting up.
-- Take repayments as **cash or PayID**. A card repayment can only be taken through Square,
-  which would double-count the sale. If it ever has to happen, record it in Fizzy as *card*
-  and note it when reconciling.
+The token needs read access to Payments, Orders and Customers. Fizzy never writes to Square.
 
-(`SQUARE_REPAYMENT_ITEM` can make Fizzy detect repayments rung up in Square. It's off by
-default for the reason above.)
+`SQUARE_SYNC_FROM=YYYY-MM-DD` sets how far back the **first** sync reaches. Use it to give
+points for sales made before Fizzy existed; otherwise it starts from the day before.
 
-### 4. API credentials
+### 7.6 Test before going live
 
-Square Developer Dashboard → create an application (production):
+With a real customer attached each time:
 
-- `SQUARE_ACCESS_TOKEN`: the production access token. It needs read access to Payments,
-  Orders and Customers.
-- `SQUARE_LOCATION_ID`: Locations tab.
-- Webhooks (optional, makes updates near-instant): add a subscription for `payment.created`,
-  `payment.updated`, `refund.created`, `refund.updated` and `customer.created` with URL
-  `https://fizzy.cookedcoke.co/square/webhook`. Copy the **signature key** to
-  `SQUARE_WEBHOOK_SIGNATURE_KEY`.
-- Polling every 5 minutes runs regardless, so a missed webhook is harmless.
-- `SQUARE_SYNC_FROM=YYYY-MM-DD` sets how far back the first sync goes. Use it to award points
-  for past sales; by default it goes back 1 day.
+1. A 50c **cash** sale → on Fizzy's **Square** page, **Sync now** → it shows as *Sale* and
+   the customer has 50 points.
+2. A 50c **Other Payment Types** sale → shows as *Tab charge*, and the customer owes $0.50.
+3. Refund both in Square → sync → points and tab go back to zero.
+4. Record a 50c **repayment** in Fizzy on a third test → owing goes to $0 and points go up.
 
-## Deploy (Docker, on the home PC)
+If step 2 shows as *Sale*, open **Raw** on that payment and check `source_type`. Add that
+value to `SQUARE_TAB_TENDERS` and restart.
+
+---
+
+## 8. Running it
+
+### Docker on the home PC (recommended)
 
 Needs Docker Desktop (Windows/macOS) or Docker Engine (Linux).
 
 ```sh
 git clone <repo> fizzy && cd fizzy
-cp .env.example .env      # fill in password, secret key, Square + tunnel token
+cp .env.example .env              # fill it in
 docker compose up -d --build
-docker compose logs -f fizzy
+docker compose logs -f fizzy      # watch it start
 ```
+
+`docker-compose.yml` runs two containers: **fizzy** (the app) and **cloudflared** (the
+tunnel). No ports are opened on the PC.
+
+**Updating:** `git pull && docker compose up -d --build`. The database lives in `./data` and
+survives rebuilds. New tables are created automatically on start.
 
 ### Cloudflare Tunnel
 
-1. Cloudflare Zero Trust → Networks → Tunnels → Create tunnel (cloudflared). Copy the token
-   into `CLOUDFLARE_TUNNEL_TOKEN`.
-2. Public hostname: `fizzy.cookedcoke.co` → service `http://fizzy:8000`.
-3. Nothing is published on the host's ports. For local testing without the tunnel, add
-   `ports: ["127.0.0.1:8000:8000"]` to the `fizzy` service and set `FIZZY_SECURE_COOKIES=0`.
-4. Optional hardening: a Cloudflare WAF rate-limit rule on `/login`. Fizzy also locks an IP
-   out for 15 minutes after 10 wrong passwords.
-5. Don't put Cloudflare Access in front of `/square/webhook`. Square has to reach it, and
-   every request is checked against Square's signature.
+1. Cloudflare Zero Trust → Networks → Tunnels → **Create a tunnel** (cloudflared). Copy the
+   token into `CLOUDFLARE_TUNNEL_TOKEN`.
+2. Add a public hostname: `fizzy.cookedcoke.co` → service `http://fizzy:8000`.
+3. Optional: a Cloudflare WAF rate-limit rule on `/login`. Fizzy also blocks an address for
+   15 minutes after 10 wrong passwords.
+4. If you ever put Cloudflare Access in front of the site, add a **bypass** for
+   `/square/webhook`. Square has to reach it, and Fizzy checks every request against
+   Square's signature.
+
+To try it locally without the tunnel, add `ports: ["127.0.0.1:8000:8000"]` to the `fizzy`
+service, set `FIZZY_SECURE_COOKIES=0`, and open http://localhost:8000.
 
 ### Backups
 
-The app writes a consistent SQLite snapshot to `FIZZY_BACKUP_DIR` once a day and keeps the
-newest 30 (`FIZZY_BACKUP_KEEP`). In Docker that's `./backups`. Point the volume at the
-external SSD when it's ready, e.g. `- /mnt/ssd/fizzy-backups:/backups` or
-`- E:/fizzy-backups:/backups`. There's also **Settings → Back up now**, and
-`python -m fizzy backup DIR`.
+- **Automatic:** once a day Fizzy writes a complete snapshot to `FIZZY_BACKUP_DIR` (in
+  Docker, `./backups`) and keeps the newest 30.
+- **External SSD:** change the left side of the backups volume in `docker-compose.yml`,
+  e.g. `- /mnt/ssd/fizzy-backups:/backups` or `- E:/fizzy-backups:/backups`, then
+  `docker compose up -d`.
+- **By hand:** Settings → **Back up now** or **Download a copy**; or
+  `python -m fizzy backup DIR`.
+- **Restore:** stop Fizzy (`docker compose stop fizzy`), copy the backup over
+  `data/fizzy.db`, delete `data/fizzy.db-wal` and `data/fizzy.db-shm` if they exist, then
+  start it again.
 
-To restore: stop the app, copy a backup over `data/fizzy.db` (delete `fizzy.db-wal` and
-`fizzy.db-shm` if present), then start it again.
+Backups contain students' names and emails. Keep them somewhere private.
 
 ### Without Docker (Linux, systemd)
 
 ```sh
 sudo useradd -r fizzy && sudo mkdir -p /opt/fizzy && sudo chown fizzy /opt/fizzy
-# as fizzy, in /opt/fizzy:
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env   # edit
+sudo -u fizzy git clone <repo> /opt/fizzy && cd /opt/fizzy
+sudo -u fizzy python3 -m venv .venv && sudo -u fizzy .venv/bin/pip install -r requirements.txt
+sudo -u fizzy cp .env.example .env   # edit; set FIZZY_BACKUP_DIR
 sudo cp deploy/fizzy.service /etc/systemd/system/ && sudo systemctl enable --now fizzy
 ```
 
-Then run `cloudflared` as a service pointing `fizzy.cookedcoke.co` at `http://localhost:8000`.
+Then install `cloudflared` as a service with the hostname pointing at `http://localhost:8000`.
 
-## Development
+### Command line
+
+```sh
+python -m fizzy import directory.csv   # import the school CSV
+python -m fizzy backup /path/to/dir    # write a backup now
+python -m fizzy sync                   # run one Square sync
+```
+
+In Docker, prefix these with `docker compose exec fizzy`.
+
+---
+
+## 9. Configuration reference
+
+All configuration is environment variables, in `.env`. Never commit `.env`.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `FIZZY_PASSWORD` | *(required)* | The shared staff password |
+| `FIZZY_SECRET_KEY` | *(required)* | Signs login cookies. Changing it signs everyone out |
+| `FIZZY_STAFF` | `Bru,Mike,Frankie` | Names in the "on counter" list |
+| `FIZZY_TZ` | `Australia/Sydney` | Time zone for display and due dates |
+| `FIZZY_DB` | `data/fizzy.db` | Database file (Docker: `/data/fizzy.db`) |
+| `FIZZY_BACKUP_DIR` | *(off)* | Daily backup folder (Docker: `/backups`) |
+| `FIZZY_BACKUP_KEEP` | `30` | How many daily backups to keep |
+| `FIZZY_SECURE_COOKIES` | `1` | Set `0` only for plain `http://localhost` testing |
+| `SQUARE_ACCESS_TOKEN` | *(off)* | Square production access token. Without it, nothing syncs |
+| `SQUARE_ENVIRONMENT` | `production` | `sandbox` for Square's test environment |
+| `SQUARE_LOCATION_ID` | *(all)* | Only read payments from this location |
+| `SQUARE_WEBHOOK_SIGNATURE_KEY` | *(off)* | Turns on webhooks |
+| `SQUARE_WEBHOOK_URL` | `https://fizzy.cookedcoke.co/square/webhook` | Must exactly match the URL in Square, or signatures fail |
+| `SQUARE_POLL_SECONDS` | `300` | How often to poll Square |
+| `SQUARE_SYNC_FROM` | *(1 day back)* | `YYYY-MM-DD`: how far back the first sync reaches |
+| `SQUARE_TAB_TENDERS` | `EXTERNAL,SQUARE_ACCOUNT` | Square payment types that mean "on the tab" (Other Payment Types, House Account) |
+| `SQUARE_REPAYMENT_ITEM` | *(off)* | Item name that marks a Square sale as a tab repayment. Leave off |
+| `CLOUDFLARE_TUNNEL_TOKEN` | — | Used by the `cloudflared` container |
+
+The tab limit, days to pay and spend threshold live in the database and are changed on the
+**Settings** page, not in `.env`.
+
+---
+
+## 10. Data and privacy
+
+Most customers are under 18, so Fizzy keeps the minimum:
+
+- **Stored:** name, school email, Square customer ID, tab decisions (with notes), tab
+  charges and repayments, points history, and Square payment details (amount, items,
+  payment type, time).
+- **Not stored:** year group, phone numbers, addresses, or anything else in the school CSV.
+- **Who can see it:** only staff with the password. There's no customer login.
+- **Never committed to git:** `.env`, the database, backups and CSVs (see `.gitignore`).
+- **Leaving school:** archive them (Tools → Archive many). Their history stays for the
+  records, hidden from search.
+
+**Customer view (later).** Not built. Customers are keyed by school email, so a future "my
+points / my tab" page could sign students in with their school Microsoft account and look
+them up by email. Nothing in the data model would need to change.
+
+---
+
+## 11. Troubleshooting
+
+| Problem | Check |
+|---|---|
+| "Square isn't connected" on the dashboard | `SQUARE_ACCESS_TOKEN` is set in `.env`, then `docker compose up -d` |
+| "Last Square sync failed" | The error text is shown on the Square page. Usually an expired or wrong token, or the wrong `SQUARE_ENVIRONMENT` |
+| A sale didn't give points | Was the customer attached on the Terminal? Check the **Square** page → *Only unlinked* |
+| A tab sale shows as *Sale* | It wasn't paid with Other Payment Types. Change **Counted as** to *Tab charge* |
+| A customer shows "Not in Square yet" | Import the Square CSV (7.3), then sync. Or paste their Square customer ID into **Edit customer** |
+| Webhooks not arriving | `SQUARE_WEBHOOK_URL` must match Square's subscription URL exactly; no Cloudflare Access on `/square/webhook`. Polling still catches everything within 5 minutes |
+| Can't log in after an update | Check `FIZZY_SECURE_COOKIES=1` and that you're using `https://` |
+| Everything slow at the counter | Fizzy pages render in ~5 ms; check the PC is awake and the tunnel is up (`docker compose logs cloudflared`) |
+| Something looks wrong with the data | **Tools → Health check** |
+
+---
+
+## 12. Development
 
 ```sh
 pip install -r requirements.txt pytest
-python -m pytest
+python -m pytest                      # rules, Square processing, tools, search (needs node for the JS check)
 FIZZY_PASSWORD=dev FIZZY_SECRET_KEY=dev FIZZY_SECURE_COOKIES=0 uvicorn fizzy.app:app --reload
 ```
 
-## Data and privacy
+**Stack:** Python 3.13, FastAPI, Jinja templates, SQLite (WAL mode). One process with a
+background thread for Square polling and backups; server-rendered pages; two small
+dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
 
-Customers are mostly minors, so Fizzy stores only: name, school email, Square customer ID,
-tab decisions, and money/points history. The import CSV and the database are git-ignored.
-Never commit them. Customer login isn't built. Customers are keyed by school email, so a
-later "my points / my tab" view can authenticate against the school's Microsoft accounts and
-look the customer up by email.
+| File | What's in it |
+|---|---|
+| `fizzy/logic.py` | Tab and points rules: repayment order, overdue, status, refunds |
+| `fizzy/square.py` | Square API client, payment/refund processing (safe to repeat), webhook check |
+| `fizzy/fuzzy.py` | Name matching (fzf scoring + typo tolerance) |
+| `fizzy/static/fuzzy.js` | Browser copy of `fuzzy.py`. **Change both together**; a test compares them |
+| `fizzy/static/app.js` | In-browser search, keyboard shortcuts, `?` panel |
+| `fizzy/tools.py` | The Tools page: each tool is a `TOOLS` entry plus an `h_<id>` handler |
+| `fizzy/app.py` | Routes, login, background jobs |
+| `fizzy/customers.py` | CSV import, search, Square export |
+| `fizzy/db.py` | Schema, settings, audit log, backups |
+| `fizzy/web.py` | Shared page helpers |
+| `fizzy/templates/`, `fizzy/static/style.css` | Pages and styling |
+
+**Conventions**
+- Money is stored as integer **cents**, and times as UTC ISO strings, shown in `FIZZY_TZ`.
+- Square payments and refunds are processed at most once (keyed by Square ID), so webhooks
+  and polling can overlap safely.
+- Anything that changes data writes to `audit_log`.
+- Keyboard shortcuts: add `data-key="x"` (and optionally `data-key-label`, `data-confirm`) to
+  any button, field or `<details>`. It then works and shows in the `?` panel automatically.
+  Avoid `s`, `f`, `g` and `/`, which are taken.

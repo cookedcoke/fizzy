@@ -22,7 +22,6 @@
   function loadIndex() {
     if (!indexReq) {
       indexReq = fetch("/api/index", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (rows) {
-        rows.forEach(function (r) { r.lname = r.name.toLowerCase(); r.words = r.lname.split(/\s+/); });
         index = rows;
         return rows;
       }).catch(function () { indexReq = null; });
@@ -30,59 +29,13 @@
     return indexReq;
   }
 
-  // Subsequence match ("chzh" -> "Sample Student"): returns a gap score or -1.
-  function subseq(q, s) {
-    var i = 0, gaps = 0, last = -1;
-    for (var j = 0; j < s.length && i < q.length; j++) {
-      if (s[j] === q[i]) { if (last >= 0) gaps += j - last - 1; last = j; i++; }
-    }
-    return i === q.length ? gaps : -1;
-  }
+  var rank = window.FizzyFuzzy.rank;
 
-  // Edit distance with swaps (Damerau), bailing out early past `max`. For typos like "zhnag".
-  function typoDist(a, b, max) {
-    if (Math.abs(a.length - b.length) > max) return max + 1;
-    var d = [], i, j;
-    for (i = 0; i <= a.length; i++) { d[i] = [i]; }
-    for (j = 0; j <= b.length; j++) { d[0][j] = j; }
-    for (i = 1; i <= a.length; i++) {
-      var rowMin = max + 1;
-      for (j = 1; j <= b.length; j++) {
-        var c = a[i - 1] === b[j - 1] ? 0 : 1;
-        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
-        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
-        rowMin = Math.min(rowMin, d[i][j]);
-      }
-      if (rowMin > max) return max + 1;
-    }
-    return d[a.length][b.length];
-  }
-
-  function search(q) {
-    q = q.toLowerCase().replace(/\s+/g, " ").trim();
-    if (!q || !index) return [];
-    var toks = q.split(" "), digits = /^(rns)?\d+$/.test(q), hits = [];
-    for (var k = 0; k < index.length; k++) {
-      var r = index[k], score = -1;
-      if (digits) { if (r.sid.indexOf(q) >= 0) score = 0; }
-      else if (r.lname.indexOf(q) === 0) score = 0;
-      else if (toks.every(function (t) { return r.words.some(function (w) { return w.indexOf(t) === 0; }); })) score = 1;
-      else if (r.lname.indexOf(q) >= 0) score = 2;
-      else if (q.length >= 3) {
-        var g = subseq(q.replace(/ /g, ""), r.lname.replace(/ /g, ""));
-        if (g >= 0 && g <= 8) score = 3 + g / 10;
-        else if (q.length >= 4) {
-          var max = q.length >= 7 ? 2 : 1;
-          var best = Math.min.apply(null, toks.map(function (t) {
-            return Math.min.apply(null, r.words.map(function (w) { return typoDist(t, w.slice(0, t.length + 1), max); }));
-          }));
-          if (best <= max) score = 4 + best;
-        }
-      }
-      if (score >= 0) hits.push([score, r]);
-    }
-    hits.sort(function (a, b) { return a[0] - b[0] || (a[1].name < b[1].name ? -1 : 1); });
-    return hits.slice(0, 8).map(function (h) { return h[1]; });
+  function highlight(name, pos) {
+    var out = "", set = {};
+    pos.forEach(function (p) { set[p] = 1; });
+    for (var i = 0; i < name.length; i++) out += set[i] ? "<mark>" + esc(name[i]) + "</mark>" : esc(name[i]);
+    return out.replace(/<\/mark><mark>/g, "");
   }
 
   var spec = null;
@@ -112,9 +65,10 @@
       var q = box.value.trim();
       if (!q) { out.innerHTML = ""; rows = []; return; }
       if (!index) { loadIndex().then(render); return; }
-      rows = search(q); sel = 0;
-      out.innerHTML = rows.length ? rows.map(function (r) {
-        return '<a class="hit" href="/customers/' + r.id + '"><span><span class="nm">' + esc(r.name) + '</span><span class="em">' + esc(r.sid) + "</span></span>" +
+      var hits = rank(q, index, 8); rows = hits.map(function (h) { return h[0]; }); sel = 0;
+      out.innerHTML = rows.length ? hits.map(function (h) {
+        var r = h[0];
+        return '<a class="hit" href="/customers/' + r.id + '"><span><span class="nm">' + highlight(r.name, h[1]) + '</span><span class="em">' + esc(r.sid) + "</span></span>" +
           '<span class="facts"><span>' + r.points.toLocaleString() + " pts</span><span>owes " + money(r.owing) + '</span><span class="tag ' + esc(r.status) + '">' + esc(r.label) + "</span></span></a>";
       }).join("") : '<div class="none">No one matches “' + esc(q) + "”.</div>";
       mark();

@@ -259,3 +259,4 @@ dialog#keys .grid { grid-template-columns: 3fr 2fr }
 @media (max-width: 720px) { dialog#keys .grid { grid-template-columns: 1fr } }
 @media (max-width: 720px) { .hsearch, .keys-btn, h2 kbd, button kbd, .search kbd { display: none } }
 #keys-page td:first-child { width: 48px }
+.results mark { background: none; color: var(--ink); font-weight: 800; text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 3px }

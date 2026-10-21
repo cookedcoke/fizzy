@@ -1,9 +1,9 @@
 """Customer import (school CSV), search and Square export."""
 import csv
-import difflib
 import io
 import re
 
+from . import fuzzy
 from .db import audit, now_iso
 
 EMAIL_RE = re.compile(r"^rns\d+@reddamnorthshore\.nsw\.edu\.au$")
@@ -59,36 +59,10 @@ def import_rows(conn, rows, staff, apply=True):
 
 
 def search(conn, q, limit=20):
-    """Substring + fuzzy name match, or student-number / email match. Small list, so in Python."""
-    q = " ".join(q.lower().split())
-    if not q:
-        return []
+    """Fuzzy name search (fzf-style, typo tolerant) or student-number match. See fuzzy.py."""
     customers = conn.execute("SELECT * FROM customers WHERE archived_at IS NULL").fetchall()
-    scored = []
-    for c in customers:
-        name = c["name"].lower()
-        email = c["email"]
-        if q.isdigit() or q.startswith("rns"):
-            if q in email:
-                scored.append((0, c["name"], c))
-            continue
-        if name.startswith(q):
-            score = 0
-        elif all(any(w.startswith(t) for w in name.split()) for t in q.split()):
-            score = 1
-        elif q in name:
-            score = 2
-        else:
-            ratio = max(
-                difflib.SequenceMatcher(None, q, name).ratio(),
-                max((difflib.SequenceMatcher(None, q, w).ratio() for w in name.split()), default=0),
-            )
-            if ratio < 0.75:
-                continue
-            score = 3 + (1 - ratio)
-        scored.append((score, c["name"], c))
-    scored.sort(key=lambda s: (s[0], s[1]))
-    return [s[2] for s in scored[:limit]]
+    hits = fuzzy.rank(q, customers, limit, key=lambda c: (c["name"], c["email"].split("@")[0]))
+    return [c for c, _ in hits]
 
 
 def square_import_csv(conn):
