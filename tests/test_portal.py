@@ -170,7 +170,8 @@ def test_name_and_student_number_share_one_allowance(client, monkeypatch):
     monkeypatch.setattr(portal, "FAIL_DELAY", 0)
     for i in range(portal.LIMIT_PER_NAME):
         me_login(client, "Nora Le Fevre" if i % 2 else "rns5", "wrong-one")
-    assert "Too many tries" in me_login(client, "RNS5").text
+    r = me_login(client, "RNS5")                                        # right passcode, account locked:
+    assert "Hi Nora" not in r.text and "name and passcode don" in r.text   # same answer as any wrong guess
 
 
 def test_right_passcode_doesnt_use_up_the_allowance(client, monkeypatch):

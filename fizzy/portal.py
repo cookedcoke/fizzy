@@ -178,9 +178,12 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
     # Limited per typed name, per network, and per account (a name and a student number are the
     # same account, so they share one allowance).
     buckets = _buckets(request, who) + [(("acct", c["id"]), LIMIT_PER_NAME) for c in found]
-    if any(len(_recent(k, now)) >= limit for k, limit in buckets):
+    if any(len(_recent(k, now)) >= limit for k, limit in buckets if k[0] != "acct"):
         return _page(request, "me_login.html", who=who, live=rewards.active(conn),
                      error="Too many tries. Wait 15 minutes and try again.")
+    # A locked *account* gets the ordinary "don't match" answer (even for the right passcode).
+    # Saying "too many tries" would tell anyone which name goes with which student number.
+    acct_locked = any(len(_recent(k, now)) >= limit for k, limit in buckets if k[0] == "acct")
     if _in_flight >= MAX_IN_FLIGHT:
         return _page(request, "me_login.html", who=who, live=rewards.active(conn),
                      error="Lots of people are signing in right now. Try again in a moment.")
@@ -194,8 +197,8 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
     _check_slots = _check_slots or anyio.CapacityLimiter(2)
     _in_flight += 1
     try:
-        c = await anyio.to_thread.run_sync(authenticate, conn, who, passcode.strip()[:PASSCODE_MAX], found,
-                                           limiter=_check_slots)
+        c = await anyio.to_thread.run_sync(authenticate, conn, who, passcode.strip()[:PASSCODE_MAX],
+                                           [] if acct_locked else found, limiter=_check_slots)
     finally:
         _in_flight -= 1
     if c is None:
