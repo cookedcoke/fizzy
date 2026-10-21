@@ -11,7 +11,9 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import re
 import time
+import unicodedata
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 import anyio
@@ -95,15 +97,65 @@ def _norm(s):
     return " ".join((s or "").lower().replace("’", "'").split())
 
 
+MAX_CANDIDATES = 3                 # one sign-in checks at most this many accounts
+
+
+def _letters(s):
+    """Just the letters, lower case, accents dropped: O'Donnell = odonnell = O Donnell."""
+    s = unicodedata.normalize("NFKD", s or "")
+    return "".join(ch for ch in s.lower() if ch.isalnum())
+
+
+def _name_keys(name):
+    """Ways a student might type their own name: in order, surname first, or without middle names."""
+    parts = [p for p in re.split(r"[\s\-]+", unicodedata.normalize("NFKD", name or "")) if _letters(p)]
+    keys = {_letters(name), _letters("".join(reversed(parts)))}
+    if len(parts) > 2:
+        keys |= {_letters(parts[0] + parts[-1]), _letters(parts[-1] + parts[0])}
+    return keys
+
+
+def _distance(a, b, cap):
+    """Edit distance (with swapped letters counting as one), giving up past cap."""
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    prev2, prev = None, list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+            if prev2 is not None and i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        if min(cur) > cap:
+            return cap + 1
+        prev2, prev = prev, cur
+    return prev[-1]
+
+
+def _allowed_typos(typed):
+    return 0 if len(typed) < 6 else 1 if len(typed) < 11 else 2
+
+
 def candidates(conn, who):
-    """Active customers matching a full name or student number exactly (no fuzzy matching here:
-    the public site must not help anyone browse the directory)."""
-    who = _norm(who)
-    if not who:
+    """Accounts this sign-in could be for. Forgiving about how a name is typed (case, spaces,
+    apostrophes, hyphens, accents, surname first, middle names left out, a typo or two), but
+    it never lists or suggests names: the passcode still has to be right, and the reply is the
+    same either way. A student number must be exact."""
+    typed = _letters(who)
+    if len(typed) < 3:
         return []
     rows = conn.execute("SELECT * FROM customers WHERE archived_at IS NULL AND merged_into IS NULL "
                         "AND passcode_enc IS NOT NULL").fetchall()
-    return [r for r in rows if _norm(r["name"]) == who or r["email"].split("@")[0].lower() == who]
+    exact = [r for r in rows if typed == _letters(r["email"].split("@")[0])]
+    if exact:
+        return exact[:MAX_CANDIDATES]
+    cap, scored = _allowed_typos(typed), []
+    for r in rows:
+        d = min(_distance(typed, k, cap) for k in _name_keys(r["name"]))
+        if d <= cap:
+            scored.append((d, r["id"], r))
+    scored.sort(key=lambda t: t[:2])
+    return [r for _, _, r in scored[:MAX_CANDIDATES]]
 
 
 def authenticate(conn, who, passcode, found_candidates=None):
@@ -122,7 +174,7 @@ def _buckets(request, who):
     ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
     if ":" in ip:
         ip = ":".join(ip.split(":")[:4]) + "::/64"
-    return [(("name", _norm(who)), LIMIT_PER_NAME), (("ip", ip), LIMIT_PER_IP)]
+    return [(("name", _letters(who)), LIMIT_PER_NAME), (("ip", ip), LIMIT_PER_IP)]
 
 
 def _session_marker(customer):

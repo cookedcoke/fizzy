@@ -274,7 +274,9 @@ threshold. 1 point = 1 cent spent, so 1000 points = $10 spent.
 ## 6. Student site
 
 Students can check their own **points, rewards, tab and recent activity**, plus a
-**leaderboard**, on their phone. It's read-only: nothing they do there changes anything.
+**leaderboard**, on their phone. It has its own, more playful look (cream, brand red, the
+Bricolage Grotesque font, bundled under the SIL Open Font License in `fizzy/static/`); the
+staff site keeps its plain console style. It's read-only: nothing they do there changes anything.
 
 **Setting a passcode (at the stall only).** On the customer's page, open **Student site
 passcode**, ask them what they'd like, and type it in once (at least 4 characters). It's a
@@ -286,8 +288,11 @@ There's no "forgot passcode" or sign-up online, on purpose: nobody can take over
 else's account from home.
 
 **Signing in.** On the student site they enter their **full name** (or student number) and
-passcode. Names must match exactly (no fuzzy search), and a wrong name and a wrong passcode
-get the same answer, so the site can't be used to find out who's a customer. After 5 wrong
+passcode. The name box is forgiving: capitals, spaces, apostrophes and hyphens don't matter
+(*O'Donnell* = *odonnell*), surname first or no middle name is fine, and a typo or two is
+allowed in longer names. It never suggests or lists names, though: the passcode still has to
+be right, and a wrong name and a wrong passcode get the same answer, so the site can't be used
+to find out who's a customer. Student numbers must be exact. After 5 wrong
 tries an account is locked for 15 minutes (name and student number count together), and each
 network gets 20 tries. Only a few sign-ins are checked at once, so a flood of guesses can't
 slow down the staff side. Sessions last 12 hours; setting a new passcode or

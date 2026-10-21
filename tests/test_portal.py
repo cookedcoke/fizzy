@@ -45,23 +45,45 @@ def test_student_signs_in_and_sees_only_their_own_stats(client):
     client.post("/rewards", data={"name": "Free Coke", "points": "1000"})
     client.post("/logout")
     page = client.get("/me").text
-    assert "See my stats" in page and "Free Coke" in page            # live rewards are public
+    assert "Let me in" in page and "Free Coke" in page            # live rewards are public
     for who in ("nora le fevre", "  Nora  Le Fevre ", "RNS5"):
         r = me_login(client, who)
-        assert "Hi Nora" in r.text and "1,500" in r.text and "You can have this now" in r.text, who
+        assert "Hey <span>Nora" in r.text and "1,500" in r.text and "just ask at the stall" in r.text, who
         assert "staff-only note xyz" not in r.text                     # staff notes stay private
         client.post("/me/logout")
-    assert "See my stats" in client.get("/me").text
+    assert "Let me in" in client.get("/me").text
     # staff pages still need the staff password
     assert client.get("/", follow_redirects=False).status_code == 303
 
 
-def test_wrong_or_fuzzy_names_get_the_same_answer(client):
+def test_wrong_names_and_passcodes_get_the_same_answer(client):
     setup_student(client)
     client.post("/logout")
-    for who, pc in [("Nora Le Fevre", "wrong-one"), ("Nora Le Feve", PC), ("Nobody Here", PC)]:
+    for who, pc in [("Nora Le Fevre", "wrong-one"), ("Nobody Here", PC), ("Nora Smith", PC), ("No", PC)]:
         r = me_login(client, who, pc)
-        assert "name and passcode don" in r.text and "Hi Nora" not in r.text
+        assert "name and passcode don" in r.text and "Hey <span>Nora" not in r.text, who
+
+
+def test_names_are_forgiving(client):
+    setup_student(client, name="Jemima Rose O'Donnell", sid="rns9")
+    client.post("/logout")
+    for who in ("jemima o'donnell", "Jemima ODonnell", "jemima o donnell", "Jemima O’Donnell", "O'Donnell Jemima",
+                "jemima rose odonnell", "Jemma O'Donnell", "jemima odonell", "Jemima Rose ODonnel", "RNS9", " rns9 "):
+        r = me_login(client, who)
+        assert "Hey <span>Jemima" in r.text, who
+        client.post("/me/logout")
+    assert "name and passcode don" in me_login(client, "rns99").text      # student numbers must be exact
+    assert "name and passcode don" in me_login(client, "Jem O'Brien").text
+
+
+def test_forgiving_match_picks_the_right_one_of_similar_names(conn, cust):
+    a = cust(name="Ivy Zhang", email="rns1@x", sq="A")
+    b = cust(name="Iva Zhang", email="rns2@x", sq="B")
+    portal.set_passcode(conn, a, "ivy-code", "Will")
+    portal.set_passcode(conn, b, "iva-code", "Will")
+    assert portal.authenticate(conn, "Ivy Zhang", "iva-code")["id"] == b["id"]   # close names: passcode decides
+    assert portal.authenticate(conn, "Ivy Zhang", "ivy-code")["id"] == a["id"]
+    assert portal.authenticate(conn, "Ivy Zhang", "nope") is None
 
 
 def test_too_many_wrong_tries_locks_that_name(client):
@@ -78,12 +100,12 @@ def test_too_many_wrong_tries_locks_that_name(client):
 
 def test_new_passcode_signs_out_old_sessions_and_remove_blocks(client):
     cid = setup_student(client)
-    assert "Hi Nora" in me_login(client, "Nora Le Fevre").text
+    assert "Hey <span>Nora" in me_login(client, "Nora Le Fevre").text
     client.post(f"/customers/{cid}/passcode", data={"passcode": "new-code-99"})
-    assert "See my stats" in client.get("/me").text                  # old session gone
-    assert "Hi Nora" in me_login(client, "Nora Le Fevre", "new-code-99").text
+    assert "Let me in" in client.get("/me").text                  # old session gone
+    assert "Hey <span>Nora" in me_login(client, "Nora Le Fevre", "new-code-99").text
     client.post(f"/customers/{cid}/passcode", data={"remove": "1"})
-    assert "See my stats" in client.get("/me").text
+    assert "Let me in" in client.get("/me").text
     assert "name and passcode don" in me_login(client, "Nora Le Fevre", "new-code-99").text
 
 
@@ -97,7 +119,7 @@ def test_public_host_serves_only_student_pages(client, monkeypatch):
     setup_student(client)
     monkeypatch.setattr(config, "PUBLIC_HOST", "my.example")
     pub = {"host": "my.example"}
-    assert "See my stats" in client.get("/", headers=pub).text
+    assert "Let me in" in client.get("/", headers=pub).text
     for path in ("/customers", "/tools", "/audit", "/api/index", "/settings"):
         assert client.get(path, headers=pub, follow_redirects=False).status_code == 404, path
     assert client.post("/customers/1/passcode", headers=pub, data={"remove": "1"}).status_code == 404
@@ -106,14 +128,14 @@ def test_public_host_serves_only_student_pages(client, monkeypatch):
     r = client.post("/login", headers=pub, data={"who": "Nora Le Fevre", "passcode": PC}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/"
     page = client.get("/", headers=pub)
-    assert "Hi Nora" in page.text and page.headers["cache-control"] == "no-store"
+    assert "Hey <span>Nora" in page.text and page.headers["cache-control"] == "no-store"
     assert 'action="/logout"' in page.text
 
 
 def test_public_host_skips_the_device_lock(client, monkeypatch):
     monkeypatch.setattr(config, "ACCESS_HOST", "staff.example")
     monkeypatch.setattr(config, "PUBLIC_HOST", "my.example")
-    assert "See my stats" in client.get("/", headers={"host": "my.example"}).text
+    assert "Let me in" in client.get("/", headers={"host": "my.example"}).text
     assert client.get("/", follow_redirects=False).status_code == 303   # staff host still locked
 
 
@@ -140,7 +162,7 @@ def test_merge_carries_the_passcode(client):
     setup_student(client, name="Kim Dup", sid="rns8", points=0)
     client.post("/tools/add_customer", data={"name": "Kim Keep", "email": "rns7@reddamnorthshore.nsw.edu.au"})
     client.post("/tools/merge", data={"keep": "Kim Keep", "dup": "Kim Dup"})
-    assert "Hi Kim" in me_login(client, "Kim Keep").text
+    assert "Hey <span>Kim" in me_login(client, "Kim Keep").text
     client.post("/me/logout")
     assert "name and passcode don" in me_login(client, "Kim Dup").text
 
@@ -171,14 +193,14 @@ def test_name_and_student_number_share_one_allowance(client, monkeypatch):
     for i in range(portal.LIMIT_PER_NAME):
         me_login(client, "Nora Le Fevre" if i % 2 else "rns5", "wrong-one")
     r = me_login(client, "RNS5")                                        # right passcode, account locked:
-    assert "Hi Nora" not in r.text and "name and passcode don" in r.text   # same answer as any wrong guess
+    assert "Hey <span>Nora" not in r.text and "name and passcode don" in r.text   # same answer as any wrong guess
 
 
 def test_right_passcode_doesnt_use_up_the_allowance(client, monkeypatch):
     setup_student(client)
     monkeypatch.setattr(portal, "FAIL_DELAY", 0)
     for _ in range(portal.LIMIT_PER_NAME + 2):
-        assert "Hi Nora" in me_login(client, "Nora Le Fevre").text
+        assert "Hey <span>Nora" in me_login(client, "Nora Le Fevre").text
         client.post("/me/logout")
 
 

@@ -4,14 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#15171B">
+<meta name="theme-color" content="#FFF7EE">
 <title>{% block title %}My Cooked Coke{% endblock %}</title>
 <link rel="icon" href="/static/favicon.ico?v={{ V }}" sizes="any">
 <link rel="icon" href="/static/logo.svg?v={{ V }}" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ V }}">
-<link rel="stylesheet" href="/static/style.css?v={{ V }}">
+<link rel="preload" href="/static/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/me.css?v={{ V }}">
 </head>
-<body class="me">
+<body>
 {% block body %}{% endblock %}
 </body>
 </html>
