@@ -1,4 +1,5 @@
 """Shared web helpers: templates, auth dependency, form parsing."""
+import hashlib
 from pathlib import Path
 
 from fastapi import HTTPException, Request
@@ -9,6 +10,17 @@ from . import config, db, logic
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
+
+
+def _asset_version():
+    """Changes whenever a static file changes, so browsers can cache /static forever."""
+    h = hashlib.sha1()
+    for f in sorted((HERE / "static").iterdir()):
+        h.update(f.read_bytes())
+    return h.hexdigest()[:10]
+
+
+templates.env.globals["V"] = _asset_version()
 
 
 def money(cents):

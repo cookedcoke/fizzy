@@ -113,7 +113,9 @@ def test_refunds_reverse_points_and_tab(conn, cust):
     assert logic.points_balance(conn, c["id"]) == 400
 
 
-def test_square_repayment_matches_manual_entry(conn, cust):
+def test_square_repayment_matches_manual_entry(conn, cust, monkeypatch):
+    from fizzy import config
+    monkeypatch.setattr(config, "SQUARE_REPAYMENT_ITEM", "tab repayment")
     c = cust()
     logic.add_tab_charge(conn, c, 300, "a", iso(days_ago=1))
     logic.add_repayment(conn, c["id"], 300, "cash", "", "Mike")
@@ -133,9 +135,16 @@ def test_unlinked_payment_applied_after_customer_linked(conn, cust):
     assert logic.points_balance(conn, c["id"]) == 250
 
 
+def test_other_and_house_account_are_tabs_repayment_items_ignored(conn, cust):
+    c = cust()
+    assert square.process_payment(conn, pay("o1", 100, source="EXTERNAL", ext={"type": "OTHER"}), order("Coke")) == "tab_charge"
+    assert square.process_payment(conn, pay("h1", 100, source="SQUARE_ACCOUNT"), order("Coke")) == "tab_charge"
+    assert square.process_payment(conn, pay("r1", 100), order("Tab repayment")) == "sale"  # off by default
+
+
 def test_reclassify(conn, cust):
     c = cust()
-    square.process_payment(conn, pay("x1", 300, source="EXTERNAL", ext={"source": "Something"}), order("Coke"))
+    square.process_payment(conn, pay("x1", 300, source="CARD"), order("Coke"))
     assert logic.points_balance(conn, c["id"]) == 300
     square.reclassify(conn, "x1", "tab_charge", "Bru")
     assert logic.points_balance(conn, c["id"]) == 0

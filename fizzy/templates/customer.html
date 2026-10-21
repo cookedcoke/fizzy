@@ -10,7 +10,7 @@
 
 {% if st.can_charge %}
 <div class="verdict yes"><div class="mark">✓</div><div><b>Can use tab - up to {{ st.available_cents|money }}</b>
-  <span>In Square: attach {{ c.name.split(' ')[0] }}'s profile, then pay with Other → Fizzy Tab.</span></div></div>
+  <span>In Square: attach {{ c.name.split(' ')[0] }}'s profile, then pay with Other Payment Types.</span></div></div>
 {% else %}
 {% set waiting = st.status in ('locked', 'eligible', 'paused') %}
 <div class="verdict {{ 'wait' if waiting else 'no' }}"><div class="mark">{{ '–' if waiting else '✕' }}</div><div><b>{{ 'No tab yet' if waiting else 'No tab' }}</b><span>
@@ -35,30 +35,30 @@
 </div>
 
 <div class="grid">
-  <form class="panel" method="post" action="/customers/{{ c.id }}/repay"><h2>Record repayment</h2>
+  <form class="panel" method="post" action="/customers/{{ c.id }}/repay"><h2>Record repayment <kbd>R</kbd></h2>
     <div class="row">
-      <div><label>Amount ($)</label><input type="text" name="amount" inputmode="decimal" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
+      <div><label>Amount ($)</label><input type="text" name="amount" inputmode="decimal" data-key="r" data-key-label="Record repayment" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
       <div><label>Paid by</label><select name="method"><option value="cash">Cash</option><option value="payid">PayID</option><option value="card">Card</option><option value="other">Other</option></select></div>
     </div>
     <label>Note</label><input type="text" name="note" placeholder="Optional">
     <div class="actions"><button class="primary">Record repayment</button></div>
-    <p class="hint">Also ring up “Tab repayment” in Square - Fizzy pairs them so it's only counted once.</p>
+    <p class="hint">Record it here only - don't put repayments through Square, or they count as a second sale.</p>
   </form>
 
-  <form class="panel" method="post" action="/customers/{{ c.id }}/tab"><h2>Tab approval</h2>
+  <form class="panel" method="post" action="/customers/{{ c.id }}/tab"><h2>Tab approval <kbd>A</kbd> <kbd>X</kbd></h2>
     <p class="small" style="margin:0">{% if c.tab_decision %}<b>{{ c.tab_decision|capitalize }}</b> by {{ c.tab_decision_by }} · {{ c.tab_decision_at|local }}{% if c.tab_decision_note %}<br><span class="muted">“{{ c.tab_decision_note }}”</span>{% endif %}
       {% else %}<span class="muted">No decision yet.</span>{% endif %}</p>
-    <label>Note</label><input type="text" name="note" placeholder="Optional - why?">
+    <label>Note</label><input type="text" name="note" placeholder="Optional - why?" data-key="n" data-key-label="Note for tab decision">
     <div class="actions">
-      {% if c.tab_decision != 'approved' %}<button name="decision" value="approve" class="primary">Approve</button>{% endif %}
-      {% if c.tab_decision == 'approved' %}<button name="decision" value="revoke" class="danger">Revoke</button>
-      {% elif c.tab_decision != 'rejected' %}<button name="decision" value="reject" class="danger">Reject</button>{% endif %}
+      {% if c.tab_decision != 'approved' %}<button name="decision" value="approve" class="primary" data-key="a" data-key-label="Approve tab">Approve</button>{% endif %}
+      {% if c.tab_decision == 'approved' %}<button name="decision" value="revoke" class="danger" data-key="x" data-key-label="Revoke tab" data-confirm="Revoke {{ c.name }}'s tab?">Revoke</button>
+      {% elif c.tab_decision != 'rejected' %}<button name="decision" value="reject" class="danger" data-key="x" data-key-label="Reject tab" data-confirm="Reject {{ c.name }} for a tab?">Reject</button>{% endif %}
       {% if c.tab_decision %}<button name="decision" value="reset" title="Back to automatic: locked or eligible by spend">Clear</button>{% endif %}
     </div>
   </form>
 
-  <form class="panel" method="post" action="/customers/{{ c.id }}/points"><h2>Adjust points</h2>
-    <div class="row"><div style="flex:0 1 130px"><label>Points</label><input type="number" name="delta" step="1" placeholder="+100 or -50" required></div>
+  <form class="panel" method="post" action="/customers/{{ c.id }}/points"><h2>Adjust points <kbd>P</kbd></h2>
+    <div class="row"><div style="flex:0 1 130px"><label>Points</label><input type="number" name="delta" step="1" placeholder="+100 or -50" required data-key="p" data-key-label="Adjust points"></div>
       <div style="flex:2 1 180px"><label>Reason</label><input type="text" name="note" placeholder="Required" required></div></div>
     <div class="actions"><button>Apply</button></div>
   </form>
@@ -105,14 +105,14 @@
 </div>
 
 <div class="panel more">
-  <details><summary>Tab decision history <span class="muted">({{ decisions|length }})</span></summary>
+  <details data-key="h" data-key-label="Tab decision history"><summary>Tab decision history <span class="muted">({{ decisions|length }})</span></summary>
     {% if decisions %}<table>{% for d in decisions %}<tr><td>{{ d.created_at|local }}</td><td>{{ d.decision }}</td><td>{{ d.note or '' }}</td><td>{{ d.staff }}</td></tr>{% endfor %}</table>
     {% else %}<p class="empty">None.</p>{% endif %}
   </details>
-  <details><summary>Activity log</summary>
+  <details data-key="l" data-key-label="Activity log"><summary>Activity log</summary>
     <table>{% for a in audit_rows %}<tr><td>{{ a.created_at|local }}</td><td>{{ a.staff }}</td><td>{{ a.action }}</td><td class="small">{{ a.details }}</td></tr>{% endfor %}</table>
   </details>
-  <details><summary>Edit customer</summary>
+  <details data-key="e" data-key-label="Edit customer"><summary>Edit customer</summary>
     <form method="post" action="/customers/{{ c.id }}/edit" style="max-width:420px">
       <label>Name</label><input type="text" name="name" value="{{ c.name }}">
       <label>Square customer ID</label><input type="text" name="square_customer_id" value="{{ c.square_customer_id or '' }}" class="mono">

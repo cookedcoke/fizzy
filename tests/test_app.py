@@ -41,3 +41,15 @@ def test_full_flow(client):
         assert client.get(path).status_code == 200, path
     assert "fizzy-1" in client.get("/export/square-customers.csv").text
     assert client.post("/square/webhook", content=b"{}").status_code == 403
+
+
+def test_search_index_matches_customer_page(client):
+    login(client)
+    csv = b"Cleaned Name,Email\nAdeline Yates,rns1@reddamnorthshore.nsw.edu.au\nAdam Fenn,rns2@reddamnorthshore.nsw.edu.au\n"
+    client.post("/import", files={"file": ("d.csv", csv, "text/csv")}, data={"confirm": "1"})
+    client.post("/customers/1/tab", data={"decision": "approve"})
+    client.post("/tools/manual_charge", data={"customer": "Adeline Yates", "amount": "3"})
+    rows = {r["name"]: r for r in client.get("/api/index").json()}
+    assert rows["Adeline Yates"]["status"] == "approved" and rows["Adeline Yates"]["owing"] == 300
+    assert rows["Adam Fenn"]["status"] == "locked" and rows["Adam Fenn"]["sid"] == "rns2"
+    assert "app.js?v=" in client.get("/").text

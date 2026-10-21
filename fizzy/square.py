@@ -77,21 +77,18 @@ class SquareClient:
 def classify(payment, order):
     """Decide whether a payment is a normal sale, a tab charge, or a tab repayment.
 
-    - Tab repayment: the order contains the repayment item (SQUARE_REPAYMENT_ITEM, e.g. "Tab repayment").
-    - Tab charge: an "Other"/external tender whose name or note contains SQUARE_TAB_MATCH (e.g. "Fizzy Tab").
+    - Tab charge: paid with a tender in SQUARE_TAB_TENDERS ("Other Payment Types" = EXTERNAL,
+      House Account = SQUARE_ACCOUNT). Square AU can't name the Other tender, so Other is
+      reserved for tabs at the counter.
+    - Tab repayment: only if SQUARE_REPAYMENT_ITEM is set and the order contains that item.
     - Otherwise a sale.
     """
-    for li in (order or {}).get("line_items", []) or []:
-        if (li.get("name") or "").strip().lower() == config.SQUARE_REPAYMENT_ITEM.lower():
-            return "tab_repayment"
-    if payment.get("source_type") in ("EXTERNAL", "OTHER") or payment.get("external_details"):
-        ext = payment.get("external_details") or {}
-        hay = [ext.get("source", ""), ext.get("type", ""), payment.get("note", "")]
-        for t in (order or {}).get("tenders", []) or []:
-            if t.get("id") == payment.get("id") or t.get("payment_id") == payment.get("id"):
-                hay.append(t.get("note", ""))
-        if config.SQUARE_TAB_MATCH.lower() in " ".join(h or "" for h in hay).lower():
-            return "tab_charge"
+    if config.SQUARE_REPAYMENT_ITEM:
+        for li in (order or {}).get("line_items", []) or []:
+            if (li.get("name") or "").strip().lower() == config.SQUARE_REPAYMENT_ITEM.lower():
+                return "tab_repayment"
+    if (payment.get("source_type") or "").upper() in config.SQUARE_TAB_TENDERS:
+        return "tab_charge"
     return "sale"
 
 
@@ -102,7 +99,9 @@ def describe_tender(payment):
         return f"card {brand}".strip().lower()
     if st == "EXTERNAL":
         ext = payment.get("external_details") or {}
-        return f"other: {ext.get('source') or ext.get('type') or ''}".strip()
+        return f"other {ext.get('source') or ''}".strip()
+    if st == "SQUARE_ACCOUNT":
+        return "house account"
     return st.lower() or "unknown"
 
 

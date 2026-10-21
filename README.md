@@ -33,6 +33,32 @@ Customer directory, points and pay-later tabs for Cooked Coke Co. Staff-only, se
   over the limit or overdue is still recorded as owing. It's flagged in red on the dashboard
   for staff to deal with.
 
+## Counter speed and keyboard shortcuts
+
+Search runs in the browser: the page loads the customer list once (a few tens of KB) and
+filters it as you type, in about 1-5 ms per keystroke with no network wait. The highlighted
+result is preloaded in Chrome/Edge, so Enter opens it straight away. Server pages render in
+about 5 ms; on the counter, most of the wait is the Cloudflare round trip.
+
+Press **?** on any page for the full list.
+
+| Key | Does |
+|---|---|
+| `/` or `S` | Search (box in the top bar on every page) |
+| `↑` `↓` `Enter` | Pick a result |
+| `Esc` | Leave the field, then back to the dashboard |
+| `R` | Customer page: repayment amount (pre-filled with what's owed; `Enter` saves) |
+| `P` | Customer page: adjust points (`Tab` to reason, `Enter` saves) |
+| `A` / `X` | Customer page: approve / reject or revoke the tab (`X` asks first) |
+| `N` `H` `L` `E` | Customer page: tab note, decision history, activity log, edit |
+| `W` | Switch who's on the counter |
+| `U` | Square page: sync now |
+| `1`-`8` | Tools page: jump to a section |
+| `G` then `D` `C` `S` `T` `I` `L` `,` | Go to Dashboard, Customers, Square, Tools, Import, Log, Settings |
+| `Ctrl`+`Enter` | Submit the form you're in |
+
+A typical counter lookup: `Esc`, type a name, `Enter`, read the green/red answer, then `Esc`.
+
 ## Tools
 
 **Tools** in the top bar holds the occasional jobs. Hover or tap ⓘ on a tool to see what it
@@ -64,36 +90,46 @@ changes is written to the activity log.
 3. At the counter, **attach the customer profile on the Terminal** for every sale. Without
    it there are no points, and a tab sale lands in "Needs attention".
 
-### 2. Tab sales: a custom "Other" payment type
+### 2. Tab sales: "Other Payment Types" is the tab button
 
-Square has no house accounts in Australia (that feature is US only). What it does have is
-**"Other" tender types**, which record a sale without moving money:
+Square AU can't rename the **Other Payment Types** tender, so **Other is reserved for tabs**.
+Fizzy counts every Other payment as a tab charge, so don't use Other for anything else.
+**House Account** payments count as tabs too, in case someone uses it.
 
-1. Square Dashboard → Settings → Checkout → Payment types. Turn on "Other" payment types and,
-   if your account offers custom names, add one called **Fizzy Tab**.
-2. On the Terminal, staff attach the customer, then pay with *Other → Fizzy Tab*. If custom
-   names aren't available, use plain "Other" with the note **Fizzy Tab**.
-3. Through the API these come through as `source_type: EXTERNAL` payments. Fizzy treats one
-   as a tab charge when its external source, type or note contains `SQUARE_TAB_MATCH`
-   (default `fizzy tab`).
+House Account isn't used for the tab system itself. It's Square's own pay-later feature:
+each customer needs an account set up in Square, Square collects the money by invoice or
+card on file, and the balance has to be cleared within Square's time limits. That would
+compete with Fizzy rather than feed it.
 
-**Verify before going live:** do one $0.50 test tab sale and one cash sale with a customer
-attached. Click **Sync now** on the **Square** page, then open **raw** on both payments.
-Check that the tab sale shows *tab_charge*. If Square stores the name in a different field,
-change `SQUARE_TAB_MATCH`, or reclassify the payment with the dropdown on that page (this is
-also how to fix any mistake). Refund both test sales afterwards and check they reverse.
+1. Square app → Settings → Checkout → Payment types: keep **Other Payment Types** enabled.
+2. At the counter: attach the customer, then pay with **Other Payment Types**.
+3. In the API these are `source_type: EXTERNAL` (House Account is `SQUARE_ACCOUNT`). The list
+   is `SQUARE_TAB_TENDERS`.
 
-### 3. Repayments
+**Verify before going live:** do one $0.50 tab sale and one cash sale with a customer
+attached. Click **Sync now** on the **Square** page, and check the tab sale is listed as
+*Tab charge*. Any payment can be re-marked from the dropdown on that page. Refund both test
+sales afterwards and check they reverse.
 
-Record them on the customer's page in Fizzy (cash / PayID / card), **and** ring up a
-custom-amount item called **Tab repayment** in Square for the same amount, taking cash, card
-or Other (PayID). That keeps Square's takings matching the till.
+### 3. Repayments: in Fizzy only
 
-- Fizzy matches the Square payment to the Fizzy entry (same customer and amount, within 24
-  hours), so it's counted only once.
-- A Tab repayment rung up in Square without a Fizzy entry is still recorded automatically.
-- Create **Tab repayment** as a catalogue item (variable price) so the name is always exact.
-  Repayment payments never earn points as sales; the repayment itself earns them.
+Record repayments on the customer's page in Fizzy and **don't put them through Square**. The
+sale was already recorded in Square once (paid with Other). Ringing up the repayment as well
+would count the same money as a second sale in Square's reports.
+
+How the money adds up:
+
+- **Square gross sales** are correct: every sale appears once.
+- **Square's "Other" total** is what went on tabs that day. It's not cash in hand.
+- **Money actually collected** = Square cash and card + Fizzy repayments. Cash repayments go
+  in the till and PayID goes to the bank account. **Tools → Takings summary** shows both side
+  by side for counting up.
+- Take repayments as **cash or PayID**. A card repayment can only be taken through Square,
+  which would double-count the sale. If it ever has to happen, record it in Fizzy as *card*
+  and note it when reconciling.
+
+(`SQUARE_REPAYMENT_ITEM` can make Fizzy detect repayments rung up in Square. It's off by
+default for the reason above.)
 
 ### 4. API credentials
 

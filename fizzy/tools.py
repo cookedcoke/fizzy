@@ -324,7 +324,7 @@ def h_manual_charge(request, conn, who, form):
         raise ToolError("Amount must be more than $0.")
     items = form.get("items", "").strip() or "Manual charge"
     logic.add_tab_charge(conn, c, amt, f"{items} (entered by hand)", db.now_iso(), who)
-    return done(request, "manual_charge", f"Charged {money(amt)} to {c['name']}'s tab. Don't also record it in Square as Fizzy Tab, or it'll be counted twice.")
+    return done(request, "manual_charge", f"Charged {money(amt)} to {c['name']}'s tab. Only use this if the sale isn't in Square - if it is, Fizzy picks it up and this would count it twice.")
 
 
 def h_write_off(request, conn, who, form):
@@ -433,8 +433,9 @@ def h_takings(request, conn, who, form):
     ):
         rows.append(["Fizzy: tab repayments", r["method"], r["n"], money(r["total"])])
     return report(request, f"Takings {form['start']} to {form['end']}", ["What", "Tender / method", "Count", "Total"], rows,
-                  note="Square rows are what Square recorded. Fizzy repayment rows include hand-entered ones; "
-                       "'matched' Square repayments appear in both.")
+                  note="Square 'tab charge' rows are sales put on tabs (no money yet). Money actually collected = "
+                       "Square cash/card sales + Fizzy tab repayments (cash and PayID go in the till, not Square). "
+                       "Write-offs aren't money.")
 
 
 def _balances(conn):

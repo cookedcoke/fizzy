@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, logic, square, tools
@@ -77,6 +78,15 @@ def create_app(background=True):
         SessionMiddleware, secret_key=config.SECRET_KEY or "unset", session_cookie="fizzy",
         max_age=60 * 60 * 24 * 30, same_site="lax", https_only=config.SECURE_COOKIES,
     )
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+    @app.middleware("http")
+    async def cache_static(request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/") and request.query_params.get("v"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     register(app)
     app.include_router(tools.router)
@@ -199,6 +209,10 @@ def register(app):
         count = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL").fetchone()[0]
         return render(request, "customers.html", q=q, results=results, count=count)
 
+    @app.get("/api/index")
+    def api_index(who=Depends(staff), conn=Depends(get_conn)):
+        return JSONResponse(logic.search_index(conn), headers={"Cache-Control": "no-store"})
+
     @app.get("/api/search")
     def api_search(q: str = "", who=Depends(staff), conn=Depends(get_conn)):
         out = []
@@ -249,8 +263,7 @@ def register(app):
         except ValueError as e:
             return back(request, f"/customers/{cid}", str(e))
         conn.commit()
-        return back(request, f"/customers/{cid}", f"Recorded {money(amt)} repayment ({method}). "
-                    "Remember to ring up the 'Tab repayment' item in Square too.")
+        return back(request, f"/customers/{cid}", f"Recorded {money(amt)} repayment ({method}).")
 
     @app.post("/customers/{cid}/points")
     def points(request: Request, cid: int, delta: int = Form(...), note: str = Form(""), who=Depends(staff),
@@ -333,7 +346,7 @@ def register(app):
             request, "square.html", rows=rows, show=show, square_on=bool(config.SQUARE_TOKEN),
             last_sync=db.get_setting(conn, "square_last_sync"), sync_error=db.get_setting(conn, "square_last_error"),
             cursor=db.get_setting(conn, "square_cursor"), unlinked_customers=unlinked_customers,
-            tab_match=config.SQUARE_TAB_MATCH, repay_item=config.SQUARE_REPAYMENT_ITEM,
+            tab_tenders=sorted(config.SQUARE_TAB_TENDERS), repay_item=config.SQUARE_REPAYMENT_ITEM,
             webhook_on=bool(config.SQUARE_WEBHOOK_KEY),
         )
 

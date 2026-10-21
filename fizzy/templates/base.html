@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#15171B">
 <title>{% block title %}Fizzy{% endblock %} · Fizzy</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M23.5 10.2A9.6 9.6 0 1 0 23.5 21.8' fill='none' stroke='%23FE0001' stroke-width='6'/%3E%3Ccircle cx='26.6' cy='4.6' r='2.4' fill='%23FE0001'/%3E%3Ccircle cx='30' cy='9.4' r='1.5' fill='%23FE0001'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v={{ V }}">
 </head>
 <body>
 {% if staff %}
@@ -19,10 +19,14 @@
     <a href="{{ href }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}">{{ label }}</a>
     {% endfor %}
   </nav>
+  {% if p not in ('/', '/customers') %}
+  <div class="hsearch"><input type="search" data-search placeholder="Search  /" autocomplete="off" aria-label="Find a customer"><div class="results"></div></div>
+  {% endif %}
   <div class="who">
+    <button type="button" id="keys-btn" class="keys-btn" title="Keyboard shortcuts (?)">?</button>
     <form class="inline" method="post" action="/switch">
       <span class="label">On counter</span>
-      <select name="who" onchange="this.form.submit()" aria-label="Staff on counter">
+      <select name="who" onchange="this.form.submit()" aria-label="Staff on counter" data-key="w" data-key-label="Switch who's on the counter">
         {% for n in staff_names %}<option {{ 'selected' if n == staff }}>{{ n }}</option>{% endfor %}
       </select>
     </form>
@@ -34,6 +38,21 @@
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 {% block body %}{% endblock %}
 </main>
+<dialog id="keys" onclick="if(event.target===this)this.close()">
+  <div class="pagehead"><h1>Keyboard shortcuts</h1><button class="sm" onclick="this.closest('dialog').close()">Close <kbd>Esc</kbd></button></div>
+  <div class="grid" style="margin:0">
+    <div><h2>Everywhere</h2><table>
+      <tr><td><kbd>/</kbd> <kbd>S</kbd></td><td>Search customers</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Pick a search result</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Leave a field · then back to dashboard</td></tr>
+      <tr><td><kbd>Ctrl</kbd> <kbd>Enter</kbd></td><td>Submit the form you're in</td></tr>
+      <tr><td><kbd>G</kbd> then <kbd>D</kbd> <kbd>C</kbd> <kbd>S</kbd> <kbd>T</kbd> <kbd>I</kbd> <kbd>L</kbd> <kbd>,</kbd></td><td>Go to Dashboard, Customers, Square, Tools, Import, Log, Settings</td></tr>
+      <tr><td><kbd>?</kbd></td><td>This list</td></tr>
+    </table></div>
+    <div><h2>This page</h2><table id="keys-page"></table></div>
+  </div>
+</dialog>
+<script src="/static/app.js?v={{ V }}" defer></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

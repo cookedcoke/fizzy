@@ -1,5 +1,5 @@
 <form class="search" method="get" action="/customers" role="search">
-  <input id="q" name="q" type="search" value="{{ q or '' }}" placeholder="Name or student number" autofocus autocomplete="off" aria-label="Find a customer">
-  <kbd class="hide-sm">↑ ↓ Enter</kbd>
-  <div id="results"></div>
+  <input id="q" name="q" data-search type="search" value="{{ q or '' }}" placeholder="Name or student number" autofocus autocomplete="off" aria-label="Find a customer">
+  <kbd class="hide-sm">/</kbd>
+  <div class="results"></div>
 </form>

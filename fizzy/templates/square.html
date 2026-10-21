@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}Square{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Square</h1><div class="meta">Last sync {{ last_sync|local or 'never' }}</div></div>
-  <form method="post" action="/square/sync"><button class="primary" {{ 'disabled' if not square_on }}>Sync now</button></form></div>
+  <form method="post" action="/square/sync"><button class="primary" {{ 'disabled' if not square_on }} data-key="u" data-key-label="Sync now">Sync now <kbd>U</kbd></button></form></div>
 {% if sync_error %}<div class="err">Last sync error: {{ sync_error }}</div>{% endif %}
 <div class="stats">
   <div class="stat"><div class="k">Connection</div><div class="v sm">{{ 'Connected' if square_on else 'Not set up' }}</div><div class="sub">{{ 'Webhooks + polling' if webhook_on else 'Polling every 5 min' }}</div></div>
@@ -10,8 +10,8 @@
 </div>
 <div class="panel"><h2>How Fizzy reads Square</h2>
   <table>
-    <tr><td style="width:180px">Tab sale</td><td>An “Other” payment whose name or note contains <code>{{ tab_match }}</code></td></tr>
-    <tr><td>Tab repayment</td><td>Any sale containing an item called <code>{{ repay_item }}</code></td></tr>
+    <tr><td style="width:180px">Tab sale</td><td>Paid with <b>Other Payment Types</b>{% if 'SQUARE_ACCOUNT' in tab_tenders %} or House Account{% endif %}. Only use Other for tabs.</td></tr>
+    <tr><td>Tab repayment</td><td>{% if repay_item %}Any sale containing an item called <code>{{ repay_item }}</code>{% else %}Recorded in Fizzy only - not in Square{% endif %}</td></tr>
     <tr><td>Everything else</td><td>A normal sale - earns points if a customer is attached</td></tr>
   </table>
 </div>

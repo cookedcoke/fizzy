@@ -106,19 +106,22 @@ def spend_cents(conn, customer_id):
     ).fetchone()[0]
 
 
+def status_for(decision, has_overdue, spent, cfg):
+    """The tab status rules in one place."""
+    if decision == "approved":
+        if has_overdue:
+            return "blocked_overdue"
+        return "paused" if cfg["tabs_paused"] else "approved"
+    if decision in ("rejected", "revoked"):
+        return decision
+    return "eligible" if spent >= cfg["unlock_spend_cents"] else "locked"
+
+
 def tab_status(conn, customer, ledger=None, cfg=None):
     cfg = cfg or settings(conn)
     ledger = ledger or tab_ledger(conn, customer["id"])
     spent = spend_cents(conn, customer["id"])
-    decision = customer["tab_decision"]
-    if decision == "approved":
-        status = "blocked_overdue" if ledger["has_overdue"] else "approved"
-        if status == "approved" and cfg["tabs_paused"]:
-            status = "paused"
-    elif decision in ("rejected", "revoked"):
-        status = decision
-    else:
-        status = "eligible" if spent >= cfg["unlock_spend_cents"] else "locked"
+    status = status_for(customer["tab_decision"], ledger["has_overdue"], spent, cfg)
     can_charge = status == "approved"
     available = max(0, cfg["tab_limit_cents"] - ledger["owing_cents"]) if can_charge else 0
     return {
@@ -222,6 +225,26 @@ def refund_tab_charge(conn, charge, refund_cents, staff="square", created_at=Non
              charge["square_payment_id"], staff, created_at or now_iso()),
         )
     audit(conn, staff, "tab_charge_refund", charge["customer_id"], f"-${refund_cents / 100:.2f} on charge #{charge['id']}")
+
+
+def search_index(conn):
+    """Every active customer with what the counter needs, in a handful of queries.
+    Feeds the in-browser search so typing never waits on the network."""
+    cfg = settings(conn)
+    pts = {r[0]: (r[1], r[2]) for r in conn.execute(
+        "SELECT customer_id, SUM(delta), SUM(spend_cents) FROM points_ledger GROUP BY customer_id")}
+    with_tab = {r[0] for r in conn.execute(
+        "SELECT customer_id FROM tab_charges UNION SELECT customer_id FROM tab_repayments")}
+    out = []
+    for c in conn.execute("SELECT * FROM customers WHERE archived_at IS NULL ORDER BY name"):
+        points, spent = pts.get(c["id"], (0, 0))
+        ledger = tab_ledger(conn, c["id"]) if c["id"] in with_tab else {"owing_cents": 0, "has_overdue": False}
+        status = status_for(c["tab_decision"], ledger["has_overdue"], spent, cfg)
+        out.append({
+            "id": c["id"], "name": c["name"], "sid": c["email"].split("@")[0],
+            "points": points, "owing": ledger["owing_cents"], "status": status, "label": STATUS_LABELS[status],
+        })
+    return out
 
 
 def customer_summary(conn, customer, cfg=None):
