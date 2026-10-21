@@ -68,12 +68,15 @@ def search(conn, q, limit=20):
     return [c for c, _ in hits]
 
 
-def square_import_csv(conn):
-    """CSV for Square Dashboard > Customers > Import. Reference ID lets Fizzy link profiles back."""
+def square_import_csv(conn, only_new=False):
+    """CSV for Square Dashboard > Customers > Import. Reference ID lets Fizzy link profiles back.
+    only_new: just the people not linked to a Square profile yet, so a second import doesn't
+    make Square duplicates of everyone already there."""
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow(["First Name", "Last Name", "Email Address", "Reference ID"])
-    for c in conn.execute("SELECT * FROM customers WHERE archived_at IS NULL ORDER BY name"):
+    new = " AND square_customer_id IS NULL" if only_new else ""
+    for c in conn.execute(f"SELECT * FROM customers WHERE archived_at IS NULL{new} ORDER BY name"):
         parts = c["name"].split(" ", 1)
         w.writerow([parts[0], parts[1] if len(parts) > 1 else "", c["email"], f"fizzy-{c['id']}"])
     return out.getvalue()

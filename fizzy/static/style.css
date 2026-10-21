@@ -126,8 +126,8 @@ button, .btn {
   font-weight: 550; text-decoration: none; white-space: nowrap; color: var(--fg);
 }
 button:hover, .btn:hover { background: var(--hover); border-color: var(--faint) }
-button.primary { background: var(--ink); border-color: var(--ink); color: #fff }
-button.primary:hover { background: #2C3038 }
+button.primary, .btn.primary { background: var(--ink); border-color: var(--ink); color: #fff }
+button.primary:hover, .btn.primary:hover { background: #2C3038 }
 button.danger { color: var(--red-ink); border-color: #EBB0B0 }
 button.danger:hover { background: var(--red-wash); border-color: var(--red) }
 button.sm, .btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px }

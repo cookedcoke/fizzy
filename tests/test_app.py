@@ -133,3 +133,16 @@ def test_tab_note_enter_cannot_submit_a_decision(client):
     first_button = form[form.index("<button"):form.index(">", form.index("<button")) + 1]
     assert "disabled" in first_button                        # Enter in the note box does nothing
     assert "onclick=\"return confirm" not in client.get("/settings").text
+
+
+def test_square_csv_new_only_leaves_out_people_already_in_square(client):
+    login(client)
+    client.post("/tools/add_customer", data={"name": "In Square", "email": "rns1@reddamnorthshore.nsw.edu.au"})
+    client.post("/tools/add_customer", data={"name": "Brand New", "email": "rns2@reddamnorthshore.nsw.edu.au"})
+    client.post("/customers/1/edit", data={"name": "In Square", "square_customer_id": "SQ123"})
+    everyone = client.get("/export/square-customers.csv").text
+    new = client.get("/export/square-customers.csv?only=new")
+    assert "rns1@" in everyone and "rns2@" in everyone
+    assert "rns2@" in new.text and "rns1@" not in new.text and "fizzy-2" in new.text
+    assert "new-customers" in new.headers["content-disposition"]
+    assert "new only (1)" in client.get("/customers").text

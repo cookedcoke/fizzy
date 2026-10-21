@@ -339,7 +339,9 @@ def register(app):
             rows = []
         results = [logic.customer_summary(conn, c, cfg) for c in rows]
         count = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL").fetchone()[0]
-        return render(request, "customers.html", q=q, results=results, count=count,
+        not_in_square = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL "
+                                     "AND square_customer_id IS NULL").fetchone()[0]
+        return render(request, "customers.html", q=q, results=results, count=count, not_in_square=not_in_square,
                       can_reward=rewards.can_redeem_any(conn) if results else set())
 
     @app.get("/api/index")
@@ -473,11 +475,13 @@ def register(app):
                                                        "counts": counts})
 
     @app.get("/export/square-customers.csv")
-    def export_square(who=Depends(staff), conn=Depends(get_conn)):
-        db.audit(conn, who, "export_square_csv")
+    def export_square(only: str = "", who=Depends(staff), conn=Depends(get_conn)):
+        only_new = only == "new"
+        db.audit(conn, who, "export_square_csv", None, "not in Square yet" if only_new else "everyone")
         conn.commit()
-        return Response(customers.square_import_csv(conn), media_type="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=fizzy-square-customers.csv"})
+        name = "fizzy-square-new-customers.csv" if only_new else "fizzy-square-customers.csv"
+        return Response(customers.square_import_csv(conn, only_new), media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename={name}"})
 
     # ---- square -------------------------------------------------------------------------
 

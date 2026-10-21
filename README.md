@@ -434,11 +434,18 @@ newer list adds new students and updates changed names, and never deletes anyone
 
 ### 9.3 Put everyone into Square
 
-1. **Customers → Square import CSV** downloads everyone in Square's customer-import format.
+1. **Customers → Square import CSV: new only** downloads everyone who isn't linked to a
+   Square profile yet, in Square's customer-import format. The first time, that's everyone.
    Names are split into first and last at the first space; fix any odd ones in Square
    afterwards.
 2. Square Dashboard → Customers → Import customers → upload it.
 3. On the next sync, Fizzy links each Square profile back to its Fizzy customer.
+
+**Adding people later** (new students, a new school list): do the same. *New only* leaves out
+everyone already in Square, so nobody gets a duplicate profile. Wait for a sync between
+imports, or people imported but not yet linked will be in the next file too. **Everyone**
+exports the whole list; importing it again would give Square a second copy of everyone, so
+only use it for the very first import.
 
 ### 9.4 Square: the discount, the item, and payment types
 

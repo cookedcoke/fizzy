@@ -1,7 +1,10 @@
 {% extends "base.html" %}{% block title %}Customers{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Customers</h1><div class="meta">{{ '{:,}'.format(count) }} active</div></div>
-  <a class="btn" href="/export/square-customers.csv" title="All customers in Square's customer import format">Square import CSV</a></div>
+  <div class="actions" style="margin:0">
+    <a class="btn {{ 'primary' if not_in_square }}" href="/export/square-customers.csv?only=new" title="Only people not linked to a Square profile yet - import this one so Square doesn't get duplicates">Square import CSV: new only ({{ not_in_square }})</a>
+    <a class="btn" href="/export/square-customers.csv" title="Everyone - only for the very first import. Importing it again would duplicate people already in Square"
+      data-confirm="This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them - use 'new only' for that. Download everyone anyway?">Everyone</a></div></div>
 {% include "_search.html" %}
 {% if q and not results %}<p class="empty">No one matches “{{ q }}”.</p>{% endif %}
 {% if results %}
