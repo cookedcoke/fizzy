@@ -348,6 +348,12 @@ double points every Friday. Fizzy sets up the next two weeks ahead, so students 
 see the next one coming. **Stop** (under *Every week*) ends it: ones coming up go, one running
 today carries on.
 
+**Discord.** Set `DISCORD_WEBHOOK_URL` (Discord: channel settings → Integrations → Webhooks →
+New Webhook → Copy URL) and, if you want a ping, `DISCORD_MENTION` (e.g. `@everyone`, or a role
+as `<@&ROLE_ID>`). Starting a reward or scheduling double points then shows an *Announce on
+Discord* box, ticked by default. The post is sent by Fizzy on the home PC, never by the counter
+device's browser, so it works even where the school wifi blocks Discord.
+
 ## 7. Student site
 
 Students can check their own **points, rewards, tab and recent activity**, plus a

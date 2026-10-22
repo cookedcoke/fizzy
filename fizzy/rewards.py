@@ -9,7 +9,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from . import config, logic
+from . import config, discord, logic
 from .stats import today
 from .db import audit, now_iso
 from .web import back, get_conn, render, staff
@@ -165,19 +165,23 @@ def rewards_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         "FROM points_events e ORDER BY (e.ended_at IS NULL AND e.start_date <= ? AND e.end_date >= ?) DESC, "
         "(e.start_date > ?) DESC, e.start_date DESC, e.id DESC LIMIT 30", (today().isoformat(),) * 3).fetchall()
     rules = conn.execute("SELECT * FROM points_rules WHERE stopped_at IS NULL ORDER BY weekday").fetchall()
-    return render(request, "rewards.html", rules=rules, day_names=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], live=[r for r in rows if not r["ended_at"]],
+    return render(request, "rewards.html", rules=rules, discord_on=discord.enabled(), day_names=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], live=[r for r in rows if not r["ended_at"]],
                   ended=[r for r in rows if r["ended_at"]][:30], events=events, today=today().isoformat())
 
 
 @router.post("/rewards")
 def rewards_create(request: Request, name: str = Form(""), points: str = Form(""), square_note: str = Form(""),
-                   limit: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+                   limit: str = Form(""), announce: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
     try:
         cost = _int_or_none(points)
         create(conn, name, cost or 0, square_note, _int_or_none(limit), who)
     except RewardError as e:
         return back(request, "/rewards", str(e))
     conn.commit()
+    if announce:
+        lim = _int_or_none(limit)
+        discord.announce(f"New reward: {' '.join(name.split())}",
+                         f"{cost:,} points{f' (limit {lim} each)' if lim else ''}. Ask at the stall on Level 7.")
     return back(request, "/rewards", f"“{' '.join(name.split())}” is on.")
 
 

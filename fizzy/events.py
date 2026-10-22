@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, Request
 
-from . import logic
+from . import discord, logic
 from .db import audit, now_iso
 from .stats import day_bounds, today
 from .web import back, get_conn, staff
@@ -168,11 +168,27 @@ def _reconcile(conn):
     return changed
 
 
+def announcement(name, multiplier, start, end, weekly):
+    name = " ".join((name or "").split()) or "Double points"
+    m = float(multiplier)
+    x = "Double" if m == 2 else "Triple" if m == 3 else f"{m:g}×"
+    s, e = _date(start), _date(end or start)
+    fmt = lambda d: d.strftime("%A %-d %B")
+    if weekly:
+        when = f"every {DAY_NAMES[s.weekday()]}" + (f" to {DAY_NAMES[e.weekday()]}" if e != s else "") + f", starting {fmt(s)}"
+    elif s == today() and e == s:
+        when = "today"
+    else:
+        when = fmt(s) + (f" to {fmt(e)}" if e != s else "")
+    return name, f"{x} points on everything, {when}. Come up to Level 7."
+
+
 # ---- pages (the events section lives on the Rewards page) --------------------------------------
 
 @router.post("/events")
 def events_create(request: Request, name: str = Form(""), multiplier: str = Form("2"), start: str = Form(""),
-                  end: str = Form(""), weekly: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+                  end: str = Form(""), weekly: str = Form(""), announce: str = Form(""), who=Depends(staff),
+                  conn=Depends(get_conn)):
     try:
         if weekly:
             create_rule(conn, name, multiplier, start, end, who)
@@ -182,6 +198,8 @@ def events_create(request: Request, name: str = Form(""), multiplier: str = Form
     except EventError as e:
         return back(request, "/rewards#events", str(e))
     conn.commit()
+    if announce:
+        discord.announce(*announcement(name, multiplier, start, end, weekly))
     return back(request, "/rewards#events", "Done. Extra points get added by themselves.")
 
 

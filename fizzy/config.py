@@ -26,6 +26,9 @@ CF_ACCESS_AUD = _env("CF_ACCESS_AUD")                            # the Access ap
 # Student site (see portal.py): students check their own points and tab. Only the student
 # pages are served on this host. Unset: the student pages are at /me on the staff site.
 PUBLIC_HOST = _env("FIZZY_PUBLIC_HOST").lower()                  # e.g. my.cookedcoke.co
+# Discord announcements for new rewards and double points days (see discord.py). Off unless set.
+DISCORD_WEBHOOK_URL = _env("DISCORD_WEBHOOK_URL")
+DISCORD_MENTION = _env("DISCORD_MENTION")                        # e.g. @everyone, or <@&ROLE_ID>
 
 SQUARE_TOKEN = _env("SQUARE_ACCESS_TOKEN")
 SQUARE_ENV = _env("SQUARE_ENVIRONMENT", "production")
