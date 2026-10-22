@@ -146,3 +146,29 @@ def test_square_csv_new_only_leaves_out_people_already_in_square(client):
     assert "rns2@" in new.text and "rns1@" not in new.text and "fizzy-2" in new.text
     assert "new-customers" in new.headers["content-disposition"]
     assert "new only (1)" in client.get("/customers").text
+
+
+def test_customer_page_shows_only_what_needs_doing(client):
+    login(client)
+    client.post("/tools/add_customer", data={"name": "New Kid", "email": "rns1@reddamnorthshore.nsw.edu.au"})
+    page = client.get("/customers/1").text
+    assert "No student site passcode yet." in page and "Not in Square yet." in page
+    assert "Tab charges" not in page and "Square payments" not in page             # nothing there yet
+    assert "Repayment without Square" in page and "(nothing owing)" in page        # tucked away
+    assert "Tab approval</h2>" not in page and "(not eligible yet)" in page
+    client.post("/customers/1/passcode", data={"passcode": "kid-1234"})
+    page = client.get("/customers/1").text
+    assert "No student site passcode yet." not in page and 'id="passcode"' in page  # set: moves to the bottom
+    from fizzy import db, logic
+    conn = db.connect()
+    try:
+        c = conn.execute("SELECT * FROM customers WHERE id = 1").fetchone()
+        conn.execute("INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, created_at) VALUES (1, 3000, 3000, 'purchase', ?)",
+                     (db.now_iso(),))
+        logic.add_tab_charge(conn, c, 400, "Coke", "2020-01-01T00:00:00+00:00", "Will")
+        conn.commit()
+    finally:
+        conn.close()
+    page = client.get("/customers/1").text
+    assert "$4.00 overdue." in page and "Spent enough for a tab." in page
+    assert "Repayment <kbd>R</kbd></h2>" in page and "Tab approval</h2>" in page and "Tab charges" in page

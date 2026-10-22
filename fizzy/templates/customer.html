@@ -1,5 +1,37 @@
 {% extends "base.html" %}{% block title %}{{ c.name }}{% endblock %}
 {% block body %}
+{% macro repay_form(boxed) %}
+  <form class="{{ 'panel' ~ (' attn bad' if led.has_overdue else '') if boxed else '' }}" method="post" action="/customers/{{ c.id }}/repay">{% if boxed %}<h2>Repayment <kbd>R</kbd></h2>{% endif %}
+    <p class="small" style="margin:0">{% if led.owing_cents %}<b>In Square:</b> attach {{ c.name.split(' ')[0] }}'s profile, add <b>Tab repayment</b>, type in
+      <b>{{ led.owing_cents|money }}</b> (or what they're paying), and take cash or card. Fizzy records it automatically.{% else %}Nothing owing.{% endif %}</p>
+    <p class="hint" style="margin-top:8px">Only use this for money that <b>didn't</b> go through Square.</p>
+    <div class="row">
+      <div><label for="rp-amount">Amount ($)</label><input id="rp-amount" type="text" name="amount" inputmode="decimal" {% if boxed %}data-key="r" data-key-label="Record a repayment without Square"{% endif %} value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
+      <div><label for="rp-method">Paid by</label><select id="rp-method" name="method"><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other</option></select></div>
+    </div>
+    <label for="rp-note">Note</label><input id="rp-note" type="text" name="note" placeholder="Optional">
+    <label class="check"><input type="checkbox" name="confirm_dup" value="1"> This is a separate payment (not one already rung up in Square)</label>
+    <div class="actions"><button title="Enter in the amount box also saves">Record without Square <kbd>Enter</kbd></button></div>
+  </form>
+
+{% endmacro %}
+{% macro tab_form(boxed) %}
+  <form class="{{ 'panel' ~ (' attn' if st.status == 'eligible' and not c.tab_decision else '') if boxed else '' }}" method="post" action="/customers/{{ c.id }}/tab">{% if boxed %}<h2>Tab approval</h2>{% endif %}
+    {# Enter in the note box would otherwise "click" the first button (approve or revoke). A disabled
+       first submit button makes Enter do nothing here: staff must choose a button. #}
+    <button type="submit" disabled hidden aria-hidden="true" tabindex="-1"></button>
+    <p class="small" style="margin:0">{% if c.tab_decision %}<b>{{ c.tab_decision|capitalize }}</b> by {{ c.tab_decision_by }} · {{ c.tab_decision_at|local }}{% if c.tab_decision_note %}<br><span class="muted">“{{ c.tab_decision_note }}”</span>{% endif %}
+      {% else %}<span class="muted">No decision yet.</span>{% endif %}</p>
+    <label for="tab-note">Note <kbd>N</kbd></label><input id="tab-note" type="text" name="note" placeholder="Why? (optional)" {% if boxed %}data-key="n" data-key-label="Note for tab decision"{% endif %}>
+    <div class="actions">
+      {% if c.tab_decision != 'approved' %}<button name="decision" value="approve" class="primary" {% if boxed %}data-key="a" data-key-label="Approve tab"{% endif %}>Approve <kbd>A</kbd></button>{% endif %}
+      {% if c.tab_decision == 'approved' %}<button name="decision" value="revoke" class="danger" {% if boxed %}data-key="x" data-key-label="Revoke tab"{% endif %} data-confirm="Revoke {{ c.name }}'s tab?">Revoke <kbd>X</kbd></button>
+      {% elif c.tab_decision != 'rejected' %}<button name="decision" value="reject" class="danger" {% if boxed %}data-key="x" data-key-label="Reject tab"{% endif %} data-confirm="Reject {{ c.name }} for a tab?">Reject <kbd>X</kbd></button>{% endif %}
+      {% if c.tab_decision %}<button name="decision" value="reset" title="Undo the decision">Clear</button>{% endif %}
+    </div>
+  </form>
+
+{% endmacro %}
 {% set st = s.status %}{% set led = s.ledger %}
 <div class="pagehead">
   <div>
@@ -23,6 +55,29 @@
   {% elif st.status == 'locked' %}Needs {{ (st.unlock_spend_cents - st.spend_cents)|money }} more spent before becoming eligible.
   {% else %}{{ st.label }}{% if c.tab_decision_note %}: “{{ c.tab_decision_note }}”{% endif %}.{% endif %}
 </span></div></div>
+{% endif %}
+
+{# What needs doing for this person, most urgent first. Only what applies shows. #}
+{% set first = c.name.split(' ')[0] %}
+{% set owing_panel = led.owing_cents or led.balance_cents < 0 %}
+{% set tab_panel = c.tab_decision or st.status not in ('locked',) %}
+{% set todos = [] %}
+{% if not c.archived_at %}
+<div class="todos">
+  {% if led.has_overdue %}{% set _ = todos.append(1) %}<div class="todo bad"><b>{{ led.overdue_cents|money }} overdue.</b>
+    <span>Ask {{ first }} to pay it off - ring it up as <b>Tab repayment</b> in Square.</span></div>
+  {% elif led.owing_cents %}{% set _ = todos.append(1) %}<div class="todo"><b>Owes {{ led.owing_cents|money }}.</b>
+    <span>{% set due = led.charges|selectattr('unpaid_cents')|map(attribute='due_at')|min %}Due {{ due|local('%a %d %b') }}.</span></div>{% endif %}
+  {% if st.status == 'eligible' and not c.tab_decision %}{% set _ = todos.append(1) %}<div class="todo go"><b>Spent enough for a tab.</b>
+    <span>Approve or reject it below.</span></div>{% endif %}
+  {% if not c.passcode_set_at or (c.passcode_enc and not passcode_readable) %}{% set _ = todos.append(1) %}
+  <form class="todo" method="post" action="/customers/{{ c.id }}/passcode" autocomplete="off">
+    <b>{{ 'No student site passcode yet.' if not c.passcode_set_at else 'Passcode needs setting again.' }}</b>
+    <span class="inline-set"><input type="text" name="passcode" placeholder="What {{ first }} wants (4+)" aria-label="New passcode for {{ first }}"
+      autocomplete="off" autocapitalize="off" spellcheck="false" minlength="4" maxlength="64" required><button class="sm">Set</button></span></form>{% endif %}
+  {% if not c.square_customer_id %}{% set _ = todos.append(1) %}<div class="todo"><b>Not in Square yet.</b>
+    <span>Their sales won't link by themselves - <a href="/export/square-customers.csv?only=new">get the import file</a>, or claim their sales with <kbd>K</kbd>.</span></div>{% endif %}
+</div>
 {% endif %}
 
 {% if offers or recent_redemptions %}
@@ -60,34 +115,8 @@
 </div>
 
 <div class="grid">
-  <form class="panel" method="post" action="/customers/{{ c.id }}/repay"><h2>Repayment <kbd>R</kbd></h2>
-    <p class="small" style="margin:0">{% if led.owing_cents %}<b>In Square:</b> attach {{ c.name.split(' ')[0] }}'s profile, add <b>Tab repayment</b>, type in
-      <b>{{ led.owing_cents|money }}</b> (or what they're paying), and take cash or card. Fizzy records it automatically.{% else %}Nothing owing.{% endif %}</p>
-    <p class="hint" style="margin-top:8px">Only use this for money that <b>didn't</b> go through Square.</p>
-    <div class="row">
-      <div><label for="rp-amount">Amount ($)</label><input id="rp-amount" type="text" name="amount" inputmode="decimal" data-key="r" data-key-label="Record a repayment without Square" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
-      <div><label for="rp-method">Paid by</label><select id="rp-method" name="method"><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other</option></select></div>
-    </div>
-    <label for="rp-note">Note</label><input id="rp-note" type="text" name="note" placeholder="Optional">
-    <label class="check"><input type="checkbox" name="confirm_dup" value="1"> This is a separate payment (not one already rung up in Square)</label>
-    <div class="actions"><button title="Enter in the amount box also saves">Record without Square <kbd>Enter</kbd></button></div>
-  </form>
-
-  <form class="panel" method="post" action="/customers/{{ c.id }}/tab"><h2>Tab approval</h2>
-    {# Enter in the note box would otherwise "click" the first button (approve or revoke). A disabled
-       first submit button makes Enter do nothing here: staff must choose a button. #}
-    <button type="submit" disabled hidden aria-hidden="true" tabindex="-1"></button>
-    <p class="small" style="margin:0">{% if c.tab_decision %}<b>{{ c.tab_decision|capitalize }}</b> by {{ c.tab_decision_by }} · {{ c.tab_decision_at|local }}{% if c.tab_decision_note %}<br><span class="muted">“{{ c.tab_decision_note }}”</span>{% endif %}
-      {% else %}<span class="muted">No decision yet.</span>{% endif %}</p>
-    <label for="tab-note">Note <kbd>N</kbd></label><input id="tab-note" type="text" name="note" placeholder="Why? (optional)" data-key="n" data-key-label="Note for tab decision">
-    <div class="actions">
-      {% if c.tab_decision != 'approved' %}<button name="decision" value="approve" class="primary" data-key="a" data-key-label="Approve tab">Approve <kbd>A</kbd></button>{% endif %}
-      {% if c.tab_decision == 'approved' %}<button name="decision" value="revoke" class="danger" data-key="x" data-key-label="Revoke tab" data-confirm="Revoke {{ c.name }}'s tab?">Revoke <kbd>X</kbd></button>
-      {% elif c.tab_decision != 'rejected' %}<button name="decision" value="reject" class="danger" data-key="x" data-key-label="Reject tab" data-confirm="Reject {{ c.name }} for a tab?">Reject <kbd>X</kbd></button>{% endif %}
-      {% if c.tab_decision %}<button name="decision" value="reset" title="Undo the decision">Clear</button>{% endif %}
-    </div>
-  </form>
-
+  {% if owing_panel %}{{ repay_form(true) }}{% endif %}
+  {% if tab_panel %}{{ tab_form(true) }}{% endif %}
   <form class="panel" method="post" action="/customers/{{ c.id }}/points"><h2>Adjust points <kbd>P</kbd></h2>
     <div class="row"><div style="flex:0 1 130px"><label for="pt-delta">Points</label><input id="pt-delta" type="number" name="delta" step="1" placeholder="+100 or -50" required data-key="p" data-key-label="Adjust points"></div>
       <div style="flex:2 1 180px"><label for="pt-note">Reason</label><input id="pt-note" type="text" name="note" placeholder="Required" required></div></div>
@@ -95,7 +124,7 @@
   </form>
 </div>
 
-<div class="panel"><h2>Tab charges <span class="count">{{ led.charges|length }}</span></h2>
+{% if led.charges %}<div class="panel"><h2>Tab charges <span class="count">{{ led.charges|length }}</span></h2>
   {% if led.charges %}<div class="scroll"><table>
     <tr><th>Charged</th><th>Items</th><th class="n">Amount</th><th class="n">Paid</th><th class="n">Unpaid</th><th>Due</th><th>Status</th></tr>
     {% for ch in led.charges|reverse %}<tr>
@@ -106,20 +135,20 @@
       <td>{% if ch.overdue %}<span class="tag red">Overdue</span>{% elif ch.unpaid_cents > 0 %}<span class="tag">Open</span>
           {% elif ch.paid_late %}<span class="tag eligible">Paid late</span>
           {% else %}<span class="tag approved">Paid</span>{% endif %}</td></tr>{% endfor %}
-  </table></div>{% else %}<p class="empty">No tab charges.</p>{% endif %}
-</div>
+  </table></div>{% endif %}
+</div>{% endif %}
 
-<div class="grid">
-  <div class="panel"><h2>Repayments <span class="count">{{ led.repayments|length }}</span></h2>
+<div class="{{ 'grid' if led.repayments }}">
+  {% if led.repayments %}<div class="panel"><h2>Repayments <span class="count">{{ led.repayments|length }}</span></h2>
     {% if led.repayments %}<div class="scroll"><table>
       <tr><th>When</th><th class="n">Amount</th><th>Method</th><th>By</th></tr>
       {% for r in led.repayments|reverse %}<tr><td>{{ r.created_at|local }}{% if r.note %}<br><span class="muted small">{{ r.note }}</span>{% endif %}</td>
         <td class="n">{{ r.amount_cents|money }}</td><td>{{ 'write-off' if r.method == 'writeoff' else r.method }}{% if r.square_payment_id %} <span class="muted small" title="Matched to a Square payment">· Square</span>{% endif %}</td>
         <td>{{ r.staff or 'Square' }}</td></tr>{% endfor %}
-    </table></div>{% else %}<p class="empty">No repayments.</p>{% endif %}
-  </div>
+    </table></div>{% endif %}
+  </div>{% endif %}
   <div class="panel"><h2>Points history</h2>
-    {% if points %}<div class="scroll"><table>
+    {% if points %}<div class="scroll"><table data-clip="8">
       <tr><th>When</th><th class="n">Points</th><th>Why</th></tr>
       {% for p in points %}<tr><td>{{ p.created_at|local }}</td><td class="n">{{ '%+d'|format(p.delta) }}</td>
         <td class="small">{{ p.note or p.reason }}{% if p.staff and p.staff != 'square' %} <span class="muted">· {{ p.staff }}</span>{% endif %}</td></tr>{% endfor %}
@@ -127,15 +156,17 @@
   </div>
 </div>
 
-<div class="panel"><h2>Square payments</h2>
-  {% if payments %}<div class="scroll"><table>
+{% if payments %}<div class="panel"><h2>Square payments</h2>
+  {% if payments %}<div class="scroll"><table data-clip="8">
     <tr><th>When</th><th>Type</th><th class="n">Amount</th><th>Tender</th><th class="hide-sm">Items</th></tr>
     {% for p in payments %}<tr><td>{{ p.created_at|local }}</td><td>{{ p.kind.replace('_', ' ') }}</td><td class="n">{{ p.amount_cents|money }}</td>
       <td class="small">{{ p.tender }}</td><td class="small hide-sm">{{ p['items'] }}</td></tr>{% endfor %}
-  </table></div>{% else %}<p class="empty">None linked yet.</p>{% endif %}
-</div>
+  </table></div>{% endif %}
+</div>{% endif %}
 
 <div class="panel more">
+  {% if not owing_panel %}<details data-key="r" data-key-label="Record money that didn't go through Square"><summary>Repayment without Square <span class="muted">(nothing owing)</span> <kbd>R</kbd></summary>{{ repay_form(false) }}</details>{% endif %}
+  {% if not tab_panel %}<details><summary>Tab approval <span class="muted">(not eligible yet)</span></summary>{{ tab_form(false) }}</details>{% endif %}
   <details data-key="h" data-key-label="Tab decision history"><summary>Tab decision history <span class="muted">({{ decisions|length }})</span> <kbd>H</kbd></summary>
     {% if decisions %}<table>{% for d in decisions %}<tr><td>{{ d.created_at|local }}</td><td>{{ d.decision }}</td><td>{{ d.note or '' }}</td><td>{{ d.staff }}</td></tr>{% endfor %}</table>
     {% else %}<p class="empty">None.</p>{% endif %}
@@ -143,7 +174,7 @@
   <details data-key="l" data-key-label="Activity log"><summary>Activity log <kbd>L</kbd></summary>
     <table>{% for a in audit_rows %}<tr><td>{{ a.created_at|local }}</td><td>{{ a.staff }}</td><td>{{ a.action }}</td><td class="small">{{ a.details }}</td></tr>{% endfor %}</table>
   </details>
-  <details id="passcode"><summary>Student site passcode <span class="muted">({{ 'set ' ~ c.passcode_set_at|local('%d %b') if c.passcode_set_at else 'not set' }})</span></summary>
+  {% if c.passcode_set_at %}<details id="passcode"><summary>Student site passcode <span class="muted">({{ 'set ' ~ c.passcode_set_at|local('%d %b') if c.passcode_set_at else 'not set' }})</span></summary>
     <form method="post" action="/customers/{{ c.id }}/passcode" style="max-width:420px" autocomplete="off">
       {% if c.passcode_enc %}<p style="margin-top:0">Current passcode:
         {% if passcode_readable %}<button type="button" class="sm" data-reveal="/customers/{{ c.id }}/passcode/reveal"
@@ -155,7 +186,7 @@
       <div class="actions"><button class="primary">Set passcode</button>
         {% if c.passcode_set_at %}<button name="remove" value="1" formnovalidate data-confirm="Remove {{ c.name }}'s passcode? They won't be able to sign in until a new one is set.">Remove</button>{% endif %}</div>
     </form>
-  </details>
+  </details>{% endif %}
   <details data-key="e" data-key-label="Edit customer"><summary>Edit customer <kbd>E</kbd></summary>
     <form method="post" action="/customers/{{ c.id }}/edit" style="max-width:420px">
       <label for="ed-name">Name</label><input id="ed-name" type="text" name="name" value="{{ c.name }}">

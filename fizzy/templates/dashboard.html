@@ -107,20 +107,22 @@
 
 <div class="cols">
 <div class="col" style="flex-grow:2">
-  <div class="panel"><h2>Overdue <span class="count">{{ overdue|length }}</span></h2>
+  {% if not overdue and not due_soon %}<div class="todo go" style="margin-bottom:var(--s4)"><b>No tabs overdue or due soon.</b>
+    <span>{{ total_owed|money }} owed in total.</span></div>{% endif %}
+  {% if overdue %}<div class="panel" style="box-shadow:inset 4px 0 0 var(--red)"><h2>Overdue <span class="count">{{ overdue|length }}</span></h2>
     {% if overdue %}<div class="scroll"><table>
       <tr><th>Customer</th><th class="n">Unpaid</th><th>Was due</th></tr>
       {% for r in overdue %}<tr><td><a href="/customers/{{ r.customer.id }}">{{ r.customer.name }}</a></td>
         <td class="n red">{{ r.charge.unpaid_cents|money }}</td><td>{{ r.charge.due_at|local('%a %d %b') }}</td></tr>{% endfor %}
-    </table></div>{% else %}<p class="empty">Nothing overdue.</p>{% endif %}
-  </div>
-  <div class="panel"><h2>Due in the next 2 days <span class="count">{{ due_soon|length }}</span></h2>
+    </table></div>{% endif %}
+  </div>{% endif %}
+  {% if due_soon %}<div class="panel"><h2>Due in the next 2 days <span class="count">{{ due_soon|length }}</span></h2>
     {% if due_soon %}<div class="scroll"><table>
       <tr><th>Customer</th><th class="n">Unpaid</th><th>Due</th></tr>
       {% for r in due_soon %}<tr><td><a href="/customers/{{ r.customer.id }}">{{ r.customer.name }}</a></td>
         <td class="n">{{ r.charge.unpaid_cents|money }}</td><td>{{ r.charge.due_at|local }}</td></tr>{% endfor %}
-    </table></div>{% else %}<p class="empty">Nothing due soon.</p>{% endif %}
-  </div>
+    </table></div>{% endif %}
+  </div>{% endif %}
   <div class="panel"><h2>Top customers</h2>
     {% if top %}<div class="scroll"><table>
       <tr><th class="n" style="width:1%">#</th><th>Customer</th><th class="n">Spent</th><th class="n">Points</th></tr>
@@ -129,14 +131,14 @@
   </div>
 </div>
 <div class="col">
-  <div class="panel"><h2>Eligible for a tab <span class="count">{{ eligible|length }}</span></h2>
+  {% if eligible %}<div class="panel" style="box-shadow:inset 4px 0 0 var(--ok)"><h2>Eligible for a tab <span class="count">{{ eligible|length }}</span></h2>
     {% if eligible %}<div class="scroll"><table>
       {% for c in eligible[:8] %}<tr><td><a href="/customers/{{ c.id }}">{{ c.name }}</a><br><span class="muted small">{{ c.spent|money }} spent</span></td>
         <td class="n" style="vertical-align:middle"><form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="approve"><button class="sm">Approve</button></form>
             <form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="reject"><button class="sm danger">Reject</button></form></td></tr>{% endfor %}
       {% if eligible|length > 8 %}<tr><td colspan="2" class="small">{{ eligible|length - 8 }} more · <a href="/tools#approve_eligible">Approve all eligible</a></td></tr>{% endif %}
-    </table></div>{% else %}<p class="empty">No one waiting.</p>{% endif %}
-  </div>
+    </table></div>{% endif %}
+  </div>{% endif %}
 </div>
 </div>
 {% endblock %}

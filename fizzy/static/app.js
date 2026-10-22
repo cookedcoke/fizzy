@@ -235,6 +235,17 @@
     t.addEventListener("focus", function () { t.classList.toggle("tip-right", t.getBoundingClientRect().left < 280); });
   });
 
+  // ---- long tables: latest few rows, the rest one click away ------------------------------
+  $$("table[data-clip]").forEach(function (t) {
+    var n = Number(t.dataset.clip), rows = $$("tr", t).filter(function (r) { return !r.querySelector("th"); });
+    if (rows.length <= n + 2) return;
+    rows.slice(n).forEach(function (r) { r.hidden = true; });
+    var more = document.createElement("button");
+    more.type = "button"; more.className = "sm clip-more"; more.textContent = "Show all " + rows.length;
+    more.addEventListener("click", function () { rows.forEach(function (r) { r.hidden = false; }); more.remove(); });
+    (t.closest(".scroll") || t).after(more);
+  });
+
   // ---- clock (desktop header) -------------------------------------------------------------
   var clock = $("[data-clock]");
   if (clock) {

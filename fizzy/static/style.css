@@ -384,3 +384,17 @@ input[type=file]::file-selector-button { font: inherit; font-size: 13px; margin-
 .lines .rm { border: 0; background: none; color: var(--faint); cursor: pointer; font-size: 16px; padding: 0 4px }
 .lines .rm:hover { color: var(--red-ink) }
 table.lines td:nth-child(2) { width: 56px } table.lines td:nth-child(2) input { min-width: 48px; text-align: center }
+/* Customer page: what needs doing, only what applies */
+.todos { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s4) }
+.todos:empty { display: none }
+.todo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s3); background: var(--surface); border: 1px solid var(--line);
+  border-left: 4px solid var(--ink); border-radius: var(--r); padding: 10px var(--s4); margin: 0 }
+.todo span { color: var(--muted); font-size: 13.5px }
+.todo.bad { border-left-color: var(--red); background: var(--red-wash) } .todo.bad b { color: var(--red-ink) }
+.todo.go { border-left-color: var(--ok); background: var(--ok-wash) } .todo.go b { color: var(--ok) }
+.todo .inline-set { display: inline-flex; gap: var(--s2); margin-left: auto }
+.todo .inline-set input { width: 200px; height: 30px }
+.panel.attn { border-color: var(--line-strong); box-shadow: inset 4px 0 0 var(--ok) }
+form.panel.attn:has(.red), .panel.attn.bad { box-shadow: inset 4px 0 0 var(--red) }
+.more details > form { padding: var(--s3) 0 }
+.clip-more { margin: var(--s3) 0 0 var(--s4) } tr[hidden] { display: none }
