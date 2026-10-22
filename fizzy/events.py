@@ -88,8 +88,17 @@ def cancel(conn, event_id, staff_name):
 
 def reconcile(conn):
     """Bring every recent event's bonus points to what they should be. Returns points changed."""
-    if not conn.in_transaction:
+    own = not conn.in_transaction
+    if own:
         conn.execute("BEGIN IMMEDIATE")  # read and top up under the write lock, so two runs can't both add
+    try:
+        return _reconcile(conn)
+    finally:
+        if own:  # we opened it, so we close it: never leave the lock held
+            conn.commit()
+
+
+def _reconcile(conn):
     t = today()
     changed = 0
     for ev in conn.execute("SELECT * FROM points_events WHERE start_date <= ? AND end_date >= ?",
