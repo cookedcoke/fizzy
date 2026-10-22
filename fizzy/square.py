@@ -94,6 +94,10 @@ class SquareClient:
     def customers(self):
         return self._paged("/v2/customers", "customers", {})
 
+    def catalog_items(self):
+        """Every catalogue item (with its variations). Needs the ITEMS_READ permission."""
+        return self._paged("/v2/catalog/list", "objects", {"types": "ITEM"})
+
     def refund(self, refund_id):
         return self._get(f"/v2/refunds/{refund_id}").get("refund")
 
@@ -660,11 +664,70 @@ def _refetch(client, typ, item_id):
     return {"payment": client.payment, "order": client.order, "refund": client.refund}[typ](item_id)
 
 
+CATALOG_EVERY = timedelta(hours=6)
+
+
+def sync_catalog(conn, client, force=False):
+    """Copy Square's item list (each variation, with its price) so the Profit page and restocks
+    can list every item - even ones never sold - and match sales by Square's ids, not names.
+    Runs every few hours, or on demand. A token without ITEMS_READ just leaves it empty."""
+    if not hasattr(client, "catalog_items"):
+        return None
+    last = get_setting(conn, "catalog_last_sync")
+    if not force and last and datetime.now(timezone.utc) - logic.parse_ts(last) < CATALOG_EVERY:
+        return None
+    try:
+        items = list(client.catalog_items())
+    except httpx.HTTPStatusError as e:
+        why = ("Square says this token can't read items - give it the ITEMS_READ permission."
+               if e.response.status_code in (401, 403) else f"Square returned {e.response.status_code}.")
+        set_setting(conn, "catalog_error", why)
+        set_setting(conn, "catalog_last_sync", now_iso())
+        conn.commit()
+        return 0
+    ts = now_iso()
+    conn.execute("UPDATE catalog_items SET deleted = 1")
+    n = 0
+    for it in items:
+        if it.get("is_deleted") or it.get("type") != "ITEM":
+            continue
+        data = it.get("item_data") or {}
+        name = " ".join((data.get("name") or "").split())
+        variations = [v for v in data.get("variations", []) or [] if not v.get("is_deleted")]
+        for v in variations:
+            vd = v.get("item_variation_data") or {}
+            vname = " ".join((vd.get("name") or "").split())
+            display = name if len(variations) == 1 and vname.lower() in ("", "regular") else f"{name} ({vname or 'Regular'})"
+            conn.execute(
+                "INSERT INTO catalog_items(variation_id, item_id, item_name, variation_name, display, price_cents, deleted, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 0, ?) ON CONFLICT(variation_id) DO UPDATE SET item_id = excluded.item_id, "
+                "item_name = excluded.item_name, variation_name = excluded.variation_name, display = excluded.display, "
+                "price_cents = excluded.price_cents, deleted = 0, updated_at = excluded.updated_at",
+                (v["id"], it["id"], name, vname or None, display, (vd.get("price_money") or {}).get("amount"), ts))
+            n += 1
+    # Costs entered against a plain name before the item list was synced carry over to each
+    # variation of that item, so nothing has to be typed in again.
+    conn.execute(
+        "INSERT INTO item_costs(name_key, name, cost_cents, updated_by, updated_at) "
+        "SELECT 'v:' || ci.variation_id, ci.display, ic.cost_cents, 'fizzy', ? FROM catalog_items ci "
+        "JOIN item_costs ic ON ic.name_key = lower(ci.item_name) WHERE ci.deleted = 0 "
+        "AND NOT EXISTS (SELECT 1 FROM item_costs x WHERE x.name_key = 'v:' || ci.variation_id)", (ts,))
+    set_setting(conn, "catalog_error", "")
+    set_setting(conn, "catalog_last_sync", ts)
+    conn.commit()
+    return n
+
+
 def _sync_once(conn, client):
     retry = json.loads(get_setting(conn, "square_retry") or "{}")   # "type:id" -> last error
     failed = {}
     result = sync_customers(conn, client.customers())
     conn.commit()
+    try:
+        sync_catalog(conn, client)
+    except Exception:  # the item list is a nice-to-have: never let it stop sales syncing
+        conn.rollback()
+        log.exception("Square catalogue sync failed")
     start = get_setting(conn, "square_cursor") or config_start()
     resync = get_setting(conn, "square_resync_from")
     if resync:

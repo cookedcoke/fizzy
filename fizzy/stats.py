@@ -40,18 +40,32 @@ def _order_of(row):
     return raw.get("order")
 
 
-def line_items(order):
-    """What was sold in an order (quantity, name, value) - not the tab repayment item."""
+def catalog(conn):
+    """Square's item list as synced (square.sync_catalog): variation id -> row."""
+    return {r["variation_id"]: r for r in conn.execute("SELECT * FROM catalog_items")}
+
+
+def line_items(order, cat=None):
+    """What was sold in an order - not the tab repayment item. Each line has:
+    key   - "v:<Square variation id>" when Square's item list knows it, else the lower-case name;
+    name  - the current name from Square's item list (renames follow), e.g. "Coca-Cola (Mini)";
+    base  - the plain item name's key, so a cost entered against the name still applies."""
     out = []
     for li in (order or {}).get("line_items", []) or []:
-        name = (li.get("name") or "Custom amount").strip()
+        name = " ".join((li.get("name") or "Custom amount").split())
         if name.lower() == config.SQUARE_REPAYMENT_ITEM.lower():
             continue
         try:
             qty = int(float(li.get("quantity") or 1))
         except ValueError:
             qty = 1
-        out.append({"qty": qty, "name": name, "cents": _line_revenue(order, li)})
+        known = (cat or {}).get(li.get("catalog_object_id"))
+        if known:
+            key, shown, base = f"v:{known['variation_id']}", known["display"], item_key(known["item_name"])
+        else:
+            key = base = item_key(name)
+            shown = name
+        out.append({"qty": qty, "key": key, "name": shown, "base": base, "cents": _line_revenue(order, li)})
     return out
 
 
@@ -82,6 +96,7 @@ def checkouts(conn, start, end):
     """Checkouts (one per Square order, or per payment without an order) in [start, end), oldest
     first, each with its money split, items and customer."""
     groups = OrderedDict()
+    cat = catalog(conn)
     for r in conn.execute("SELECT sp.*, c.name AS customer_name FROM square_payments sp "
                           "LEFT JOIN customers c ON c.id = sp.customer_id "
                           "WHERE sp.created_at >= ? AND sp.created_at < ? ORDER BY sp.created_at, sp.square_payment_id",
@@ -97,7 +112,7 @@ def checkouts(conn, start, end):
         if r["tender"] and r["tender"] not in g["tenders"]:
             g["tenders"].append(r["tender"])
         if not g["items"]:
-            g["items"] = line_items(_order_of(r))
+            g["items"] = line_items(_order_of(r), cat)
     for g in groups.values():
         g["sold_cents"] = g["sale_cents"] + g["tab_cents"]
     return list(groups.values())
@@ -140,12 +155,13 @@ def by_hour(checkouts_, first=7, last=16):
 
 
 def top_items(checkouts_, limit=6):
-    qty, cents = Counter(), Counter()
+    qty, cents, names = Counter(), Counter(), {}
     for c in checkouts_:
         for it in c["items"]:
-            qty[it["name"]] += it["qty"]
-            cents[it["name"]] += it["cents"]
-    return [{"name": n, "qty": q, "cents": cents[n]} for n, q in qty.most_common(limit)]
+            qty[it["key"]] += it["qty"]
+            cents[it["key"]] += it["cents"]
+            names[it["key"]] = it["name"]
+    return [{"key": k, "name": names[k], "qty": q, "cents": cents[k]} for k, q in qty.most_common(limit)]
 
 
 def dashboard(conn):
@@ -192,9 +208,10 @@ def costs(conn):
     return {r["name_key"]: r["cost_cents"] for r in conn.execute("SELECT * FROM item_costs")}
 
 
-def set_cost(conn, name, cost_cents, staff):
+def set_cost(conn, name, cost_cents, staff, key=None):
+    """Save what one item costs us. key is the item's key (see line_items); by default the name."""
     from .db import now_iso
-    key = item_key(name)
+    key = key or item_key(name)
     if cost_cents is None:
         conn.execute("DELETE FROM item_costs WHERE name_key = ?", (key,))
     else:
@@ -204,19 +221,25 @@ def set_cost(conn, name, cost_cents, staff):
                      (key, name, cost_cents, staff, now_iso()))
 
 
+def cost_of(cost_map, key, base=None):
+    """An item's cost: its own, or failing that one entered against its plain name."""
+    each = cost_map.get(key)
+    return cost_map.get(base) if each is None and base and base != key else each
+
+
 def profit(checkouts_, cost_map):
     """Per item and in total: sold, revenue, cost and profit. Items without a cost are listed but
     left out of the profit totals (and counted, so the page can say what's missing)."""
     items = {}
     for c in checkouts_:
         for it in c["items"]:
-            row = items.setdefault(item_key(it["name"]), {"name": it["name"], "qty": 0, "revenue": 0})
+            row = items.setdefault(it["key"], {"key": it["key"], "base": it["base"], "name": it["name"], "qty": 0, "revenue": 0})
             row["qty"] += it["qty"]
             row["revenue"] += it["cents"]
     rev = cost = 0
     missing = 0
     for k, row in items.items():
-        each = cost_map.get(k)
+        each = cost_of(cost_map, k, row["base"])
         row["cost_each"] = each
         if each is None:
             row["cost"] = row["profit"] = row["margin"] = None
@@ -231,3 +254,17 @@ def profit(checkouts_, cost_map):
     return {"items": rows, "revenue": rev, "cost": cost, "profit": rev - cost,
             "margin": round(100 * (rev - cost) / rev) if rev else None,
             "uncosted_revenue": missing, "uncosted": sum(1 for r in rows if r["cost_each"] is None)}
+
+
+def resolve_item(conn, typed):
+    """A name typed on a restock -> (key, name). Matches Square's item list first: the full
+    name ("Coca-Cola (Mini)"), or the item name when it has only one variation."""
+    t = item_key(typed)
+    rows = [r for r in conn.execute("SELECT * FROM catalog_items WHERE deleted = 0")]
+    for r in rows:
+        if item_key(r["display"]) == t:
+            return f"v:{r['variation_id']}", r["display"]
+    same = [r for r in rows if item_key(r["item_name"]) == t]
+    if len(same) == 1:
+        return f"v:{same[0]['variation_id']}", same[0]["display"]
+    return t, " ".join(typed.split())

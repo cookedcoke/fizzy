@@ -67,9 +67,11 @@ def add_restock(conn, day, shop, note, items, staff_name, receipt=None):
                        (day.isoformat(), " ".join((shop or "").split()) or None, "",
                         (note or "").strip() or None, total, receipt, staff_name, now_iso()))
     rid = cur.lastrowid
-    for name, qty, line in items:
-        conn.execute("INSERT INTO restock_items(restock_id, name, qty, cost_cents) VALUES (?, ?, ?, ?)", (rid, name, qty, line))
-        stats.set_cost(conn, name, round(line / qty), staff_name)
+    for typed, qty, line in items:
+        key, name = stats.resolve_item(conn, typed)   # matched to Square's item list where possible
+        conn.execute("INSERT INTO restock_items(restock_id, name, qty, cost_cents, item_key) VALUES (?, ?, ?, ?, ?)",
+                     (rid, name, qty, line, key))
+        stats.set_cost(conn, name, round(line / qty), staff_name, key=key)
     audit(conn, staff_name, "restock", None, f"#{rid} {shop or ''} {total / 100:.2f} ({len(items)} items)")
     return rid
 
@@ -147,8 +149,11 @@ def money_page(request: Request, start: str = "", end: str = "", who=Depends(sta
                            (s.isoformat(), e.isoformat())).fetchall()
     week_start, _ = stats.day_bounds(t - timedelta(days=60))
     _, week_end = stats.day_bounds(t)
-    known = sorted({r[0] for r in conn.execute("SELECT name FROM item_costs")}
-                   | {i["name"] for i in stats.top_items(stats.checkouts(conn, week_start, week_end), limit=200)})
+    # Square's item list first (exact names, every variation); then anything else seen or costed.
+    known = [r[0] for r in conn.execute("SELECT display FROM catalog_items WHERE deleted = 0 ORDER BY display")]
+    known += sorted(({r[0] for r in conn.execute("SELECT name FROM item_costs WHERE name_key NOT LIKE 'v:%'")}
+                     | {i["name"] for i in stats.top_items(stats.checkouts(conn, week_start, week_end), limit=200)})
+                    - set(known))
     quick = {"This month": (t.replace(day=1), t), "Last 30 days": (t - timedelta(days=29), t),
              "This year": (date(t.year, 1, 1), t)}
     paid = {n: 0 for n in config.STAFF_NAMES}

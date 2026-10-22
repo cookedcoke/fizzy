@@ -45,11 +45,11 @@ def streaks(visits, trading, today):
 
 
 def _items_tried(conn, cid):
-    names = set()
+    keys, cat = set(), stats.catalog(conn)
     for r in conn.execute("SELECT raw_json FROM square_payments WHERE customer_id = ? AND raw_json IS NOT NULL", (cid,)):
-        for it in stats.line_items(stats._order_of(r)):
-            names.add(stats.item_key(it["name"]))
-    return len(names)
+        for it in stats.line_items(stats._order_of(r), cat):
+            keys.add(it["key"])
+    return len(keys)
 
 
 def _paid_on_time(conn, cid):

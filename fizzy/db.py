@@ -211,6 +211,17 @@ CREATE TABLE IF NOT EXISTS payouts (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS catalog_items (
+    variation_id TEXT PRIMARY KEY,   -- Square ITEM_VARIATION id (what an order line's catalog_object_id points at)
+    item_id TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    variation_name TEXT,
+    display TEXT NOT NULL,           -- e.g. "Coca-Cola (Mini)", or just "Sprite" for single-variation items
+    price_cents INTEGER,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);
@@ -250,6 +261,7 @@ MIGRATIONS = [
     ("customers", "passcode_enc", "TEXT"),
     ("customers", "passcode_set_at", "TEXT"),
     ("points_ledger", "event_id", "INTEGER"),
+    ("restock_items", "item_key", "TEXT"),
 ]
 
 

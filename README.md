@@ -266,8 +266,15 @@ The desktop header also shows the time (and the date on wider screens).
 ## 5. Profit
 
 **Profit** (dashboard button, or `G` then `P`) needs no Square Retail Plus: type what one of
-each item costs you in the table and press **Save costs**. Fizzy lists every item that's been
-sold, names exactly as in Square (an item sold under a new name shows up blank, in yellow).
+each item costs you in the table and press **Save costs**.
+
+**Where the items come from.** Fizzy reads your item list from Square every 6 hours (or press
+**Get items from Square**), so every item shows, even ones that haven't sold yet, with its
+Square price and the margin you'd make. Each variation is its own row with its own cost, e.g.
+*Coca-Cola (Can)* and *Coca-Cola (Mini)*. Sales are matched by Square's own item ids, so
+renaming an item in Square keeps its cost. Anything not in the list (a custom amount) is
+matched by name. Reading the item list needs the token's *ITEMS_READ* permission (a personal
+access token has it); without it, items show up here once they've sold.
 
 - **Revenue** is what each item sold for after discounts like rewards, but before the Fizzy
   Tab discount, since that money comes in later as repayments.

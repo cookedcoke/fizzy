@@ -362,22 +362,54 @@ def register(app):
         d = stats.today()
         start, _ = stats.day_bounds(d - timedelta(days=back_days))
         _, end = stats.day_bounds(d)
-        p = stats.profit(stats.checkouts(conn, start, end), stats.costs(conn))
-        # Items with a cost but no sales in this range still show, so their cost can be edited.
-        sold = {stats.item_key(r["name"]) for r in p["items"]}
-        idle = [r for r in conn.execute("SELECT * FROM item_costs ORDER BY name") if r["name_key"] not in sold]
+        cost_map = stats.costs(conn)
+        p = stats.profit(stats.checkouts(conn, start, end), cost_map)
+        # Everything in Square's item list (and anything else with a cost) shows too, even if it
+        # hasn't sold in this range, so costs can be set up front. Price is Square's list price.
+        sold = {r["key"] for r in p["items"]}
+        idle = []
+        for r in conn.execute("SELECT * FROM catalog_items WHERE deleted = 0 ORDER BY display"):
+            key = f"v:{r['variation_id']}"
+            if key not in sold:
+                base = stats.item_key(r["item_name"])
+                idle.append({"key": key, "base": base, "name": r["display"], "price": r["price_cents"],
+                             "cost_each": stats.cost_of(cost_map, key, base)})
+        listed = sold | {i["key"] for i in idle} | {i["base"] for i in idle} | {r["base"] for r in p["items"]}
+        for r in conn.execute("SELECT * FROM item_costs ORDER BY name"):
+            if r["name_key"] not in listed:
+                idle.append({"key": r["name_key"], "base": r["name_key"], "name": r["name"], "price": None,
+                             "cost_each": r["cost_cents"]})
+        for i in idle:
+            i["margin"] = (round(100 * (i["price"] - i["cost_each"]) / i["price"])
+                           if i["price"] and i["cost_each"] is not None else None)
         return render(request, "profit.html", pr=p, idle=idle, range=range if range in PROFIT_RANGES else "7",
-                      ranges=PROFIT_RANGES, label=label)
+                      ranges=PROFIT_RANGES, label=label, square_on=bool(config.SQUARE_TOKEN),
+                      catalog_sync=db.get_setting(conn, "catalog_last_sync"), catalog_error=db.get_setting(conn, "catalog_error"),
+                      catalog_count=conn.execute("SELECT COUNT(*) FROM catalog_items WHERE deleted = 0").fetchone()[0])
+
+    @app.post("/profit/refresh")
+    def profit_refresh(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+        if not config.SQUARE_TOKEN:
+            return back(request, "/profit", "Square isn't connected (SQUARE_ACCESS_TOKEN).")
+        try:
+            n = square.sync_catalog(conn, square.SquareClient(), force=True)
+        except Exception as e:  # network trouble: say so, don't crash
+            return back(request, "/profit", f"Couldn't reach Square: {e}")
+        err = db.get_setting(conn, "catalog_error")
+        return back(request, "/profit", err or f"Got {n} item(s) from Square.")
 
     @app.post("/profit")
     async def profit_save(request: Request, who=Depends(staff)):
         form = await request.form()
         names, values = form.getlist("name"), form.getlist("cost")
+        keys, bases = form.getlist("key"), form.getlist("base")
         conn = db.connect()
         try:
             changed = 0
             have = stats.costs(conn)
-            for name, value in zip(names, values):
+            for i, (name, value) in enumerate(zip(names, values)):
+                key = keys[i] if i < len(keys) else stats.item_key(name)
+                base = bases[i] if i < len(bases) else key
                 value = value.strip().replace("$", "")
                 cents_v = None
                 if value:
@@ -387,8 +419,8 @@ def register(app):
                         return back(request, request.headers.get("referer") or "/profit", f"'{value}' isn't a dollar amount ({name}).")
                     if cents_v < 0:
                         return back(request, request.headers.get("referer") or "/profit", f"A cost can't be negative ({name}).")
-                if have.get(stats.item_key(name)) != cents_v:
-                    stats.set_cost(conn, name, cents_v, who)
+                if stats.cost_of(have, key, base) != cents_v:
+                    stats.set_cost(conn, name, cents_v, who, key=key)
                     changed += 1
             if changed:
                 db.audit(conn, who, "item_costs", None, f"{changed} item cost(s) changed")
