@@ -147,20 +147,26 @@ def candidates(conn, who):
         return []
     rows = conn.execute("SELECT * FROM customers WHERE archived_at IS NULL AND merged_into IS NULL "
                         "AND passcode_enc IS NOT NULL").fetchall()
-    exact = [r for r in rows if typed == _letters(r["email"].split("@")[0]) or typed in _name_keys(r["name"])]
-    if exact:
-        return exact[:MAX_CANDIDATES]
-    # A misspelling only ever counts for one account, and only if it's clearly the closest: so a
-    # wrong guess can't lock out (or test a passcode against) several similarly named students.
-    cap, best, at_best = _allowed_typos(typed), None, []
+    # Always scan everyone (same work whether or not the name exists, so timing doesn't tell).
+    full, partial, cap, best, at_best = [], [], _allowed_typos(typed), None, []
     for r in rows:
-        d = min(_distance(typed, k, cap) for k in _name_keys(r["name"]))
+        keys = _name_keys(r["name"])
+        if typed == _letters(r["email"].split("@")[0]) or typed == _letters(r["name"]) or typed == _letters("".join(reversed(r["name"].split()))):
+            full.append(r)
+        elif typed in keys:
+            partial.append(r)  # matched without middle names
+        # A misspelling only ever counts for one account, and only if it's clearly the closest.
+        d = min(_distance(typed, k, cap) for k in keys)
         if d > cap or (best is not None and d > best):
             continue
         if best is None or d < best:
             best, at_best = d, [r]
         else:
             at_best.append(r)
+    if full:
+        return full[:MAX_CANDIDATES]
+    if partial:
+        return partial if len(partial) == 1 else []
     return at_best if len(at_best) == 1 else []
 
 

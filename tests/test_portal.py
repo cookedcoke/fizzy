@@ -253,3 +253,13 @@ def test_misspelt_guesses_dont_lock_out_similarly_named_students(client, monkeyp
     for name in ("Jackson Smitherz", "Jackson Smithrs", "Jacksen Smithers", "Jakson Smithers", "Jackson Smitjers"):
         me_login(client, name, "wrong-guess")
     assert "Hey <span>Jaxson" in me_login(client, "Jaxson Smithers", "jax-code").text
+
+
+def test_name_without_middle_name_only_counts_when_unique(conn, cust):
+    a = cust(name="John Smith", email="rns1@x", sq="A")
+    b = cust(name="John Paul Smith", email="rns2@x", sq="B")
+    c = cust(name="Mary Jane Lee", email="rns3@x", sq="C")
+    for x in (a, b, c):
+        portal.set_passcode(conn, x, "code-1234", "Will")
+    assert [r["id"] for r in portal.candidates(conn, "John Smith")] == [a["id"]]
+    assert [r["id"] for r in portal.candidates(conn, "Mary Lee")] == [c["id"]]
