@@ -223,6 +223,17 @@ CREATE TABLE IF NOT EXISTS catalog_items (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS points_rules (
+    id INTEGER PRIMARY KEY,           -- a weekly bonus, e.g. double points every Friday
+    name TEXT NOT NULL,
+    multiplier REAL NOT NULL,
+    weekday INTEGER NOT NULL,         -- 0 = Monday
+    days INTEGER NOT NULL DEFAULT 1,  -- how many days each one runs
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    stopped_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);
@@ -264,6 +275,7 @@ MIGRATIONS = [
     ("points_ledger", "event_id", "INTEGER"),
     ("restock_items", "item_key", "TEXT"),
     ("points_events", "ended_at", "TEXT"),
+    ("points_events", "rule_id", "INTEGER"),
 ]
 
 

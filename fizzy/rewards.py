@@ -164,7 +164,8 @@ def rewards_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         "(SELECT COUNT(DISTINCT customer_id) FROM points_ledger p WHERE p.event_id = e.id AND p.delta > 0) AS people "
         "FROM points_events e ORDER BY (e.ended_at IS NULL AND e.start_date <= ? AND e.end_date >= ?) DESC, "
         "(e.start_date > ?) DESC, e.start_date DESC, e.id DESC LIMIT 30", (today().isoformat(),) * 3).fetchall()
-    return render(request, "rewards.html", live=[r for r in rows if not r["ended_at"]],
+    rules = conn.execute("SELECT * FROM points_rules WHERE stopped_at IS NULL ORDER BY weekday").fetchall()
+    return render(request, "rewards.html", rules=rules, day_names=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], live=[r for r in rows if not r["ended_at"]],
                   ended=[r for r in rows if r["ended_at"]][:30], events=events, today=today().isoformat())
 
 

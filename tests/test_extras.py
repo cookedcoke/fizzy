@@ -198,3 +198,28 @@ def test_ending_todays_event_keeps_what_was_earned(conn, cust):
     events.reconcile(conn)
     b = badges.for_customer(conn, c["id"])
     assert not next(x for x in b["badges"] if x["name"] == "Double trouble")["earned"]   # bonus refunded: badge goes
+
+
+def test_weekly_double_points(conn, cust):
+    c = cust()
+    t = stats.today()
+    rid = events.create_rule(conn, "Double points Friday", "2", t.isoformat(), "", "Will")
+    days = [r[0] for r in conn.execute("SELECT start_date FROM points_events WHERE rule_id = ? ORDER BY start_date", (rid,))]
+    assert days == [(t + timedelta(days=7 * i)).isoformat() for i in range(3)]          # today + the next two weeks
+    events.schedule(conn)
+    assert conn.execute("SELECT COUNT(*) FROM points_events WHERE rule_id = ?", (rid,)).fetchone()[0] == 3  # no dupes
+    square.process_payment(conn, pay("p1", 500), None)
+    events.reconcile(conn)
+    assert logic.points_balance(conn, c["id"]) == 1000                                   # today's one works
+    assert "won't repeat" in events.stop_rule(conn, rid, "Will")
+    left = [r[0] for r in conn.execute("SELECT start_date FROM points_events WHERE rule_id = ?", (rid,))]
+    assert left == [t.isoformat()]                                                       # today's carries on, future ones go
+    events.schedule(conn)
+    assert conn.execute("SELECT COUNT(*) FROM points_events WHERE rule_id = ?", (rid,)).fetchone()[0] == 1
+
+
+def test_weekly_from_the_page(client):
+    login(client)
+    t = stats.today().isoformat()
+    r = client.post("/events", data={"name": "Double points Friday", "multiplier": "2", "start": t, "weekly": "1"})
+    assert "Every week" in r.text and "Every " in r.text and "Stop" in r.text

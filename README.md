@@ -343,6 +343,11 @@ coming on the student site, and the dashboard shows it while it's on. **Delete**
 that hasn't started; **End** stops one straight away (bonus already earned stays). For
 past days, use Tools → *Bonus points for a period*.
 
+**Every week.** Tick *Repeat every week* when scheduling and it repeats on that weekday, e.g.
+double points every Friday. Fizzy sets up the next two weeks ahead, so students and the website
+see the next one coming. **Stop** (under *Every week*) ends it: ones coming up go, one running
+today carries on.
+
 ## 7. Student site
 
 Students can check their own **points, rewards, tab and recent activity**, plus a
