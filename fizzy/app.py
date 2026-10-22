@@ -51,8 +51,8 @@ def _poller():
             due = not last or datetime.now(timezone.utc) - logic.parse_ts(last) >= timedelta(seconds=config.SQUARE_POLL_SECONDS)
             if config.SQUARE_TOKEN and due:
                 square.sync(conn)
-            if events.reconcile(conn):
-                conn.commit()
+            events.reconcile(conn)
+            conn.commit()
             if config.BACKUP_DIR:
                 last_b = db.get_setting(conn, "last_backup")
                 tried = db.get_setting(conn, "backup_last_attempt")
@@ -384,7 +384,7 @@ def register(app):
                            if i["price"] and i["cost_each"] is not None else None)
         return render(request, "profit.html", pr=p, idle=idle, range=range if range in PROFIT_RANGES else "7",
                       ranges=PROFIT_RANGES, label=label, square_on=bool(config.SQUARE_TOKEN),
-                      catalog_sync=db.get_setting(conn, "catalog_last_sync"), catalog_error=db.get_setting(conn, "catalog_error"),
+                      catalog_sync=db.get_setting(conn, "catalog_last_ok"), catalog_error=db.get_setting(conn, "catalog_error"),
                       catalog_count=conn.execute("SELECT COUNT(*) FROM catalog_items WHERE deleted = 0").fetchone()[0])
 
     @app.post("/profit/refresh")
@@ -395,8 +395,9 @@ def register(app):
             n = square.sync_catalog(conn, square.SquareClient(), force=True)
         except Exception as e:  # network trouble: say so, don't crash
             return back(request, "/profit", f"Couldn't reach Square: {e}")
-        err = db.get_setting(conn, "catalog_error")
-        return back(request, "/profit", err or f"Got {n} item(s) from Square.")
+        if db.get_setting(conn, "catalog_error"):
+            return back(request, "/profit")  # the page shows what went wrong
+        return back(request, "/profit", f"Got {n} item{'' if n == 1 else 's'} from Square.")
 
     @app.post("/profit")
     async def profit_save(request: Request, who=Depends(staff)):
@@ -415,13 +416,23 @@ def register(app):
                 if value:
                     try:
                         cents_v = round(float(value) * 100)
-                    except ValueError:
+                        if cents_v > 10_000_000:
+                            raise OverflowError
+                    except (ValueError, OverflowError):
                         return back(request, request.headers.get("referer") or "/profit", f"'{value}' isn't a dollar amount ({name}).")
                     if cents_v < 0:
                         return back(request, request.headers.get("referer") or "/profit", f"A cost can't be negative ({name}).")
-                if stats.cost_of(have, key, base) != cents_v:
+                if stats.cost_of(have, key, base) == cents_v:
+                    continue
+                if cents_v is None and have.get(key) is None:
+                    # Blanking a cost it got from the plain item name: remove that (its other
+                    # variations were showing the same inherited cost).
+                    stats.set_cost(conn, name, None, who, key=base)
+                    have.pop(base, None)
+                else:
                     stats.set_cost(conn, name, cents_v, who, key=key)
-                    changed += 1
+                    have[key] = cents_v
+                changed += 1
             if changed:
                 db.audit(conn, who, "item_costs", None, f"{changed} item cost(s) changed")
             conn.commit()
@@ -497,12 +508,14 @@ def register(app):
         audit_rows = conn.execute(
             "SELECT * FROM audit_log WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100", (cid,)
         ).fetchall()
-        watch_since = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat(timespec="seconds")
-        return render(request, "customer.html", s=s, c=c, points=points, payments=payments, watch_since=watch_since,
+        opened = datetime.now(timezone.utc)
+        watch_since = (opened - timedelta(seconds=90)).isoformat(timespec="seconds")
+        opened = opened.isoformat(timespec="seconds")
+        return render(request, "customer.html", s=s, c=c, points=points, payments=payments, watch_since=watch_since, opened=opened,
                       decisions=decisions, audit_rows=audit_rows,
                       offers=rewards.offers_for(conn, cid, s["points"]),
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
-                      passcode=portal.reveal_passcode(c["passcode_enc"]))
+                      passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None)
 
     @app.get("/customers/{cid}/claim", response_class=HTMLResponse)
     def claim_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
@@ -526,7 +539,7 @@ def register(app):
         for k in square.unclaimed(conn, limit=3):
             if since and k["at"] <= since:
                 continue
-            out.append({"key": k["key"], "at": local(k["at"], "%H:%M"),
+            out.append({"key": k["key"], "at": local(k["at"], "%H:%M"), "at_iso": k["at"],
                         "items": k["items"] or ("Tab repayment" if k["repay_cents"] else "Sale"),
                         "paid": money(k["sale_cents"]) if k["sale_cents"] else None,
                         "tab": money(k["tab_cents"]) if k["tab_cents"] else None,
@@ -720,7 +733,7 @@ def register(app):
             db.set_setting(conn, k, v)
         db.audit(conn, who, "settings", None, json.dumps(new))
         conn.commit()
-        return back(request, "/settings", "Settings saved. New due-day settings apply to new charges only.")
+        return back(request, "/settings", "Saved.")
 
     @app.post("/settings/backup")
     def backup_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):

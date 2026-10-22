@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS points_events (
     multiplier REAL NOT NULL,        -- 2 = double points
     start_date TEXT NOT NULL,        -- local dates, inclusive
     end_date TEXT NOT NULL,
+    ended_at TEXT,                   -- set when staff end it early: purchases after this don't count
     created_by TEXT,
     created_at TEXT NOT NULL
 );
@@ -262,6 +263,7 @@ MIGRATIONS = [
     ("customers", "passcode_set_at", "TEXT"),
     ("points_ledger", "event_id", "INTEGER"),
     ("restock_items", "item_key", "TEXT"),
+    ("points_events", "ended_at", "TEXT"),
 ]
 
 
@@ -271,6 +273,14 @@ def init(conn):
         cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    # Passcodes were briefly stored as one-way hashes (column passcode_hash), which can't be read
+    # back: those students show as "not set" so staff know to set a new one.
+    if "passcode_hash" in {r["name"] for r in conn.execute("PRAGMA table_info(customers)")}:
+        conn.execute("UPDATE customers SET passcode_set_at = NULL, passcode_hash = NULL "
+                     "WHERE passcode_hash IS NOT NULL AND passcode_enc IS NULL")
+    # An early catalogue sync copied name costs onto each variation; costs now fall back to the
+    # name instead (stats.cost_of), and stale copies would hide later restock prices.
+    conn.execute("DELETE FROM item_costs WHERE updated_by = 'fizzy' AND name_key LIKE 'v:%'")
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
     conn.commit()
@@ -301,8 +311,15 @@ def backup(conn, dest_dir, keep=30):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     dest_path = os.path.join(dest_dir, f"fizzy-{stamp}.db")
     dest = sqlite3.connect(dest_path)
-    with dest:
-        conn.backup(dest)
+    try:
+        with dest:
+            conn.backup(dest)
+    except Exception:
+        dest.close()
+        for leftover in (dest_path, dest_path + "-journal"):  # never keep a half-written backup
+            if os.path.exists(leftover):
+                os.remove(leftover)
+        raise
     dest.close()
     files = sorted(f for f in os.listdir(dest_dir) if f.startswith("fizzy-") and f.endswith(".db"))
     for old in files[:-keep] if keep > 0 else []:
@@ -313,6 +330,9 @@ def backup(conn, dest_dir, keep=30):
         out = os.path.join(dest_dir, "receipts")
         os.makedirs(out, exist_ok=True)
         for f in os.listdir(receipts):
-            if not os.path.exists(os.path.join(out, f)):
-                shutil.copy2(os.path.join(receipts, f), os.path.join(out, f))
+            src, dst = os.path.join(receipts, f), os.path.join(out, f)
+            if os.path.exists(dst) and os.path.getsize(dst) == os.path.getsize(src):
+                continue
+            shutil.copy2(src, dst + ".tmp")  # copy, then rename: a failed copy never looks finished
+            os.replace(dst + ".tmp", dst)
     return dest_path

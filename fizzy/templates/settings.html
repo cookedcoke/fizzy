@@ -7,7 +7,7 @@
   <label>Days to pay<input type="number" name="due_days" min="1" value="{{ cfg.tab_due_days }}"></label>
   <label>Spend before eligible ($)<input type="text" name="unlock_spend" inputmode="decimal" value="{{ '%.2f'|format(cfg.unlock_spend_cents/100) }}"></label>
   <div class="actions"><button class="primary">Save</button></div>
-  <p class="hint">Points are fixed at 1 per cent paid. Tab purchases earn points when they're repaid. A new “days to pay” only applies to new charges.</p>
+  <p class="hint">1 point per cent. Tab buys earn points once they're paid off. Changing days to pay only affects new charges.</p>
 </form>
 <form class="panel" method="post" action="/settings/backup"><h2>Backups</h2>
   <table>

@@ -2,7 +2,7 @@
 {% set DANGER = ['reset_points', 'revoke_all', 'write_off', 'merge', 'sign_out_all', 'bulk_archive'] %}
 
 {% macro who(name='customer', label='Customer', list='people') -%}
-<label>{{ label }}<input type="text" name="{{ name }}" list="{{ list }}" placeholder="Start typing a name…" autocomplete="off" required></label>
+<label>{{ label }}<input type="text" name="{{ name }}" list="{{ list }}" placeholder="Type a name…" autocomplete="off" required></label>
 {%- endmacro %}
 {% macro dates(start=week_ago, end=today) -%}
 <div class="row"><div><label>From<input type="date" name="start" value="{{ start }}" required></label></div>
@@ -20,7 +20,7 @@
   <p class="row">{% for e in exports %}<a class="btn sm" href="/tools/export/{{ e }}.csv">{{ e.replace('_', ' ') }}</a>{% endfor %}</p>
 {% elif id == 'download_backup' %}
   <p><a class="btn sm" href="/tools/backup.db">Download fizzy.db</a></p>
-  <p class="muted small">Contains students' names and emails. Keep it somewhere private.</p>
+  <p class="muted small">Has students' names and emails in it, so keep it private.</p>
 {% else %}
 <form method="post" action="/tools/{{ id }}">
 {% if id == 'bulk_points' %}
@@ -90,7 +90,7 @@
 {% endmacro %}
 
 {% block body %}
-<div class="pagehead"><div><h1>Tools</h1><div class="meta">Hover or tap <span class="tip" style="display:inline-grid;vertical-align:-3px" data-tip="Like this.">i</span> for what a tool does. Red tools change a lot at once.</div></div></div>
+<div class="pagehead"><div><h1>Tools</h1><div class="meta">Hover or tap <span class="tip" style="display:inline-grid;vertical-align:-3px" data-tip="Like this.">i</span> to see what something does. Red ones change a lot at once.</div></div></div>
 <datalist id="people">{% for p in people %}<option value="{{ p.name }} <{{ p.email }}>">{% endfor %}</datalist>
 <div class="toolgrid">
 {# Fixed columns so tall and short sections pack neatly; stacks in reading order on a phone. #}
@@ -101,7 +101,7 @@
     {% for id, label, tip in items %}
     <details class="tool{{ ' danger' if id in DANGER }}" id="{{ id }}">
       <summary><span>{{ label }}</span>
-        <span class="tip" tabindex="0" data-tip="{{ tip }}" title="{{ tip }}" aria-label="{{ tip }}" onclick="event.preventDefault()">i</span></summary>
+        <span class="tip" tabindex="0" data-tip="{{ tip }}" aria-label="{{ tip }}" onclick="event.preventDefault()">i</span></summary>
       <div class="tool-body"><p class="desc">{{ tip }}</p>{{ form(id) }}</div>
     </details>
     {% endfor %}

@@ -2,7 +2,7 @@
 {% block body %}
 <div class="pagehead">
   <div><h1>Claim a sale for {{ c.name }}</h1>
-    <div class="meta">Sales from the last {{ hours }} hours with no customer, newest first. Pick the one you just rang up.</div></div>
+    <div class="meta">Sales from the last {{ hours }} hours with nobody on them. Newest first.</div></div>
   <a class="btn" href="/customers/{{ c.id }}" title="Back to {{ c.name }}">Back</a>
 </div>
 {% if note %}<div class="err">{{ note }} Showing what Fizzy already has.</div>{% endif %}
@@ -25,7 +25,7 @@
   </button>
   {% endfor %}
 </form>
-<p class="hint">Points, tab charges and repayments land on {{ c.name.split(' ')[0] }} straight away. Claimed the wrong one? Reassign it on the Square page.</p>
+<p class="hint">Picked the wrong one? Fix it on the Square page.</p>
 {% else %}
 <div class="panel"><p class="empty" style="font-size:14px">No unclaimed sales from the last {{ hours }} hours.
   {% if square_on %}If you just took it, give Square a moment, then <a href="/customers/{{ c.id }}/claim" data-key="k" data-key-label="Check again">check again <kbd>K</kbd></a>.

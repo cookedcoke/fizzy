@@ -162,7 +162,8 @@ def rewards_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
     events = conn.execute(
         "SELECT e.*, (SELECT COALESCE(SUM(delta), 0) FROM points_ledger p WHERE p.event_id = e.id) AS given, "
         "(SELECT COUNT(DISTINCT customer_id) FROM points_ledger p WHERE p.event_id = e.id AND p.delta > 0) AS people "
-        "FROM points_events e ORDER BY e.start_date DESC, e.id DESC LIMIT 30").fetchall()
+        "FROM points_events e ORDER BY (e.ended_at IS NULL AND e.start_date <= ? AND e.end_date >= ?) DESC, "
+        "(e.start_date > ?) DESC, e.start_date DESC, e.id DESC LIMIT 30", (today().isoformat(),) * 3).fetchall()
     return render(request, "rewards.html", live=[r for r in rows if not r["ended_at"]],
                   ended=[r for r in rows if r["ended_at"]][:30], events=events, today=today().isoformat())
 
@@ -176,7 +177,7 @@ def rewards_create(request: Request, name: str = Form(""), points: str = Form(""
     except RewardError as e:
         return back(request, "/rewards", str(e))
     conn.commit()
-    return back(request, "/rewards", f"“{' '.join(name.split())}” is live - it now shows on every customer page.")
+    return back(request, "/rewards", f"“{' '.join(name.split())}” is on.")
 
 
 @router.post("/rewards/{reward_id}/end")

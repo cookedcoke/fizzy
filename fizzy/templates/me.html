@@ -97,6 +97,6 @@
         <span class="amt {{ 'up' if a.points is not none and a.points > 0 }}">{% if a.points is not none %}{{ '{:+,}'.format(a.points) }} pts{% else %}{{ a.money|money }}{% endif %}</span></li>{% endfor %}
     </ul>{% else %}<p class="empty">Nothing yet - grab something at the stall to start earning points.</p>{% endif %}
   </div>
-  <p class="note">Something look wrong? Ask at the stall. Spending points on rewards doesn't count against you on the leaderboard.</p>
+  <p class="note">Something look off? Ask us at the stall.</p>
 </main>
 {% endblock %}

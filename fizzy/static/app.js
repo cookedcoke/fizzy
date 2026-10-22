@@ -180,23 +180,27 @@
     var dismiss = function (key) {
       try { var d = dismissed(); d.push(key); sessionStorage.setItem(seenKey, JSON.stringify(d.slice(-50))); } catch (e) { /* private mode */ }
       cp.hidden = true; shownKey = null;
+      document.body.classList.remove("has-claim-prompt");
     };
     var showSale = function (sales) {
       var skip = dismissed(), fresh = sales.filter(function (s) { return skip.indexOf(s.key) < 0; });
-      if (!fresh.length) { cp.hidden = true; shownKey = null; return; }
+      if (!fresh.length) { cp.hidden = true; shownKey = null; document.body.classList.remove("has-claim-prompt"); return; }
       var s = fresh[0];
       if (s.key === shownKey) return;
       shownKey = s.key;
       cp.elements.key.value = s.key;
       $(".cp-at", cp).textContent = s.at;
-      $(".cp-more", cp).textContent = fresh.length > 1 ? " · " + (fresh.length - 1) + " more (K to see all)" : "";
+      $(".cp-more", cp).textContent = fresh.length > 1 ? " · " + (fresh.length - 1) + " more on the claim page" : "";
       $(".cp-items", cp).textContent = s.items;
       $(".cp-amts", cp).innerHTML = [s.paid && esc(s.paid) + " <small>paid</small>", s.tab && '<span class="tab">' + esc(s.tab) + " <small>on tab</small></span>",
                                      s.repaid && '<span class="repay">' + esc(s.repaid) + " <small>repaid</small></span>"].filter(Boolean).join(" · ");
       $(".cp-warn", cp).hidden = !s.tab_warning;
       cp.hidden = false;
+      document.body.classList.add("has-claim-prompt");  // room at the bottom so it doesn't cover anything
       cp.classList.remove("pop"); void cp.offsetWidth; cp.classList.add("pop");
-      if (!typing()) $("button[type=submit]", cp).focus();
+      // Enter is armed only for a sale taken after this page was opened (the one being rung up now);
+      // an older one still shows, but needs a click or Tab first.
+      if (!typing() && s.at_iso > cp.dataset.opened) $("button[type=submit]", cp).focus();
     };
     var poll = function () {
       if (document.visibilityState !== "visible") return;
@@ -205,13 +209,31 @@
     };
     $(".cp-no", cp).addEventListener("click", function () { dismiss(cp.elements.key.value); });
     addEventListener("keydown", function (e) {
-      if (cp.hidden || e.key !== "Escape") return;
+      if (cp.hidden || e.key !== "Escape" || typing()) return;  // in a field, Esc just leaves the field
       e.preventDefault(); e.stopImmediatePropagation();
       dismiss(cp.elements.key.value);
     }, true);
     poll();
     setInterval(poll, 3000);
   }
+
+  // ---- passcode reveal (customer page): fetched only when asked for; the server logs each look ----
+  $$("[data-reveal]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      fetch(b.dataset.reveal, { method: "POST", credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (d) {
+        var out = document.createElement("span");
+        out.className = "mono revealed";
+        out.textContent = d.passcode || "can't be read - set a new one";
+        b.replaceWith(out);
+      }).catch(function () { b.textContent = "Couldn't load - try again"; });
+    });
+  });
+
+  // ---- "i" tips: open towards whichever side has room ------------------------------------------
+  $$(".tip").forEach(function (t) {
+    t.addEventListener("pointerenter", function () { t.classList.toggle("tip-right", t.getBoundingClientRect().left < 280); });
+    t.addEventListener("focus", function () { t.classList.toggle("tip-right", t.getBoundingClientRect().left < 280); });
+  });
 
   // ---- clock (desktop header) -------------------------------------------------------------
   var clock = $("[data-clock]");
@@ -232,11 +254,18 @@
   var auto = $("[data-autorefresh]");
   if (auto) {
     var idle = Number(auto.dataset.autorefresh) * 1000, last = Date.now();
+    // An empty search box that's only focused (it's autofocused on load) doesn't count as typing.
+    var busy = function () { var el = document.activeElement; return typing() && !(el.matches("[data-search]") && !el.value); };
+    try {  // keep the scroll position across the reload
+      var y = sessionStorage.getItem("fizzy-autorefresh-y");
+      if (y) { sessionStorage.removeItem("fizzy-autorefresh-y"); scrollTo(0, Number(y)); }
+    } catch (e) { /* private mode */ }
     ["keydown", "pointerdown", "pointermove", "input", "scroll", "wheel"].forEach(function (ev) {
       addEventListener(ev, function () { last = Date.now(); }, { passive: true, capture: true });
     });
     setInterval(function () {
-      if (Date.now() - last < idle || typing() || document.visibilityState !== "visible" || $("dialog[open]")) return;
+      if (Date.now() - last < idle || busy() || document.visibilityState !== "visible" || $("dialog[open]")) return;
+      try { sessionStorage.setItem("fizzy-autorefresh-y", String(scrollY)); } catch (e) { /* private mode */ }
       location.reload();
     }, 5000);
   }

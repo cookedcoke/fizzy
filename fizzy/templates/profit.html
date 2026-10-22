@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}Profit{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Profit</h1>
-  <div class="meta">Type what one of each item costs you; Fizzy does the rest. Square's own item costs need Retail Plus - these don't.</div></div>
+  <div class="meta">Type in what one of each thing costs us and Fizzy works out the rest.</div></div>
   <div class="actions" style="margin:0">{% for k, (l, _) in ranges.items() %}<a class="btn {{ 'primary' if k == range }}" href="/profit?range={{ k }}">{{ l }}</a>{% endfor %}</div>
 </div>
 <div class="stats">
@@ -33,12 +33,12 @@
       <td class="n">{% if r.margin is not none %}<span class="{{ 'red' if r.margin < 20 }}">{{ r.margin }}%</span>{% endif %}</td></tr>{% endfor %}
   </table></div>
   <div class="actions"><button class="primary">Save costs <kbd>Ctrl</kbd> <kbd>Enter</kbd></button>
-    <span class="hint" style="margin:0;align-self:center">Leave a cost blank to remove it. Margins under 20% show in red.</span></div>
+    <span class="hint" style="margin:0;align-self:center">Clear a cost to remove it. Under 20% margin shows in red.</span></div>
   {% else %}<p class="empty">No items sold {{ label|lower }} yet{% if square_on %} - press <b>Get items from Square</b> below to list everything you sell{% endif %}.</p>{% endif %}
 </form>
 {% if square_on %}<form class="inline" method="post" action="/profit/refresh">
-  <button title="Reads your item list from Square (it also updates by itself every 6 hours)">Get items from Square</button>
-  <span class="hint" style="margin-left:8px">{% if catalog_sync %}{{ catalog_count }} item{{ '' if catalog_count == 1 else 's' }} from Square · updated {{ catalog_sync|local }}{% else %}Not read from Square yet.{% endif %}
-    Matched by Square's own ids, so renaming an item keeps its cost.</span></form>{% endif %}
-<p class="hint">Revenue is what each item sold for after discounts like rewards, but before the Fizzy Tab discount (tab money comes in later, as repayments). Refunds aren't taken off here. Prices include GST if you charge it.</p>
+  <button title="It also does this by itself every 6 hours">Get items from Square</button>
+  <span class="hint" style="margin-left:8px">{% if catalog_sync %}{{ catalog_count }} item{{ '' if catalog_count == 1 else 's' }} from Square, last updated {{ catalog_sync|local }}.{% else %}Not read from Square yet.{% endif %}
+    Renaming an item in Square keeps its cost.</span></form>{% endif %}
+<p class="hint">Revenue counts discounts like rewards, and counts tab sales at full price. Refunds aren't taken off.</p>
 {% endblock %}

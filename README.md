@@ -340,7 +340,7 @@ threshold. 1 point = 1 cent spent, so 1000 points = $10 spent.
 earns the extra points by itself, within a minute; something bought on the tab gets its bonus
 when it's paid off, even weeks later, and a refund takes the bonus back. Students see it
 coming on the student site, and the dashboard shows it while it's on. **Delete** removes one
-that hasn't started; **End** finishes one early (it ends after today; bonus earned stays). For
+that hasn't started; **End** stops one straight away (bonus already earned stays). For
 past days, use Tools → *Bonus points for a period*.
 
 ## 7. Student site

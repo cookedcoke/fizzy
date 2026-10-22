@@ -93,15 +93,16 @@ def test_event_rules(conn):
     now = events.create(conn, "Now", "3", t.isoformat(), (t + timedelta(days=4)).isoformat(), "Will")
     assert [e["name"] for e in events.upcoming(conn)] == ["Soon"] and [e["name"] for e in events.on(conn)] == ["Now"]
     assert "Deleted" in events.cancel(conn, soon, "Will")
-    assert "ends after today" in events.cancel(conn, now, "Will")
+    assert "has ended" in events.cancel(conn, now, "Will")
     assert conn.execute("SELECT end_date FROM points_events WHERE id = ?", (now,)).fetchone()[0] == t.isoformat()
+    assert events.on(conn) == []
 
 
 def test_events_show_on_rewards_dashboard_and_student_site(client):
     login(client)
     t = stats.today().isoformat()
     r = client.post("/events", data={"name": "Double points", "multiplier": "2", "start": t, "end": ""})
-    assert "Scheduled" in r.text and "On now" in r.text
+    assert "Extra points get added" in r.text and "On now" in r.text
     assert "is on today" in client.get("/").text
     client.post("/logout")
     assert "is on today" in client.get("/me").text
@@ -158,3 +159,42 @@ def test_backup_health(conn, tmp_path, monkeypatch):
     assert "missing" in appmod.backup_health(conn)[1]
     db.set_setting(conn, "backup_error", "2026-10-22T00:00:00+00:00: [Errno 28] No space left on device")
     assert appmod.backup_health(conn) == (False, "Last backup failed: [Errno 28] No space left on device. Check the backup drive.")
+
+
+def test_event_bonus_follows_refunds_by_purchase_date(conn, cust):
+    c = cust()
+    t = stats.today()
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec="seconds")
+    conn.execute("INSERT INTO points_events(name, multiplier, start_date, end_date, created_at) VALUES (?, 2, ?, ?, ?)",
+                 ("Double", (t - timedelta(days=1)).isoformat(), (t - timedelta(days=1)).isoformat(), db.now_iso()))
+    square.process_payment(conn, pay("p1", 500, ts=yesterday), None)                  # bought on the double day
+    square.process_payment(conn, pay("p0", 400, ts=iso(days_ago=8)), None)            # last week
+    events.reconcile(conn)
+    assert logic.points_balance(conn, c["id"]) == 500 * 2 + 400
+    refund = {"status": "COMPLETED", "created_at": iso()}
+    square.process_refund(conn, {**refund, "id": "r0", "payment_id": "p0", "amount_money": {"amount": 400}})
+    events.reconcile(conn)
+    assert logic.points_balance(conn, c["id"]) == 1000          # refunding last week's sale doesn't touch the bonus
+    square.process_refund(conn, {**refund, "id": "r1", "payment_id": "p1", "amount_money": {"amount": 500}})
+    events.reconcile(conn)
+    assert logic.points_balance(conn, c["id"]) == 0             # refunding the double-day sale takes its bonus back
+
+
+def test_ending_todays_event_keeps_what_was_earned(conn, cust):
+    c = cust()
+    t = stats.today().isoformat()
+    eid = events.create(conn, "Double", "2", t, t, "Will")
+    square.process_payment(conn, pay("p1", 500, ts=iso(hours=0.05)), None)   # 3 minutes ago, during the event
+    events.reconcile(conn)
+    assert "has ended" in events.cancel(conn, eid, "Will")                  # a one-day event, running now
+    conn.execute("UPDATE points_events SET ended_at = ? WHERE id = ?",
+                 ((datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat(timespec="seconds"), eid))
+    square.process_payment(conn, pay("p2", 300, ts=iso()), None)            # bought after it ended
+    events.reconcile(conn)
+    assert logic.points_balance(conn, c["id"]) == 1000 + 300
+    b = badges.for_customer(conn, c["id"])
+    assert next(x for x in b["badges"] if x["name"] == "Double trouble")["earned"]
+    square.process_refund(conn, {"id": "r1", "payment_id": "p1", "status": "COMPLETED", "amount_money": {"amount": 500}, "created_at": iso()})
+    events.reconcile(conn)
+    b = badges.for_customer(conn, c["id"])
+    assert not next(x for x in b["badges"] if x["name"] == "Double trouble")["earned"]   # bonus refunded: badge goes

@@ -18,10 +18,10 @@
   {% for r in live_rewards %}<b>{{ r.name }}</b> ({{ '{:,}'.format(r.points_cost) }} pts){{ ', ' if not loop.last }}{% endfor %}
   · <a href="/rewards">Manage</a></div>{% endif %}
 {% set t = sales.today %}<span hidden data-autorefresh="60"></span>
-<div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }} · updates by itself while this page is open</div></div>
-  <div class="actions" style="margin:0"><a class="btn" href="/money" title="Restocks, payouts, cash and bank - G then M">Money</a>
+<div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }} · keeps itself up to date</div></div>
+  <div class="actions" style="margin:0"><a class="btn" href="/money" title="Restocks and payouts - G then M">Money</a>
     <a class="btn" href="/profit" title="Profit and item costs - G then P">Profit</a>
-    <a class="btn" href="/tools#takings" title="Takings report for any dates">Takings report</a></div></div>
+    <a class="btn" href="/tools#takings" title="What came in over any dates">Takings report</a></div></div>
 <div class="stats">
   <div class="stat"><div class="k">Sold</div><div class="v">{{ t.sold_cents|money }}</div>
     {% set lw = sales.vs_last_week_cents %}<div class="sub">{% if lw %}{% set pct = ((t.sold_cents - lw) * 100 / lw)|round|int %}{{ '▲' if pct >= 0 else '▼' }} {{ pct|abs }}% vs last {{ t.day.strftime('%A') }} by now{% else %}Nothing last {{ t.day.strftime('%A') }} by now{% endif %}</div></div>
@@ -81,7 +81,7 @@
   <div class="stat"><div class="k">Awaiting approval</div><div class="v">{{ eligible|length }}</div><div class="sub">eligible for a tab</div></div>
   <div class="stat"><div class="k">Square sync</div><div class="v sm">{{ last_sync|local or 'Never' }}</div></div>
   <div class="stat {{ 'alert' if not backup[0] }}"><div class="k">Last backup</div><div class="v sm">{{ backup[1] if backup[0] else 'Problem' }}</div>
-    {% if not backup[0] %}<div class="sub red">{{ backup[1] }}</div>{% endif %}</div>
+    {% if not backup[0] %}<div class="sub">see the warning at the top</div>{% endif %}</div>
 </div>
 
 {% if breaches or unlinked_tabs %}

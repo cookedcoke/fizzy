@@ -60,7 +60,7 @@ def test_rewards_pages_and_counter_flow(client):
     client.post("/tools/add_customer", data={"name": "Poor Kid", "email": "rns6@reddamnorthshore.nsw.edu.au"})
     client.post("/tools/bulk_points", data={"delta": "1500", "note": "seed", "people": "Rich Kid"})
     r = client.post("/rewards", data={"name": "Free Coke", "points": "1000", "square_note": "apply Points: Free Coke"})
-    assert "is live" in r.text and "Rewards on:" in client.get("/").text
+    assert "is on." in r.text and "Rewards on:" in client.get("/").text
     page = client.get("/customers/1").text
     assert "can have this now" in page and 'data-key="o"' in page and "In Square: apply Points: Free Coke" in page
     assert "Needs 1,000 more points" in client.get("/customers/2").text

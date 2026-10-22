@@ -62,8 +62,8 @@ def for_customer(conn, cid):
     current, best, today_done = streaks(visits, trading_days(conn), stats.today())
     spent = logic.spend_cents(conn, cid)
     redeemed = conn.execute("SELECT COUNT(*) FROM redemptions WHERE customer_id = ? AND undone_at IS NULL", (cid,)).fetchone()[0]
-    doubled = conn.execute("SELECT 1 FROM points_ledger WHERE customer_id = ? AND event_id IS NOT NULL AND delta > 0",
-                           (cid,)).fetchone() is not None
+    doubled = conn.execute("SELECT 1 FROM points_ledger WHERE customer_id = ? AND event_id IS NOT NULL "
+                           "GROUP BY event_id HAVING SUM(delta) > 0", (cid,)).fetchone() is not None
 
     def badge(icon, name, how, have, need, unit=""):
         return {"icon": icon, "name": name, "how": how, "earned": have >= need,

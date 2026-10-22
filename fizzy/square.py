@@ -202,7 +202,9 @@ def describe_items(order, skip_repayment=False):
         if skip_repayment and (li.get("name") or "").strip().lower() == config.SQUARE_REPAYMENT_ITEM.lower():
             continue
         q = li.get("quantity", "1")
-        parts.append(f"{q}x {li.get('name') or 'Custom amount'}")
+        var = (li.get("variation_name") or "").strip()
+        name = (li.get("name") or "Custom amount") + (f" ({var})" if var and var.lower() != "regular" else "")
+        parts.append(f"{q}× {name}")
     return ", ".join(parts)
 
 
@@ -392,6 +394,10 @@ def process_order(conn, order):
     if tab > 0 and not conn.execute("SELECT 1 FROM square_payments WHERE square_payment_id = ?", (oid,)).fetchone():
         sq_cust = order.get("customer_id")
         customer = _customer_for(conn, sq_cust)
+        if customer is None:  # payment already claimed by staff before this tab part synced: same person
+            owner = conn.execute("SELECT customer_id FROM square_payments WHERE square_order_id = ? AND customer_id IS NOT NULL "
+                                 "LIMIT 1", (order["id"],)).fetchone()
+            customer = {"id": owner[0]} if owner else None
         _insert_sp(conn, {
             "square_payment_id": oid, "square_order_id": order["id"], "square_customer_id": sq_cust,
             "customer_id": customer["id"] if customer else None, "kind": "tab_charge", "amount_cents": tab,
@@ -492,6 +498,7 @@ def assign_customer(conn, square_payment_id, customer, staff):
     """Staff fix for a Square payment with the wrong (usually no) customer attached: move it,
     and anything split from it, to `customer` and redo its points / tab charge / repayment."""
     base = square_payment_id.removesuffix(":sale")
+    _write_lock(conn)  # read and move under the write lock, so a sync can't link it at the same time
     rows = conn.execute("SELECT * FROM square_payments WHERE square_payment_id IN (?, ?)", (base, f"{base}:sale")).fetchall()
     if not rows:
         raise ValueError("Fizzy hasn't seen that payment.")
@@ -537,8 +544,16 @@ def unclaimed(conn, hours=CLAIM_HOURS, limit=6):
     return out[:limit]
 
 
+def _write_lock(conn):
+    """Take SQLite's write lock before reading, so check-then-write can't race another connection."""
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+
+
 def claim(conn, key, customer, staff):
-    """Attach one unclaimed checkout (see unclaimed) to a customer. Raises ValueError if it's gone."""
+    """Attach one unclaimed checkout (see unclaimed) to a customer. Raises ValueError if it's gone,
+    or if any part of it already belongs to someone (a checkout is never split between people)."""
+    _write_lock(conn)
     kind, _, ident = key.partition(":")
     if kind == "o":
         rows = conn.execute("SELECT * FROM square_payments WHERE square_order_id = ?", (ident,)).fetchall()
@@ -547,17 +562,13 @@ def claim(conn, key, customer, staff):
                             (ident, f"{ident}:sale")).fetchall()
     else:
         rows = []
-    bases = {r["square_payment_id"].removesuffix(":sale") for r in rows}
-    claimed = 0
-    for base in sorted(bases):
-        pair = [r for r in rows if r["square_payment_id"].removesuffix(":sale") == base]
-        if any(r["customer_id"] is not None for r in pair):
-            continue  # someone (or a sync) got there first: never move a sale that's already somebody's
-        assign_customer(conn, base, customer, staff)
-        claimed += 1
-    if not claimed:
+    if not rows or any(r["customer_id"] is not None for r in rows):
+        # someone (or a sync) got there first: never move a sale that's already somebody's
         raise ValueError("That sale has already been claimed.")
-    return claimed
+    bases = {r["square_payment_id"].removesuffix(":sale") for r in rows}
+    for base in sorted(bases):
+        assign_customer(conn, base, customer, staff)
+    return len(bases)
 
 
 def link_pending(conn):
@@ -566,13 +577,18 @@ def link_pending(conn):
         "SELECT sp.square_payment_id, c.id AS cid FROM square_payments sp JOIN customers c "
         "ON c.square_customer_id = sp.square_customer_id WHERE sp.customer_id IS NULL ORDER BY sp.created_at"
     ).fetchall()
+    linked = 0
     for r in rows:
-        conn.execute("UPDATE square_payments SET customer_id = ? WHERE square_payment_id = ?", (r["cid"], r["square_payment_id"]))
+        # Only if nobody claimed it in the meantime (claims hold the write lock while they work).
+        if conn.execute("UPDATE square_payments SET customer_id = ? WHERE square_payment_id = ? AND customer_id IS NULL",
+                        (r["cid"], r["square_payment_id"])).rowcount == 0:
+            continue
+        linked += 1
         sp = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (r["square_payment_id"],)).fetchone()
         apply_payment_effects(conn, sp)
         for rf in conn.execute("SELECT * FROM square_refunds WHERE square_payment_id = ?", (sp["square_payment_id"],)).fetchall():
             apply_refund_effects(conn, sp, rf["amount_cents"], rf["created_at"])
-    return len(rows)
+    return linked
 
 
 def sync_customers(conn, sq_customers):
@@ -678,11 +694,17 @@ def sync_catalog(conn, client, force=False):
         return None
     try:
         items = list(client.catalog_items())
-    except httpx.HTTPStatusError as e:
-        why = ("Square says this token can't read items - give it the ITEMS_READ permission."
-               if e.response.status_code in (401, 403) else f"Square returned {e.response.status_code}.")
+    except Exception as e:  # don't hammer Square every sync: note it and try again in an hour
+        if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 403:
+            why = "Square says this token can't read items - give it the ITEMS_READ permission."
+        elif isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 401:
+            why = "Square didn't accept the access token - check SQUARE_ACCESS_TOKEN."
+        elif isinstance(e, httpx.HTTPStatusError):
+            why = f"Square returned {e.response.status_code}."
+        else:
+            why = f"Couldn't reach Square ({e.__class__.__name__})."
         set_setting(conn, "catalog_error", why)
-        set_setting(conn, "catalog_last_sync", now_iso())
+        set_setting(conn, "catalog_last_sync", (datetime.now(timezone.utc) - CATALOG_EVERY + timedelta(hours=1)).isoformat(timespec="seconds"))
         conn.commit()
         return 0
     ts = now_iso()
@@ -695,6 +717,8 @@ def sync_catalog(conn, client, force=False):
         name = " ".join((data.get("name") or "").split())
         variations = [v for v in data.get("variations", []) or [] if not v.get("is_deleted")]
         for v in variations:
+            if not v.get("id"):
+                continue
             vd = v.get("item_variation_data") or {}
             vname = " ".join((vd.get("name") or "").split())
             display = name if len(variations) == 1 and vname.lower() in ("", "regular") else f"{name} ({vname or 'Regular'})"
@@ -705,15 +729,9 @@ def sync_catalog(conn, client, force=False):
                 "price_cents = excluded.price_cents, deleted = 0, updated_at = excluded.updated_at",
                 (v["id"], it["id"], name, vname or None, display, (vd.get("price_money") or {}).get("amount"), ts))
             n += 1
-    # Costs entered against a plain name before the item list was synced carry over to each
-    # variation of that item, so nothing has to be typed in again.
-    conn.execute(
-        "INSERT INTO item_costs(name_key, name, cost_cents, updated_by, updated_at) "
-        "SELECT 'v:' || ci.variation_id, ci.display, ic.cost_cents, 'fizzy', ? FROM catalog_items ci "
-        "JOIN item_costs ic ON ic.name_key = lower(ci.item_name) WHERE ci.deleted = 0 "
-        "AND NOT EXISTS (SELECT 1 FROM item_costs x WHERE x.name_key = 'v:' || ci.variation_id)", (ts,))
     set_setting(conn, "catalog_error", "")
     set_setting(conn, "catalog_last_sync", ts)
+    set_setting(conn, "catalog_last_ok", ts)
     conn.commit()
     return n
 

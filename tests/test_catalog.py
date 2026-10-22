@@ -59,10 +59,32 @@ def test_variations_cost_separately_and_renames_keep_costs(conn, cust):
     assert {r["name"]: r["profit"] for r in p["items"]} == {"Coke (Can)": 275, "Coke (Mini)": 195}
 
 
-def test_old_name_costs_carry_over_to_each_variation(conn):
+def test_name_costs_apply_to_variations_and_restocks_update_them(conn):
     stats.set_cost(conn, "Coca-Cola", 70, "Will")
     square.sync_catalog(conn, Cat([COKE]))
-    assert stats.costs(conn)["v:V1"] == 70 and stats.costs(conn)["v:V2"] == 70
+    costs = stats.costs(conn)
+    assert stats.cost_of(costs, "v:V1", "coca-cola") == 70 and "v:V1" not in costs     # falls back, no copies
+    money.add_restock(conn, stats.today(), "", "", [("Coca-Cola", 10, 1000)], "Will")  # by the plain name
+    assert stats.cost_of(stats.costs(conn), "v:V2", "coca-cola") == 100               # profit follows the restock
+
+
+def test_blanking_an_inherited_cost_removes_it(client):
+    login(client)
+    conn = db.connect()
+    try:
+        stats.set_cost(conn, "Coca-Cola", 70, "Will")
+        square.sync_catalog(conn, Cat([COKE]))
+        conn.commit()
+    finally:
+        conn.close()
+    r = client.post("/profit", data={"name": ["Coca-Cola (Can)", "Coca-Cola (Mini)"], "key": ["v:V1", "v:V2"],
+                                     "base": ["coca-cola", "coca-cola"], "cost": ["", ""]})
+    assert "Saved 1 cost" in r.text
+    conn = db.connect()
+    try:
+        assert stats.costs(conn) == {}
+    finally:
+        conn.close()
 
 
 def test_lines_without_a_catalogue_id_still_match_by_name(conn, cust):

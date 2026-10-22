@@ -379,11 +379,16 @@ def customer_summary(conn, customer, cfg=None):
 
 
 def purchases_in(conn, start, end):
-    """Points-earning spend per customer for purchases made between start and end. Tab purchases
-    count by when they were bought (not repaid), for the part that has been repaid so far."""
-    totals = {r["customer_id"]: r["pts"] for r in conn.execute(
-        "SELECT customer_id, SUM(delta) AS pts FROM points_ledger WHERE reason IN ('purchase', 'refund') "
-        "AND created_at >= ? AND created_at < ? GROUP BY customer_id", (start, end))}
+    """Points-earning spend per customer for purchases made between start and end. A refund counts
+    against the purchase it reverses (by that purchase's date, whenever the refund happened). Tab
+    purchases count by when they were bought (not repaid), for the part that has been repaid so far."""
+    totals = {}
+    for r in conn.execute(
+            "SELECT customer_id, SUM(delta) AS pts FROM points_ledger p WHERE (p.reason = 'purchase' AND p.created_at >= ? "
+            "AND p.created_at < ?) OR (p.reason = 'refund' AND EXISTS (SELECT 1 FROM points_ledger b WHERE b.reason = 'purchase' "
+            "AND b.square_payment_id = p.square_payment_id AND b.created_at >= ? AND b.created_at < ?)) GROUP BY customer_id",
+            (start, end, start, end)):
+        totals[r["customer_id"]] = r["pts"]
     for (cid,) in conn.execute("SELECT DISTINCT customer_id FROM tab_charges WHERE charged_at >= ? AND charged_at < ?",
                                (start, end)).fetchall():
         by_money = paid_by_money(conn, cid)  # written-off purchases earn nothing, bonus included

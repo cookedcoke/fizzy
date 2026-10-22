@@ -7,7 +7,7 @@
     <div class="meta"><span class="mono">{{ c.email.split('@')[0] }}</span> · {{ 'Linked to Square' if c.square_customer_id else 'Not in Square yet' }}</div>
   </div>
   <a class="btn primary" href="/customers/{{ c.id }}/claim" data-key="k" data-key-label="Claim the sale just rung up in Square"
-     title="Rang it up in Square without a customer? Claim it for {{ c.name.split(' ')[0] }}">Claim sale <kbd>K</kbd></a>
+     title="Give {{ c.name.split(' ')[0] }} the sale you just rang up">Claim sale <kbd>K</kbd></a>
 </div>
 
 {% if st.can_charge %}
@@ -63,7 +63,7 @@
   <form class="panel" method="post" action="/customers/{{ c.id }}/repay"><h2>Repayment <kbd>R</kbd></h2>
     <p class="small" style="margin:0">{% if led.owing_cents %}<b>In Square:</b> attach {{ c.name.split(' ')[0] }}'s profile, add <b>Tab repayment</b>, type in
       <b>{{ led.owing_cents|money }}</b> (or what they're paying), and take cash or card. Fizzy records it automatically.{% else %}Nothing owing.{% endif %}</p>
-    <p class="hint" style="margin-top:8px">Only use the form below for money that <b>didn't</b> go through Square.</p>
+    <p class="hint" style="margin-top:8px">Only use this for money that <b>didn't</b> go through Square.</p>
     <div class="row">
       <div><label for="rp-amount">Amount ($)</label><input id="rp-amount" type="text" name="amount" inputmode="decimal" data-key="r" data-key-label="Record a repayment without Square" value="{{ '%.2f'|format(led.owing_cents/100) if led.owing_cents else '' }}" required></div>
       <div><label for="rp-method">Paid by</label><select id="rp-method" name="method"><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other</option></select></div>
@@ -79,12 +79,12 @@
     <button type="submit" disabled hidden aria-hidden="true" tabindex="-1"></button>
     <p class="small" style="margin:0">{% if c.tab_decision %}<b>{{ c.tab_decision|capitalize }}</b> by {{ c.tab_decision_by }} · {{ c.tab_decision_at|local }}{% if c.tab_decision_note %}<br><span class="muted">“{{ c.tab_decision_note }}”</span>{% endif %}
       {% else %}<span class="muted">No decision yet.</span>{% endif %}</p>
-    <label for="tab-note">Note <kbd>N</kbd></label><input id="tab-note" type="text" name="note" placeholder="Optional - why? Then pick a button" data-key="n" data-key-label="Note for tab decision">
+    <label for="tab-note">Note <kbd>N</kbd></label><input id="tab-note" type="text" name="note" placeholder="Why? (optional)" data-key="n" data-key-label="Note for tab decision">
     <div class="actions">
       {% if c.tab_decision != 'approved' %}<button name="decision" value="approve" class="primary" data-key="a" data-key-label="Approve tab">Approve <kbd>A</kbd></button>{% endif %}
       {% if c.tab_decision == 'approved' %}<button name="decision" value="revoke" class="danger" data-key="x" data-key-label="Revoke tab" data-confirm="Revoke {{ c.name }}'s tab?">Revoke <kbd>X</kbd></button>
       {% elif c.tab_decision != 'rejected' %}<button name="decision" value="reject" class="danger" data-key="x" data-key-label="Reject tab" data-confirm="Reject {{ c.name }} for a tab?">Reject <kbd>X</kbd></button>{% endif %}
-      {% if c.tab_decision %}<button name="decision" value="reset" title="Back to automatic: locked or eligible by spend">Clear</button>{% endif %}
+      {% if c.tab_decision %}<button name="decision" value="reset" title="Undo the decision">Clear</button>{% endif %}
     </div>
   </form>
 
@@ -146,11 +146,11 @@
   <details id="passcode"><summary>Student site passcode <span class="muted">({{ 'set ' ~ c.passcode_set_at|local('%d %b') if c.passcode_set_at else 'not set' }})</span></summary>
     <form method="post" action="/customers/{{ c.id }}/passcode" style="max-width:420px" autocomplete="off">
       {% if c.passcode_enc %}<p style="margin-top:0">Current passcode:
-        {% if passcode %}<span class="secret" tabindex="0" title="Click to show">
-          <span class="mono">{{ passcode }}</span></span>
+        {% if passcode_readable %}<button type="button" class="sm" data-reveal="/customers/{{ c.id }}/passcode/reveal"
+          title="Shows it here. Looking gets noted in the log.">Show passcode</button>
         {% else %}<span class="red">can't be read (the secret key changed) - set a new one.</span>{% endif %}</p>{% endif %}
-      <p class="hint" style="margin-top:0">Type in the passcode {{ c.name.split(' ')[0] }} picks (at least 4 characters). They sign in at
-        <b>{{ public_host or '/me on this site' }}</b> with their name or student number. Setting a new one replaces the old one.</p>
+      <p class="hint" style="margin-top:0">Type in whatever {{ c.name.split(' ')[0] }} wants (4+ characters). They log in at
+        <b>{{ public_host or '/me on this site' }}</b> with their name or student number.</p>
       <label for="pc-new">New passcode</label><input id="pc-new" type="text" name="passcode" autocomplete="off" autocapitalize="off" spellcheck="false" minlength="4" maxlength="64">
       <div class="actions"><button class="primary">Set passcode</button>
         {% if c.passcode_set_at %}<button name="remove" value="1" formnovalidate data-confirm="Remove {{ c.name }}'s passcode? They won't be able to sign in until a new one is set.">Remove</button>{% endif %}</div>
@@ -168,7 +168,7 @@
 {% if not c.archived_at %}
 {# Pops up when a sale with no customer comes in while this page is open (see app.js). #}
 <form class="claim-prompt" id="claim-prompt" method="post" action="/customers/{{ c.id }}/claim" hidden
-      data-watch="/api/customers/{{ c.id }}/new-sales" data-since="{{ watch_since }}" data-cid="{{ c.id }}" role="alertdialog" aria-live="assertive"
+      data-watch="/api/customers/{{ c.id }}/new-sales" data-since="{{ watch_since }}" data-opened="{{ opened }}" data-cid="{{ c.id }}" role="alertdialog" aria-live="assertive"
       aria-label="New sale with no customer">
   <input type="hidden" name="key">
   <div class="cp-head"><b>New sale</b> <span class="cp-at"></span><span class="cp-more"></span></div>

@@ -38,8 +38,8 @@ def all_events(conn):
 
 def on(conn, day=None):
     day = (day or today()).isoformat()
-    return conn.execute("SELECT * FROM points_events WHERE start_date <= ? AND end_date >= ? ORDER BY multiplier DESC",
-                        (day, day)).fetchall()
+    return conn.execute("SELECT * FROM points_events WHERE start_date <= ? AND end_date >= ? AND ended_at IS NULL "
+                        "ORDER BY multiplier DESC", (day, day)).fetchall()
 
 
 def upcoming(conn, days=14):
@@ -70,8 +70,7 @@ def create(conn, name, multiplier, start, end, staff_name):
 
 
 def cancel(conn, event_id, staff_name):
-    """Delete an event that hasn't started, or finish one early (it ends after today). Bonus
-    already earned stays."""
+    """Delete an event that hasn't started, or end a running one now. Bonus already earned stays."""
     ev = conn.execute("SELECT * FROM points_events WHERE id = ?", (event_id,)).fetchone()
     if ev is None:
         return "Already gone."
@@ -80,21 +79,25 @@ def cancel(conn, event_id, staff_name):
         conn.execute("DELETE FROM points_events WHERE id = ?", (event_id,))
         audit(conn, staff_name, "points_event_delete", None, ev["name"])
         return f"Deleted {ev['name']}."
-    if _date(ev["end_date"]) > t:
-        conn.execute("UPDATE points_events SET end_date = ? WHERE id = ?", (t.isoformat(), event_id))
+    if _date(ev["end_date"]) >= t and not ev["ended_at"]:
+        conn.execute("UPDATE points_events SET end_date = ?, ended_at = ? WHERE id = ?", (t.isoformat(), now_iso(), event_id))
         audit(conn, staff_name, "points_event_end", None, ev["name"])
-        return f"{ev['name']} now ends after today."
+        return f"{ev['name']} has ended. Bonus points already earned stay."
     return f"{ev['name']} has already finished."
 
 
 def reconcile(conn):
     """Bring every recent event's bonus points to what they should be. Returns points changed."""
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")  # read and top up under the write lock, so two runs can't both add
     t = today()
     changed = 0
     for ev in conn.execute("SELECT * FROM points_events WHERE start_date <= ? AND end_date >= ?",
                            (t.isoformat(), (t - timedelta(days=KEEP_UP_DAYS)).isoformat())).fetchall():
         start, _ = day_bounds(date.fromisoformat(ev["start_date"]))
         _, end = day_bounds(date.fromisoformat(ev["end_date"]))
+        if ev["ended_at"]:
+            end = min(end, ev["ended_at"])
         target = {cid: max(0, round(pts * (ev["multiplier"] - 1))) for cid, pts in logic.purchases_in(conn, start, end).items()}
         have = {r[0]: r[1] for r in conn.execute(
             "SELECT customer_id, SUM(delta) FROM points_ledger WHERE event_id = ? GROUP BY customer_id", (ev["id"],))}
@@ -118,7 +121,7 @@ def events_create(request: Request, name: str = Form(""), multiplier: str = Form
     except EventError as e:
         return back(request, "/rewards#events", str(e))
     conn.commit()
-    return back(request, "/rewards#events", "Scheduled. Points top up by themselves during those days.")
+    return back(request, "/rewards#events", "Done. Extra points get added by themselves.")
 
 
 @router.post("/events/{event_id}/cancel")

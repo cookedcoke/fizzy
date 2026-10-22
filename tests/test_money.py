@@ -47,6 +47,36 @@ def test_money_pages(client, tmp_path, monkeypatch):
 
 def test_backup_copies_receipts(conn, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "data" / "fizzy.db"))
-    name = money.save_receipt(b"\xff\xd8 photo", "image/jpeg")
+    name = money.save_receipt(b"\xff\xd8\xff photo", "image/jpeg")
     db.backup(conn, str(tmp_path / "backups"))
     assert os.listdir(tmp_path / "backups" / "receipts") == [name]
+
+
+def test_receipts_must_be_what_they_say_and_are_served_safely(client):
+    login(client)
+    bad = client.post("/money/restock", data={"item": ["Coke"], "qty": ["1"], "cost": ["1"]},
+                      files={"receipt": ("x.png", b"<html><script>alert(1)</script>", "image/png")})
+    assert "doesn&#39;t look like" in bad.text
+    assert not os.path.isdir(money.receipts_dir()) or os.listdir(money.receipts_dir()) == []
+    orphan = client.post("/money/restock", data={"item": ["Coke"], "qty": ["-3"], "cost": ["1"]},
+                         files={"receipt": ("r.jpg", b"\xff\xd8\xff jpeg", "image/jpeg")})
+    assert "at least 1" in orphan.text                                       # invalid restock: no photo kept
+    assert not os.path.isdir(money.receipts_dir()) or os.listdir(money.receipts_dir()) == []
+    client.post("/money/restock", data={"item": ["Coke"], "qty": ["1"], "cost": ["1"]},
+                files={"receipt": ("r.pdf", b"%PDF-1.7 fake", "application/pdf")})
+    name = os.listdir(money.receipts_dir())[0]
+    r = client.get(f"/money/receipts/{name}")
+    assert r.headers["x-content-type-options"] == "nosniff" and "sandbox" in r.headers["content-security-policy"]
+    assert r.headers["content-disposition"].startswith("attachment")
+
+
+def test_huge_or_silly_amounts_get_a_message(client):
+    login(client)
+    for cost in ("inf", "1e400", "200000"):
+        r = client.post("/money/restock", data={"item": ["Coke"], "qty": ["1"], "cost": [cost]})
+        assert r.status_code == 200 and ("isn&#39;t a dollar amount" in r.text or "more than $100,000" in r.text), cost
+    r = client.post("/money/restock", data={"item": ["Coke"], "qty": ["99999999999999999999"], "cost": ["1"]})
+    assert "check it" in r.text
+    assert "isn&#39;t a dollar amount" in client.post("/profit", data={"name": ["Coke"], "cost": ["inf"]}).text
+    r = client.post("/money/payout", data={"partner": ["Will", "Mike"], "amount": ["10", "0"]})
+    assert "Recorded 1 payout." in r.text

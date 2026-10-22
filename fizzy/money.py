@@ -8,6 +8,7 @@
   transfers make that more confusing than useful).
 """
 import os
+import re
 import secrets
 from datetime import date, datetime, timedelta
 
@@ -40,15 +41,36 @@ def _date(s, default=None):
         raise MoneyError("Pick a date.")
 
 
+MAX_CENTS = 10_000_000      # $100,000: anything bigger is a typo
+MAX_QTY = 100_000
+
+
 def _cents(v, what):
-    v = (v or "").strip().replace("$", "").replace(",", "")
+    v = (v or "").strip().replace("$", "")
+    if not v:
+        raise MoneyError(f"Add a cost for {what}.")
+    v = re.sub(r",(\d{1,2})$", r".\1", v).replace(",", "")  # "12,50" is $12.50
     try:
         c = round(float(v) * 100)
-    except ValueError:
-        raise MoneyError(f"'{v}' isn't a dollar amount ({what}).")
+    except (ValueError, OverflowError):  # "abc", "inf"
+        raise MoneyError(f"'{v[:20]}' isn't a dollar amount ({what}).")
     if c < 0:
         raise MoneyError(f"{what} can't be negative.")
+    if c > MAX_CENTS:
+        raise MoneyError(f"{what}: that's more than $100,000 - check the amount.")
     return c
+
+
+# What each allowed receipt type starts with, so the declared type has to match the file itself.
+MAGIC = {".jpg": [b"\xff\xd8\xff"], ".png": [b"\x89PNG\r\n\x1a\n"], ".pdf": [b"%PDF-"]}
+
+
+def _looks_like(data, ext):
+    if ext == ".webp":
+        return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    if ext in (".heic", ".heif"):
+        return data[4:8] == b"ftyp"
+    return any(data.startswith(m) for m in MAGIC.get(ext, []))
 
 
 # ---- restocks -----------------------------------------------------------------------------------
@@ -71,7 +93,7 @@ def add_restock(conn, day, shop, note, items, staff_name, receipt=None):
         key, name = stats.resolve_item(conn, typed)   # matched to Square's item list where possible
         conn.execute("INSERT INTO restock_items(restock_id, name, qty, cost_cents, item_key) VALUES (?, ?, ?, ?, ?)",
                      (rid, name, qty, line, key))
-        stats.set_cost(conn, name, round(line / qty), staff_name, key=key)
+        stats.set_cost(conn, name, (line + qty // 2) // qty, staff_name, key=key)  # cost of one, halves up
     audit(conn, staff_name, "restock", None, f"#{rid} {shop or ''} {total / 100:.2f} ({len(items)} items)")
     return rid
 
@@ -84,6 +106,8 @@ def save_receipt(data, content_type):
         raise MoneyError("That receipt is over 15 MB.")
     if not data:
         return None
+    if not _looks_like(data, ext):
+        raise MoneyError("That file doesn't look like the photo or PDF it says it is.")
     os.makedirs(receipts_dir(), exist_ok=True)
     name = f"{datetime.now().strftime('%Y%m%d')}-{secrets.token_hex(8)}{ext}"
     with open(os.path.join(receipts_dir(), name), "wb") as f:
@@ -168,6 +192,7 @@ def money_page(request: Request, start: str = "", end: str = "", who=Depends(sta
 async def restock_add(request: Request, who=Depends(staff), conn=Depends(get_conn)):
     form = await request.form()
     names, qtys, costs = form.getlist("item"), form.getlist("qty"), form.getlist("cost")
+    receipt = None
     try:
         lines = []
         for n, q, c in zip(names, qtys, costs):
@@ -177,23 +202,34 @@ async def restock_add(request: Request, who=Depends(staff), conn=Depends(get_con
                 qty = int(q or 0)
             except ValueError:
                 raise MoneyError(f"Quantity for {n} must be a whole number.")
+            if qty > MAX_QTY:
+                raise MoneyError(f"Quantity for {n} is more than {MAX_QTY:,} - check it.")
             lines.append((n, qty, _cents(c, n)))
+        day = _date(form.get("day"), stats.today())
+        if not lines:
+            raise MoneyError("Add at least one item.")
+        if any(q <= 0 for _, q, _ in lines):
+            raise MoneyError("Every quantity must be at least 1.")
         upload = form.get("receipt")
-        receipt = None
         if upload is not None and getattr(upload, "filename", ""):
-            receipt = save_receipt(await upload.read(), upload.content_type)
-        add_restock(conn, _date(form.get("day"), stats.today()), form.get("shop"), form.get("note"), lines, who, receipt)
+            receipt = save_receipt(await upload.read(), upload.content_type)  # only once the rest is valid
+        try:
+            add_restock(conn, day, form.get("shop"), form.get("note"), lines, who, receipt)
+        except Exception:
+            if receipt:  # don't leave a photo behind for a restock that wasn't saved
+                os.remove(os.path.join(receipts_dir(), receipt))
+            raise
     except MoneyError as e:
         return back(request, "/money#restock", str(e))
     conn.commit()
-    return back(request, "/money", "Restock saved. Item costs on the Profit page are updated.")
+    return back(request, "/money", "Restock saved.")
 
 
 @router.post("/money/restock/{rid}/delete")
 def restock_delete(request: Request, rid: int, who=Depends(staff), conn=Depends(get_conn)):
     delete_restock(conn, rid, who)
     conn.commit()
-    return back(request, request.headers.get("referer") or "/money", "Restock deleted. (Item costs stay as they are.)")
+    return back(request, request.headers.get("referer") or "/money", "Restock deleted.")
 
 
 @router.get("/money/receipts/{name}")
@@ -203,7 +239,11 @@ def receipt_file(name: str, who=Depends(staff)):
     path = os.path.join(receipts_dir(), name)
     if not os.path.isfile(path):
         raise HTTPException(404)
-    return FileResponse(path, headers={"Cache-Control": "private, max-age=3600"})
+    headers = {"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff",
+               "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"}
+    if name.endswith(".pdf"):  # downloaded rather than opened inside the staff site
+        headers["Content-Disposition"] = f'attachment; filename="{name}"'
+    return FileResponse(path, headers=headers)
 
 
 @router.post("/money/payout")
@@ -213,11 +253,11 @@ async def payout_add(request: Request, who=Depends(staff), conn=Depends(get_conn
         day = _date(form.get("day"), stats.today())
         partners, amounts = form.getlist("partner"), form.getlist("amount")
         rows = [(p, _cents(a, p)) for p, a in zip(partners, amounts) if (a or "").strip()]
+        rows = [(p, a) for p, a in rows if a]  # a "0" just means they weren't paid
         if not rows:
             raise MoneyError("Enter an amount.")
         for p, a in rows:
-            if a:
-                add_payout(conn, day, p, a, form.get("note"), who)
+            add_payout(conn, day, p, a, form.get("note"), who)
     except MoneyError as e:
         return back(request, "/money#payout", str(e))
     conn.commit()

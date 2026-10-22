@@ -97,7 +97,8 @@ def _norm(s):
     return " ".join((s or "").lower().replace("’", "'").split())
 
 
-MAX_CANDIDATES = 3                 # one sign-in checks at most this many accounts
+MAX_CANDIDATES = 3                 # exact matches checked at most (two students with the same full name)
+MAX_WHO = 100                      # longest name/number we'll look at
 
 
 def _letters(s):
@@ -146,16 +147,21 @@ def candidates(conn, who):
         return []
     rows = conn.execute("SELECT * FROM customers WHERE archived_at IS NULL AND merged_into IS NULL "
                         "AND passcode_enc IS NOT NULL").fetchall()
-    exact = [r for r in rows if typed == _letters(r["email"].split("@")[0])]
+    exact = [r for r in rows if typed == _letters(r["email"].split("@")[0]) or typed in _name_keys(r["name"])]
     if exact:
         return exact[:MAX_CANDIDATES]
-    cap, scored = _allowed_typos(typed), []
+    # A misspelling only ever counts for one account, and only if it's clearly the closest: so a
+    # wrong guess can't lock out (or test a passcode against) several similarly named students.
+    cap, best, at_best = _allowed_typos(typed), None, []
     for r in rows:
         d = min(_distance(typed, k, cap) for k in _name_keys(r["name"]))
-        if d <= cap:
-            scored.append((d, r["id"], r))
-    scored.sort(key=lambda t: t[:2])
-    return [r for _, _, r in scored[:MAX_CANDIDATES]]
+        if d > cap or (best is not None and d > best):
+            continue
+        if best is None or d < best:
+            best, at_best = d, [r]
+        else:
+            at_best.append(r)
+    return at_best if len(at_best) == 1 else []
 
 
 def authenticate(conn, who, passcode, found_candidates=None):
@@ -228,29 +234,36 @@ def home(request: Request, conn=Depends(get_conn)):
 async def login(request: Request, who: str = Form(""), passcode: str = Form(""), conn=Depends(get_conn)):
     global _in_flight, _check_slots
     now = time.time()
-    found = candidates(conn, who)
-    # Limited per typed name, per network, and per account (a name and a student number are the
-    # same account, so they share one allowance).
-    buckets = _buckets(request, who) + [(("acct", c["id"]), LIMIT_PER_NAME) for c in found]
-    if any(len(_recent(k, now)) >= limit for k, limit in buckets if k[0] != "acct"):
+    who = who[:MAX_WHO]
+    # Per typed name and per network first: cheap, and checked before any searching.
+    buckets = _buckets(request, who)
+    if any(len(_recent(k, now)) >= limit for k, limit in buckets):
         return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
                      error="Too many tries. Wait 15 minutes and try again.")
-    # A locked *account* gets the ordinary "don't match" answer (even for the right passcode).
-    # Saying "too many tries" would tell anyone which name goes with which student number.
-    acct_locked = any(len(_recent(k, now)) >= limit for k, limit in buckets if k[0] == "acct")
     if _in_flight >= MAX_IN_FLIGHT:
         return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
                      error="Lots of people are signing in right now. Try again in a moment.")
-    # Count the attempt before checking it, so a burst of parallel guesses can't all get past
-    # the limits before the first one fails. Taken back off if it turns out to be right.
+    # Count the attempt before checking anything (no awaits in between), so a burst of parallel
+    # guesses can't all get past the limits before the first one fails. Taken back off if right.
     for k, _ in buckets:
         _fails[k] = _recent(k, now) + [now]
-    if len(_fails) > 5000:
-        for k in [k for k, v in _fails.items() if not v or v[-1] < now - FAIL_WINDOW]:
-            del _fails[k]
     _check_slots = _check_slots or anyio.CapacityLimiter(2)
     _in_flight += 1
     try:
+        # Name matching and passcode checks run off the event loop, a couple at a time, so a flood
+        # of sign-ins can't slow the staff pages.
+        found = await anyio.to_thread.run_sync(candidates, conn, who, limiter=_check_slots)
+        # Per account too (a name and a student number are the same account, so they share one
+        # allowance). A locked account gets the ordinary "don't match" answer, even for the right
+        # passcode: saying "too many tries" would tell anyone which name goes with which number.
+        acct = [(("acct", c["id"]), LIMIT_PER_NAME) for c in found]
+        acct_locked = any(len(_recent(k, now)) >= limit for k, limit in acct)
+        for k, _ in acct:
+            _fails[k] = _recent(k, now) + [now]
+        buckets += acct
+        if len(_fails) > 5000:
+            for k in [k for k, v in _fails.items() if not v or v[-1] < now - FAIL_WINDOW]:
+                del _fails[k]
         c = await anyio.to_thread.run_sync(authenticate, conn, who, passcode.strip()[:PASSCODE_MAX],
                                            [] if acct_locked else found, limiter=_check_slots)
     finally:
@@ -352,6 +365,19 @@ def month_start():
 
 # ---- staff side -------------------------------------------------------------------------------
 
+@router.post("/customers/{cid}/passcode/reveal")
+def staff_reveal_passcode(cid: int, who=Depends(staff), conn=Depends(get_conn)):
+    """A student's passcode, for staff to read out when they've forgotten it. Only fetched when
+    staff press Show (never sitting in the page), and every look is logged."""
+    c = conn.execute("SELECT * FROM customers WHERE id = ?", (cid,)).fetchone()
+    if c is None:
+        raise HTTPException(404)
+    code = reveal_passcode(c["passcode_enc"])
+    audit(conn, who, "passcode_viewed", cid, "")
+    conn.commit()
+    return JSONResponse({"passcode": code}, headers={"Cache-Control": "no-store"})
+
+
 @router.post("/customers/{cid}/passcode")
 def staff_set_passcode(request: Request, cid: int, passcode: str = Form(""), remove: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
     c = conn.execute("SELECT * FROM customers WHERE id = ?", (cid,)).fetchone()
@@ -359,7 +385,7 @@ def staff_set_passcode(request: Request, cid: int, passcode: str = Form(""), rem
         raise HTTPException(404)
     if remove:
         remove_passcode(conn, c, who)
-        msg = "Passcode removed - they can't sign in to the student site until a new one is set."
+        msg = "Passcode removed."
     else:
         try:
             set_passcode(conn, c, passcode, who)
@@ -367,7 +393,7 @@ def staff_set_passcode(request: Request, cid: int, passcode: str = Form(""), rem
             request.session["flash"] = str(e)
             return RedirectResponse(f"/customers/{cid}", status_code=303)
         site = config.PUBLIC_HOST or "the student site"
-        msg = f"Passcode set. {c['name'].split(' ')[0]} can now sign in at {site}."
+        msg = f"Passcode set. {c['name'].split(' ')[0]} can log in at {site}."
     conn.commit()
     request.session["flash"] = msg
     return RedirectResponse(f"/customers/{cid}", status_code=303)

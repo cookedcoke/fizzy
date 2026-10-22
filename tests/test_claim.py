@@ -118,3 +118,31 @@ def test_prompt_is_in_the_page_body_not_the_title(client):
     client.post("/tools/add_customer", data={"name": "Nora Le Fevre", "email": "rns5@reddamnorthshore.nsw.edu.au"})
     page = client.get("/customers/1").text
     assert page.index('id="claim-prompt"') > page.index("<body")
+
+
+def test_sync_linking_after_a_claim_doesnt_double_count(conn, cust):
+    a = cust(name="Linked Later", email="rns1@x", sq=None)
+    b = cust(name="On Screen", email="rns2@x", sq="SQB")
+    square.process_payment(conn, pay("p1", 500, cust="SQNEW", order_id="o1"), order(("Coke", 500), oid="o1"))
+    [k] = square.unclaimed(conn)
+    square.claim(conn, k["key"], b, "Will")                                  # staff claim it for B...
+    conn.execute("UPDATE customers SET square_customer_id = 'SQNEW' WHERE id = ?", (a["id"],))
+    assert square.link_pending(conn) == 0                                    # ...then the profile links to A: no move
+    assert logic.points_balance(conn, b["id"]) == 500 and logic.points_balance(conn, a["id"]) == 0
+
+
+def test_a_checkout_is_never_split_between_people(conn, cust):
+    a, b = cust(name="A Kid", email="rns1@x", sq="SQA"), cust(name="B Kid", email="rns2@x", sq="SQB")
+    square.process_order(conn, tab_order("o1", 300, ("Chips", 300), cust=None))
+    square.process_payment(conn, pay("p1", 200, cust="SQA", order_id="o1"), order(("Coke", 200), oid="o1"))
+    with pytest.raises(ValueError, match="already been claimed"):
+        square.claim(conn, "o:o1", b, "Will")                                # part of it is A's already
+    assert logic.tab_ledger(conn, b["id"])["owing_cents"] == 0
+
+
+def test_tab_part_arriving_after_a_claim_goes_to_the_same_person(conn, cust):
+    b = cust(name="B Kid", email="rns2@x", sq="SQB")
+    square.process_payment(conn, pay("p1", 0, cust=None, order_id="o1"), tab_order("o1", 300, ("Chips", 300), cust=None))
+    square.claim(conn, "o:o1", b, "Will")
+    square.process_order(conn, tab_order("o1", 300, ("Chips", 300), cust=None))   # the tab row syncs later
+    assert logic.tab_ledger(conn, b["id"])["owing_cents"] == 300 and square.unclaimed(conn) == []

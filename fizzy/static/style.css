@@ -193,10 +193,12 @@ details.tool.danger > summary > span:first-child { color: var(--red-ink) }
   display: grid; place-items: center; font: 600 11px/1 Georgia, serif; font-style: italic; cursor: help; background: var(--surface) }
 .tip:hover { border-color: var(--muted); color: var(--fg) }
 .tip:hover::after, .tip:focus::after {
-  content: attr(data-tip); position: absolute; right: -6px; bottom: calc(100% + 8px); z-index: 30; width: 250px; background: var(--ink); color: #fff;
+  content: attr(data-tip); position: absolute; right: -6px; bottom: calc(100% + 8px); z-index: 30; width: max-content; max-width: 260px; background: var(--ink); color: #fff;
   font: 400 12.5px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-style: normal; padding: 8px 10px; border-radius: var(--r);
   box-shadow: 0 6px 18px rgba(0, 0, 0, .18); text-align: left
 }
+/* A tip near the left edge opens to the right instead (set by app.js), so it never runs off-screen. */
+.tip.tip-right:hover::after, .tip.tip-right:focus::after { right: auto; left: -6px }
 
 /* ---- login ---- */
 .login { max-width: 360px; margin: 10vh auto 0 }
@@ -256,7 +258,7 @@ dialog#keys td { border: none; padding: 5px var(--s3) 5px 0; vertical-align: mid
 dialog#keys td:first-child { width: 45%; line-height: 22px }
 dialog#keys .grid { grid-template-columns: 3fr 2fr }
 @media (max-width: 720px) { dialog#keys .grid { grid-template-columns: 1fr } }
-@media (max-width: 720px) { .hsearch, .keys-btn, h2 kbd, button kbd, .search > kbd { display: none } }
+@media (max-width: 720px) { .hsearch, .keys-btn, h2 kbd, button kbd, .btn kbd, .search > kbd { display: none } }
 #keys-page td:first-child { width: 48px }
 .results mark { background: none; color: var(--ink); font-weight: 800; text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 3px }
 .results kbd.num { margin-right: 10px; min-width: 20px; color: var(--faint) }
@@ -294,12 +296,8 @@ header nav.more-r { -webkit-mask-image: linear-gradient(90deg, #000 80%, transpa
 header nav.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%); mask-image: linear-gradient(90deg, transparent, #000 20%) }
 header nav.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent); mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent) }
 
-/* Passcode on the customer page: hidden until clicked, so people at the counter can't read it. */
-.secret { display: inline-block; position: relative; cursor: pointer; border-radius: 3px; padding: 0 6px; background: var(--hover) }
-.secret .mono { filter: blur(6px); user-select: none; font-size: 14px }
-.secret::after { content: "Show"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--muted) }
-.secret:focus .mono, .secret:active .mono { filter: none; user-select: text }
-.secret:focus::after, .secret:active::after { content: none }
+/* Passcode on the customer page, once Show is pressed */
+.revealed { background: var(--hover); border: 1px solid var(--line); border-radius: 3px; padding: 1px 8px; font-size: 14px }
 /* Claim a sale (customer page, K) */
 .claims { display: flex; flex-direction: column; gap: var(--s2) }
 .claim { display: flex; align-items: center; gap: var(--s4); width: 100%; height: auto; padding: 12px var(--s4); text-align: left;
@@ -330,12 +328,12 @@ header nav.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparen
 .bars.week { height: 190px; gap: var(--s3) }
 .bars.week .bar.today .lbl { color: var(--fg); font-weight: 650 }
 .bars .bar:hover .pair i.now { background: #3A3F48 }
-@media (max-width: 720px) { .bars.hours .lbl { font-size: 10px } .bars.hours .bar:nth-child(even) .lbl { visibility: hidden } .bars.week .val { display: none } }
+@media (max-width: 960px) { .bars.hours .lbl { font-size: 10px } .bars.hours .bar:nth-child(even) .lbl { visibility: hidden } .bars.week .val { display: none } }
 /* Header clock: desktop only (the header has no room for it on smaller screens). */
 .clock { display: none; align-items: baseline; gap: 7px; color: #fff; font-weight: 650; font-size: 15px; margin-right: var(--s2); white-space: nowrap }
 .clock .d { color: #8B919B; font-weight: 400; font-size: 12px }
 @media (min-width: 1100px) { .clock { display: inline-flex } }
-@media (max-width: 1440px) { .clock .d { display: none } }
+@media (max-width: 1439px) { .clock .d { display: none } }
 @media (max-width: 1400px) { .hsearch { flex-basis: 180px } }
 input.cost { width: 110px; height: 30px; text-align: right; font-variant-numeric: tabular-nums }
 input.cost.missing { border-color: #EBD08A; background: var(--warn-wash) }
@@ -367,3 +365,22 @@ table.lines input { height: 32px }
 .cp-actions { display: flex; gap: var(--s2); margin-top: var(--s3) }
 @media (max-width: 720px) { .claim-prompt { left: var(--s3); right: var(--s3); bottom: var(--s3); width: auto } }
 @media (prefers-reduced-motion: reduce) { .claim-prompt.pop { animation: none } }
+body.has-claim-prompt main { padding-bottom: 200px }
+/* With ten tabs the nav never shrinks; on pages with the header search, the search box gives way
+   first, then the clock. */
+header nav { flex-shrink: 0 }
+header .hsearch { flex: 1 1 220px; min-width: 96px; max-width: 260px }
+@media (max-width: 1300px) { header:has(.hsearch) .clock { display: none } }
+@media (max-width: 1023px) { header nav { flex-shrink: 1 } }
+@media (max-width: 1600px) { header:has(.hsearch) .clock .d, header:has(.hsearch) .who .label { display: none } }
+/* Stat tiles: rows that don't fill up end in white, not grey gaps. */
+.stats { background: var(--surface) }
+.stats .stat { box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line) }
+/* Money page on a phone: the forms first, history after */
+@media (max-width: 720px) { .cols.forms-first > .col:last-child { order: -1 } }
+.panel table td { vertical-align: middle }
+input[type=file] { font: inherit; font-size: 13px; padding: 6px; border: 1px dashed var(--line-strong); border-radius: var(--r); width: 100%; background: var(--surface) }
+input[type=file]::file-selector-button { font: inherit; font-size: 13px; margin-right: 10px; padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--hover); cursor: pointer }
+.lines .rm { border: 0; background: none; color: var(--faint); cursor: pointer; font-size: 16px; padding: 0 4px }
+.lines .rm:hover { color: var(--red-ink) }
+table.lines td:nth-child(2) { width: 56px } table.lines td:nth-child(2) input { min-width: 48px; text-align: center }

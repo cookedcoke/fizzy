@@ -1,9 +1,9 @@
 {% extends "base.html" %}{% block title %}Import{% endblock %}
 {% block body %}
-<div class="pagehead"><div><h1>Import school directory</h1><div class="meta">Adds new students and updates names. Never deletes anyone.</div></div></div>
+<div class="pagehead"><div><h1>Import school directory</h1><div class="meta">Adds new students and fixes names. Never deletes anyone.</div></div></div>
 <form class="panel" method="post" action="/import" enctype="multipart/form-data" style="max-width:640px">
   <h2>1 · Choose the CSV</h2>
-  <p class="small" style="margin:0">Needs a name column (<code>Cleaned Name</code> or <code>Name</code>) and <code>Email</code>. Only those two are stored; other columns are ignored.</p>
+  <p class="small" style="margin:0">Needs a name column (<code>Cleaned Name</code> or <code>Name</code>) and <code>Email</code>. Everything else is ignored.</p>
   <label>File<input type="file" name="file" accept=".csv,text/csv" required></label>
   <div class="actions"><button class="primary">Preview</button></div>
 </form>

@@ -76,14 +76,17 @@ def test_names_are_forgiving(client):
     assert "name and passcode don" in me_login(client, "Jem O'Brien").text
 
 
-def test_forgiving_match_picks_the_right_one_of_similar_names(conn, cust):
+def test_forgiving_match_never_spreads_across_similar_names(conn, cust):
     a = cust(name="Ivy Zhang", email="rns1@x", sq="A")
     b = cust(name="Iva Zhang", email="rns2@x", sq="B")
     portal.set_passcode(conn, a, "ivy-code", "Will")
     portal.set_passcode(conn, b, "iva-code", "Will")
-    assert portal.authenticate(conn, "Ivy Zhang", "iva-code")["id"] == b["id"]   # close names: passcode decides
-    assert portal.authenticate(conn, "Ivy Zhang", "ivy-code")["id"] == a["id"]
-    assert portal.authenticate(conn, "Ivy Zhang", "nope") is None
+    assert [c["id"] for c in portal.candidates(conn, "Ivy Zhang")] == [a["id"]]   # exact name: only that student
+    assert portal.authenticate(conn, "Ivy Zhang", "iva-code") is None              # Iva's code doesn't open Ivy
+    assert portal.candidates(conn, "Ivx Zhang") == []                              # equally close to both: neither
+    c = cust(name="Jemima Rose O'Donnell", email="rns3@x", sq="C")
+    portal.set_passcode(conn, c, "jem-code", "Will")
+    assert [r["id"] for r in portal.candidates(conn, "jemima odonell")] == [c["id"]]  # a clear typo still works
 
 
 def test_too_many_wrong_tries_locks_that_name(client):
@@ -213,14 +216,17 @@ def test_trailing_dot_host_is_still_the_public_host(client, monkeypatch):
 def test_staff_can_look_up_a_forgotten_passcode(client):
     cid = setup_student(client)
     page = client.get(f"/customers/{cid}").text
-    assert f'<span class="mono">{PC}</span>' in page and 'class="secret"' in page
+    assert PC not in page and "Show passcode" in page                       # never sitting in the page
+    r = client.post(f"/customers/{cid}/passcode/reveal")
+    assert r.json() == {"passcode": PC} and r.headers["cache-control"] == "no-store"
+    assert "passcode_viewed" in client.get("/audit").text                    # every look is logged
 
 
 def test_new_secret_key_makes_old_passcodes_unreadable_not_broken(client, monkeypatch):
     cid = setup_student(client)
     monkeypatch.setattr(config, "SECRET_KEY", "a-different-key")
     login(client)
-    assert "set a new one" in client.get(f"/customers/{cid}").text
+    assert "set a new one" in client.get(f"/customers/{cid}").text and "Show passcode" not in client.get(f"/customers/{cid}").text
     assert "name and passcode don" in me_login(client, "Nora Le Fevre").text
 
 
@@ -236,3 +242,14 @@ def test_promo_feed_for_the_main_website(client, monkeypatch):
     assert body["double_points"][0]["on_now"] is True and body["student_site"] == "https://my.example/"
     assert r.headers["access-control-allow-origin"] == "*"
     assert "Nora" not in r.text and "rns5" not in r.text
+
+
+def test_misspelt_guesses_dont_lock_out_similarly_named_students(client, monkeypatch):
+    setup_student(client, name="Jackson Smithers", sid="rns11")
+    client.post("/tools/add_customer", data={"name": "Jaxson Smithers", "email": "rns12@reddamnorthshore.nsw.edu.au"})
+    client.post("/customers/2/passcode", data={"passcode": "jax-code"})
+    client.post("/logout")
+    monkeypatch.setattr(portal, "FAIL_DELAY", 0)
+    for name in ("Jackson Smitherz", "Jackson Smithrs", "Jacksen Smithers", "Jakson Smithers", "Jackson Smitjers"):
+        me_login(client, name, "wrong-guess")
+    assert "Hey <span>Jaxson" in me_login(client, "Jaxson Smithers", "jax-code").text

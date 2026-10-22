@@ -11,8 +11,8 @@
 </div>
 {% if conflicts %}
 <div class="panel" style="border-color:#F0DFAE"><h2>Square profiles not linked <span class="count">{{ conflicts|length }}</span></h2>
-  <p class="small" style="margin-top:0">These Square profiles use an email that already belongs to someone in Fizzy, so they weren't added.
-    Usually it's a duplicate profile in Square: merge it in Square (Customers → select both → Merge), or assign its sales here.</p>
+  <p class="small" style="margin-top:0">These have the same email as someone already in Fizzy, so they're probably doubles. Merge them in Square
+    (Customers → select both → Merge), or assign their sales here.</p>
   <div class="scroll"><table><tr><th>Square profile</th><th>Email</th><th>Already in Fizzy as</th></tr>
     {% for c in conflicts %}<tr><td>{{ c.name }}</td><td class="mono small">{{ c.email }}</td><td>{{ c.existing }}</td></tr>{% endfor %}
   </table></div>
@@ -39,7 +39,7 @@
       <td>{% if p.customer_id %}<a href="/customers/{{ p.customer_id }}">{{ p.name }}</a>{% else %}
         <form class="assign" method="post" action="/square/payments/{{ p.square_payment_id }}/assign">
           <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required
-                 title="Type a name or student number, then Enter. Fizzy gives the points / adds the tab charge / clears the tab for them.">
+                 title="Type who it was, then Enter">
         </form>{% endif %}</td>
       <td class="n">{{ p.amount_cents|money }}</td><td class="small">{{ p.tender }}</td><td class="small hide-sm">{{ p['items'] }}</td>
       <td><form class="inline" method="post" action="/square/payments/{{ p.square_payment_id }}/kind">
