@@ -222,3 +222,17 @@ def test_new_secret_key_makes_old_passcodes_unreadable_not_broken(client, monkey
     login(client)
     assert "set a new one" in client.get(f"/customers/{cid}").text
     assert "name and passcode don" in me_login(client, "Nora Le Fevre").text
+
+
+def test_promo_feed_for_the_main_website(client, monkeypatch):
+    setup_student(client)
+    client.post("/rewards", data={"name": "Free Coke", "points": "1000"})
+    from fizzy import stats
+    client.post("/events", data={"name": "Double points", "multiplier": "2", "start": stats.today().isoformat(), "end": ""})
+    monkeypatch.setattr(config, "PUBLIC_HOST", "my.example")
+    r = client.get("/promos.json", headers={"host": "my.example"})
+    body = r.json()
+    assert body["rewards"] == [{"name": "Free Coke", "points": 1000}]
+    assert body["double_points"][0]["on_now"] is True and body["student_site"] == "https://my.example/"
+    assert r.headers["access-control-allow-origin"] == "*"
+    assert "Nora" not in r.text and "rns5" not in r.text

@@ -342,7 +342,6 @@ input.cost.missing { border-color: #EBD08A; background: var(--warn-wash) }
 /* Money page */
 .period input[type=date] { width: auto; height: 34px }
 tr.total td { border-top: 1px solid var(--line-strong); background: var(--hover) }
-input.pct { width: 52px; height: 26px; text-align: right; display: inline-block }
 .panel > table.lines { width: 100%; margin: var(--s3) 0 0 }
 table.lines th, table.lines td { padding: 2px 4px 2px 0; border: 0; background: none }
 table.lines td:first-child { width: 60% }

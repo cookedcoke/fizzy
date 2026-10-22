@@ -18,9 +18,9 @@ import unicodedata
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 import anyio
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
-from . import badges, config, events, logic, rewards
+from . import badges, config, events, logic, rewards, stats
 from .db import audit, now_iso
 from .web import get_conn, staff, templates
 
@@ -264,6 +264,21 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
             _fails[k].remove(now)
     request.session["me"] = {"id": c["id"], "v": _session_marker(c), "at": int(now)}
     return RedirectResponse(_url("/"), status_code=303)
+
+
+@router.get("/me/promos.json")
+def promos(conn=Depends(get_conn)):
+    """What's on, for the main website (cookedcoke.co) to show: live rewards and double points
+    days now or in the next two weeks. Public on purpose - nothing about any student."""
+    t = stats.today()
+    body = {
+        "rewards": [{"name": r["name"], "points": r["points_cost"]} for r in rewards.active(conn)],
+        "double_points": [{"name": e["name"], "multiplier": e["multiplier"], "start": e["start_date"], "end": e["end_date"],
+                           "on_now": e["start_date"] <= t.isoformat() <= e["end_date"]}
+                          for e in list(events.on(conn)) + list(events.upcoming(conn))],
+        "student_site": f"https://{config.PUBLIC_HOST}/" if config.PUBLIC_HOST else None,
+    }
+    return JSONResponse(body, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60"})
 
 
 @router.post("/me/logout")

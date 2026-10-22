@@ -276,17 +276,16 @@ sold, names exactly as in Square (an item sold under a new name shows up blank, 
   revenue that is. Refunds aren't taken off.
 - **Today / Last 7 days / Last 30 days** switch the range. The dashboard shows today's profit.
 
-**Money** (dashboard button, or `G` then `M`) is the admin side:
-- **Add a restock:** day, shop, what it was paid from (cash box, bank, or someone's own
-  money), each item with quantity and the cost for the whole line (24 Coke for $18), and
-  optionally a receipt photo (phones open the camera). The cost of one ($0.75) becomes that
-  item's cost on the Profit page. Use the item names from Square (the box suggests them).
-- **Pay the partners:** the calculator splits the money left (minus anything you keep for
-  stock) evenly between whoever's ticked; **Use these amounts** fills them in. Change any
-  amount before recording - record what was actually paid, from the cash box or the bank.
-- **Where it is:** money in, refunds, card fees, restocks and payouts for the dates you pick,
-  split by cash box and bank. Card money reaches the bank minus Square's fee, estimated at a
-  rate you can set (1.6% to start).
+**Money** (dashboard button, or `G` then `M`) is a record of what was bought and who got
+paid. It doesn't try to track how much money the stall has.
+- **Add a restock:** day, shop, each item with quantity and the cost for the whole line
+  (24 Coke for $18), and optionally a receipt photo (phones open the camera). The cost of one
+  ($0.75) becomes that item's cost on the Profit page. Use the item names from Square (the
+  box suggests them).
+- **Pay the partners:** type how much you're paying out (minus anything you keep for stock)
+  and the calculator splits it evenly between whoever's ticked; **Use these amounts** fills
+  them in. Change any amount before recording - record what was actually paid.
+- The top shows what was spent on stock and paid to each partner over the dates you pick.
 
 Receipt photos are kept in `data/receipts/` and copied into the backup folder with the daily
 backup.

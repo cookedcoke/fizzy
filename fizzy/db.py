@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS restocks (
     id INTEGER PRIMARY KEY,
     day TEXT NOT NULL,               -- local date bought
     shop TEXT,
-    paid_from TEXT NOT NULL,         -- cash | bank | other (see money.SOURCES)
+    paid_from TEXT NOT NULL,         -- unused (kept so existing databases still work)
     note TEXT,
     total_cents INTEGER NOT NULL,
     receipt TEXT,                    -- file name in data/receipts/
@@ -205,7 +205,7 @@ CREATE TABLE IF NOT EXISTS payouts (
     day TEXT NOT NULL,
     partner TEXT NOT NULL,
     amount_cents INTEGER NOT NULL,
-    paid_from TEXT NOT NULL,
+    paid_from TEXT NOT NULL,         -- unused (kept so existing databases still work)
     note TEXT,
     created_by TEXT,
     created_at TEXT NOT NULL
