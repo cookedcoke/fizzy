@@ -39,6 +39,11 @@ their tab?*
    `Enter` gives it to them (or `1`–`6` for an earlier one). Points, tab charges and
    repayments land straight away.
 
+**Even quicker:** if their page is already open when you take the payment, a *New sale* box
+pops up within a few seconds: `Enter` claims it for them, `Esc` if it isn't theirs. (It only
+offers sales from about the time the page was opened, never older ones, and never claims
+anything without a key press.)
+
 Fizzy asks Square for the latest sales when you press `K`, so there's no waiting. If a tab sale
 is more than they're allowed, the claim page says so before you claim it. Forget to claim?
 Nothing breaks: the sale waits on the **Square** page to be assigned later.

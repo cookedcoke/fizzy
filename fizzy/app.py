@@ -497,7 +497,8 @@ def register(app):
         audit_rows = conn.execute(
             "SELECT * FROM audit_log WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100", (cid,)
         ).fetchall()
-        return render(request, "customer.html", s=s, c=c, points=points, payments=payments,
+        watch_since = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat(timespec="seconds")
+        return render(request, "customer.html", s=s, c=c, points=points, payments=payments, watch_since=watch_since,
                       decisions=decisions, audit_rows=audit_rows,
                       offers=rewards.offers_for(conn, cid, s["points"]),
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
@@ -514,6 +515,24 @@ def register(app):
                 note = square.describe_sync(result)
         return render(request, "claim.html", c=c, checkouts=square.unclaimed(conn), note=note, st=logic.tab_status(conn, c),
                       hours=square.CLAIM_HOURS, square_on=bool(config.SQUARE_TOKEN))
+
+    @app.get("/api/customers/{cid}/new-sales")
+    def new_sales(cid: int, since: str = "", who=Depends(staff), conn=Depends(get_conn)):
+        """For the "new sale - claim it?" prompt on a customer's page: unclaimed sales that came in
+        after `since` (when the page was opened, less a little slack), newest first."""
+        c = load_customer(conn, cid)
+        st = logic.tab_status(conn, c)
+        out = []
+        for k in square.unclaimed(conn, limit=3):
+            if since and k["at"] <= since:
+                continue
+            out.append({"key": k["key"], "at": local(k["at"], "%H:%M"),
+                        "items": k["items"] or ("Tab repayment" if k["repay_cents"] else "Sale"),
+                        "paid": money(k["sale_cents"]) if k["sale_cents"] else None,
+                        "tab": money(k["tab_cents"]) if k["tab_cents"] else None,
+                        "repaid": money(k["repay_cents"]) if k["repay_cents"] else None,
+                        "tab_warning": bool(k["tab_cents"]) and (not st["can_charge"] or k["tab_cents"] > st["available_cents"])})
+        return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
     @app.post("/customers/{cid}/claim")
     def claim(request: Request, cid: int, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):

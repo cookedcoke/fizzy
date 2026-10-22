@@ -165,4 +165,18 @@
     </form>
   </details>
 </div>
+{% if not c.archived_at %}
+{# Pops up when a sale with no customer comes in while this page is open (see app.js). #}
+<form class="claim-prompt" id="claim-prompt" method="post" action="/customers/{{ c.id }}/claim" hidden
+      data-watch="/api/customers/{{ c.id }}/new-sales" data-since="{{ watch_since }}" data-cid="{{ c.id }}" role="alertdialog" aria-live="assertive"
+      aria-label="New sale with no customer">
+  <input type="hidden" name="key">
+  <div class="cp-head"><b>New sale</b> <span class="cp-at"></span><span class="cp-more"></span></div>
+  <div class="cp-items"></div>
+  <div class="cp-amts"></div>
+  <div class="cp-warn red small" hidden>{{ c.name.split(' ')[0] }} can't put this on a tab - it'll be flagged.</div>
+  <div class="cp-actions"><button class="primary" type="submit">Claim for {{ c.name.split(' ')[0] }} <kbd>Enter</kbd></button>
+    <button type="button" class="cp-no">Not theirs <kbd>Esc</kbd></button></div>
+</form>
+{% endif %}
 {% endblock %}

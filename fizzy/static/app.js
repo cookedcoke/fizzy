@@ -169,6 +169,50 @@
     if (el) { e.preventDefault(); trigger(el); }
   });
 
+  // ---- "new sale - claim it?" (customer page) ------------------------------------------------
+  // While a customer's page is open, a sale rung up in Square with no customer pops up here
+  // within a few seconds. Enter claims it for this customer (the button has focus, unless
+  // you're typing somewhere); Esc dismisses it. Nothing is claimed without a keypress.
+  var cp = $("#claim-prompt");
+  if (cp) {
+    var seenKey = "fizzy-dismissed-" + cp.dataset.cid, shownKey = null;
+    var dismissed = function () { try { return JSON.parse(sessionStorage.getItem(seenKey) || "[]"); } catch (e) { return []; } };
+    var dismiss = function (key) {
+      try { var d = dismissed(); d.push(key); sessionStorage.setItem(seenKey, JSON.stringify(d.slice(-50))); } catch (e) { /* private mode */ }
+      cp.hidden = true; shownKey = null;
+    };
+    var showSale = function (sales) {
+      var skip = dismissed(), fresh = sales.filter(function (s) { return skip.indexOf(s.key) < 0; });
+      if (!fresh.length) { cp.hidden = true; shownKey = null; return; }
+      var s = fresh[0];
+      if (s.key === shownKey) return;
+      shownKey = s.key;
+      cp.elements.key.value = s.key;
+      $(".cp-at", cp).textContent = s.at;
+      $(".cp-more", cp).textContent = fresh.length > 1 ? " · " + (fresh.length - 1) + " more (K to see all)" : "";
+      $(".cp-items", cp).textContent = s.items;
+      $(".cp-amts", cp).innerHTML = [s.paid && esc(s.paid) + " <small>paid</small>", s.tab && '<span class="tab">' + esc(s.tab) + " <small>on tab</small></span>",
+                                     s.repaid && '<span class="repay">' + esc(s.repaid) + " <small>repaid</small></span>"].filter(Boolean).join(" · ");
+      $(".cp-warn", cp).hidden = !s.tab_warning;
+      cp.hidden = false;
+      cp.classList.remove("pop"); void cp.offsetWidth; cp.classList.add("pop");
+      if (!typing()) $("button[type=submit]", cp).focus();
+    };
+    var poll = function () {
+      if (document.visibilityState !== "visible") return;
+      fetch(cp.dataset.watch + "?since=" + encodeURIComponent(cp.dataset.since), { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : null; }).then(function (s) { if (s) showSale(s); }).catch(function () {});
+    };
+    $(".cp-no", cp).addEventListener("click", function () { dismiss(cp.elements.key.value); });
+    addEventListener("keydown", function (e) {
+      if (cp.hidden || e.key !== "Escape") return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      dismiss(cp.elements.key.value);
+    }, true);
+    poll();
+    setInterval(poll, 3000);
+  }
+
   // ---- clock (desktop header) -------------------------------------------------------------
   var clock = $("[data-clock]");
   if (clock) {

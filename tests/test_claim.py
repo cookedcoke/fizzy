@@ -86,3 +86,35 @@ def test_claim_page_warns_when_the_tab_isnt_allowed(client):
     finally:
         conn.close()
     assert "t put this on a tab" in client.get("/customers/1/claim").text
+
+
+def test_new_sales_feed_for_the_prompt(client):
+    from datetime import datetime, timedelta, timezone
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Nora Le Fevre", "email": "rns5@reddamnorthshore.nsw.edu.au"})
+    page = client.get("/customers/1").text
+    assert 'id="claim-prompt"' in page and "Claim for Nora" in page
+    from fizzy import db
+    conn = db.connect()
+    try:
+        old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(timespec="seconds")
+        square.process_payment(conn, pay("old", 200, cust=None, ts=old), None)       # before the page opened
+        square.process_payment(conn, pay("p1", 650, cust=None, order_id="o1"), order(("Coke", 350), ("Chips", 300), oid="o1"))
+        square.process_order(conn, tab_order("o2", 300, ("Chips", 300), cust=None))
+        conn.commit()
+    finally:
+        conn.close()
+    since = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat(timespec="seconds")
+    sales = client.get(f"/api/customers/1/new-sales?since={since}").json()
+    assert len(sales) == 2                                                   # the old one isn't offered
+    tab = next(s for s in sales if s["tab"])
+    assert tab["tab"] == "$3.00" and tab["tab_warning"] is True               # Nora isn't approved for a tab
+    plain = next(s for s in sales if s["paid"])
+    assert plain["paid"] == "$6.50" and "Coke" in plain["items"] and plain["tab_warning"] is False
+
+
+def test_prompt_is_in_the_page_body_not_the_title(client):
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Nora Le Fevre", "email": "rns5@reddamnorthshore.nsw.edu.au"})
+    page = client.get("/customers/1").text
+    assert page.index('id="claim-prompt"') > page.index("<body")

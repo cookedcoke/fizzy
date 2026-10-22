@@ -352,3 +352,18 @@ table.lines input { height: 32px }
 .payrow { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s2) }
 .payrow .check { flex: 1; margin: 0 }
 .payrow input[type=text] { width: 120px; text-align: right }
+/* "New sale - claim it?" on a customer page */
+.claim-prompt { position: fixed; right: var(--s5); bottom: var(--s5); z-index: 30; width: 360px; background: var(--surface);
+  border: 1px solid var(--line-strong); border-left: 4px solid var(--ink); border-radius: var(--r); padding: var(--s4);
+  box-shadow: 0 18px 40px -18px rgba(0,0,0,.45) }
+.claim-prompt[hidden] { display: none }
+.claim-prompt.pop { animation: cp-in .25s cubic-bezier(.2,.8,.2,1) }
+@keyframes cp-in { from { transform: translateY(12px); opacity: 0 } }
+.cp-head { font-size: 15px } .cp-head .cp-at, .cp-head .cp-more { color: var(--muted); font-size: 13px }
+.cp-items { margin-top: 4px; font-weight: 600 }
+.cp-amts { margin-top: 2px; font-weight: 650 } .cp-amts small { color: var(--muted); font-weight: 400 }
+.cp-amts .tab { color: var(--warn) } .cp-amts .repay { color: var(--ok) }
+.cp-warn { margin-top: 6px }
+.cp-actions { display: flex; gap: var(--s2); margin-top: var(--s3) }
+@media (max-width: 720px) { .claim-prompt { left: var(--s3); right: var(--s3); bottom: var(--s3); width: auto } }
+@media (prefers-reduced-motion: reduce) { .claim-prompt.pop { animation: none } }
