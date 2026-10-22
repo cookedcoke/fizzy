@@ -12,6 +12,9 @@
   <div class="stat {{ 'alert' if pr.uncosted }}"><div class="k">No cost set</div><div class="v">{{ pr.uncosted }}</div>
     <div class="sub">{{ pr.uncosted_revenue|money }} of sales not counted</div></div>
 </div>
+{% set need = pr['items']|selectattr('cost_each', 'none')|list + idle|selectattr('cost_each', 'none')|list %}
+{% if need %}<div class="todo" style="margin-bottom:var(--s4)"><b>{{ need|length }} item{{ '' if need|length == 1 else 's' }} need{{ 's' if need|length == 1 }} a cost.</b>
+  <span>They're highlighted below{% if pr.uncosted_revenue %} - {{ pr.uncosted_revenue|money }} of sales isn't in the profit yet{% endif %}.</span></div>{% endif %}
 {% if catalog_error %}<div class="err">Square's item list: {{ catalog_error }} Until then, items show up here once they've sold.</div>{% endif %}
 <form class="panel" method="post" action="/profit"><h2>Items <span class="count">{{ pr['items']|length + idle|length }}</span></h2>
   {% if pr['items'] or idle %}<div class="scroll"><table>

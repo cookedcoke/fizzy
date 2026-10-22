@@ -3,6 +3,8 @@
 <datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>
 <div class="pagehead"><div><h1>Square</h1><div class="meta">Last sync {{ last_sync|local or 'never' }}</div></div>
   <form method="post" action="/square/sync"><button class="primary" {{ 'disabled' if not square_on }} data-key="u" data-key-label="Sync now">Sync now <kbd>U</kbd></button></form></div>
+{% if unclaimed and show != 'unlinked' %}<div class="todo" style="margin-bottom:var(--s4)"><b>{{ unclaimed }} sale{{ '' if unclaimed == 1 else 's' }} this week with nobody on {{ 'it' if unclaimed == 1 else 'them' }}.</b>
+  <span>No points or tab until someone's assigned - <a href="/square?show=unlinked">see them</a>.</span></div>{% endif %}
 {% if sync_error %}<div class="err">Last sync error: {{ sync_error }}</div>{% endif %}
 <div class="stats">
   <div class="stat"><div class="k">Connection</div><div class="v sm">{{ 'Connected' if square_on else 'Not set up' }}</div><div class="sub">{{ 'Webhooks + polling' if webhook_on else 'Polling every 5 min' }}</div></div>

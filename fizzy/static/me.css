@@ -167,3 +167,9 @@ main { max-width: 560px; margin: 0 auto; padding: 8px 18px 48px }
   .rk.r2 { background: #4a4f57; color: #f7efe6 } .rk.r3 { background: #7a4a26; color: #fff3e6 }
   .badge.got { background: linear-gradient(160deg, var(--card) 55%, var(--sun-wash)) }
 }
+.card-bad { box-shadow: inset 4px 0 0 var(--red), var(--shadow) }
+details.more { margin-top: 10px }
+details.more > summary { cursor: pointer; color: var(--red-deep); font-weight: 650; font-size: 14px; list-style: none; padding: 4px 0 }
+details.more > summary::-webkit-details-marker { display: none }
+details.more[open] > summary { margin-bottom: 8px }
+.section small.red { color: var(--red-deep); font-weight: 700 }

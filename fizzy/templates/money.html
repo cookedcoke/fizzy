@@ -16,7 +16,8 @@
 
 <div class="cols forms-first">
 <div class="col" style="flex-grow:2">
-  <div class="panel"><h2>Restocks <span class="count">{{ restocks|length }}</span></h2>
+  {% if not restocks and not payouts %}<p class="empty panel">No restocks or payouts in these dates.</p>{% endif %}
+  {% if restocks %}<div class="panel"><h2>Restocks <span class="count">{{ restocks|length }}</span></h2>
     {% if restocks %}<div class="scroll"><table>
       <tr><th>Day</th><th>Shop</th><th>Items</th><th class="n">Total</th><th></th></tr>
       {% for r in restocks %}<tr>
@@ -25,17 +26,17 @@
         <td class="n">{{ r.total_cents|money }}</td>
         <td class="n">{% if r.receipt %}<a class="btn sm" href="/money/receipts/{{ r.receipt }}" target="_blank" rel="noopener">Receipt</a>{% endif %}
           <form class="inline" method="post" action="/money/restock/{{ r.id }}/delete"><button class="sm danger" data-confirm="Delete this restock ({{ r.total_cents|money }})?">Delete</button></form></td></tr>{% endfor %}
-    </table></div>{% else %}<p class="empty">No restocks in these dates.</p>{% endif %}
-  </div>
+    </table></div>{% endif %}
+  </div>{% endif %}
 
-  <div class="panel"><h2>Payouts <span class="count">{{ payouts|length }}</span></h2>
+  {% if payouts %}<div class="panel"><h2>Payouts <span class="count">{{ payouts|length }}</span></h2>
     {% if payouts %}<div class="scroll"><table>
       <tr><th>Day</th><th>Who</th><th>Note</th><th class="n">Amount</th><th></th></tr>
       {% for p in payouts %}<tr><td>{{ p.day|ymd('%a %-d %b') }}</td><td>{{ p.partner }}</td>
         <td class="small">{{ p.note or '' }}</td><td class="n">{{ p.amount_cents|money }}</td>
         <td class="n"><form class="inline" method="post" action="/money/payout/{{ p.id }}/delete"><button class="sm danger" data-confirm="Delete {{ p.partner }}'s {{ p.amount_cents|money }} payout?">Delete</button></form></td></tr>{% endfor %}
-    </table></div>{% else %}<p class="empty">No payouts in these dates.</p>{% endif %}
-  </div>
+    </table></div>{% endif %}
+  </div>{% endif %}
 </div>
 
 <div class="col">

@@ -669,6 +669,7 @@ def register(app):
             webhook_on=bool(config.SQUARE_WEBHOOK_KEY), people=people,
             item_errors=json.loads(db.get_setting(conn, "square_item_errors") or "[]"),
             conflicts=json.loads(db.get_setting(conn, "square_customer_conflicts") or "[]"),
+            unclaimed=len(square.unclaimed(conn, hours=24 * 7, limit=1000)),
         )
 
     @app.get("/square/payments/{pid}", response_class=PlainTextResponse)
