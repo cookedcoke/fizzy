@@ -376,6 +376,12 @@ removing it signs them out everywhere.
 
 Before signing in, anyone can see the list of rewards that are on, and nothing else.
 
+**The main website.** The student site's host also serves `/promos.json`: the live rewards and
+any double points days on now or in the next two weeks (names, points and dates only, nothing
+about any student). cookedcoke.co reads it and shows a *What's on* strip under its header, so
+starting a reward or scheduling double points in Fizzy updates the website by itself. Add
+`?promos=demo` to the website's address to preview the strip.
+
 **Setting it up:**
 1. Cloudflare → your tunnel → add a public hostname, e.g. `my.cookedcoke.co` →
    `http://fizzy:8000`. Don't put Cloudflare Access in front of it.
