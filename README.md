@@ -2,7 +2,7 @@
 
 Customer directory, points and pay-later tabs for **Cooked Coke Co.**, the student food and
 drink stall at Reddam House North Shore. Staff use it at **fizzy.cookedcoke.co**; students can
-check their own points, rewards and tab on a separate, read-only [student site](#6-student-site).
+check their own points, rewards and tab on a separate, read-only [student site](#7-student-site).
 It runs on a home PC through a Cloudflare Tunnel (no open ports at home).
 
 Square stays the till. Fizzy reads Square's sales, gives points, keeps track of who owes
@@ -15,16 +15,17 @@ their tab?*
 2. [Rules](#2-rules)
 3. [How Square and Fizzy fit together](#3-how-square-and-fizzy-fit-together)
 4. [Pages](#4-pages)
-5. [Rewards (points shop)](#5-rewards-points-shop)
-6. [Student site](#6-student-site)
-7. [Tools](#7-tools)
-8. [Search and keyboard shortcuts](#8-search-and-keyboard-shortcuts)
-9. [Setting up](#9-setting-up)
-10. [Running it](#10-running-it)
-11. [Configuration reference](#11-configuration-reference)
-12. [Data and privacy](#12-data-and-privacy)
-13. [Troubleshooting](#13-troubleshooting)
-14. [Development](#14-development)
+5. [Profit](#5-profit)
+6. [Rewards (points shop)](#6-rewards-points-shop)
+7. [Student site](#7-student-site)
+8. [Tools](#8-tools)
+9. [Search and keyboard shortcuts](#9-search-and-keyboard-shortcuts)
+10. [Setting up](#10-setting-up)
+11. [Running it](#11-running-it)
+12. [Configuration reference](#12-configuration-reference)
+13. [Data and privacy](#13-data-and-privacy)
+14. [Troubleshooting](#14-troubleshooting)
+15. [Development](#15-development)
 
 ---
 
@@ -262,7 +263,20 @@ The desktop header also shows the time (and the date on wider screens).
 
 ---
 
-## 5. Rewards (points shop)
+## 5. Profit
+
+**Profit** (dashboard button, or `G` then `P`) needs no Square Retail Plus: type what one of
+each item costs you in the table and press **Save costs**. Fizzy lists every item that's been
+sold, names exactly as in Square (an item sold under a new name shows up blank, in yellow).
+
+- **Revenue** is what each item sold for after discounts like rewards, but before the Fizzy
+  Tab discount, since that money comes in later as repayments.
+- **Profit** = revenue minus cost; **margin** = profit as a % of revenue (under 20% shows red).
+- Items without a cost are listed but left out of the totals, and the page says how much
+  revenue that is. Refunds aren't taken off.
+- **Today / Last 7 days / Last 30 days** switch the range. The dashboard shows today's profit.
+
+## 6. Rewards (points shop)
 
 Run a reward whenever you like, e.g. **Free Coke for 1000 points**, or **$2 off for 500**. It
 stays live until you end it.
@@ -295,7 +309,15 @@ refuses a reward whose instructions mention it.
 many people) is kept. Redeeming doesn't count as spending, so it doesn't affect the $30 tab
 threshold. 1 point = 1 cent spent, so 1000 points = $10 spent.
 
-## 6. Student site
+**Double points days.** On the Rewards page, *Schedule double points*: a name, a multiplier
+(2 = double), and the first and last day (today or later). During those days every purchase
+earns the extra points by itself, within a minute; something bought on the tab gets its bonus
+when it's paid off, even weeks later, and a refund takes the bonus back. Students see it
+coming on the student site, and the dashboard shows it while it's on. **Delete** removes one
+that hasn't started; **End** finishes one early (it ends after today; bonus earned stays). For
+past days, use Tools → *Bonus points for a period*.
+
+## 7. Student site
 
 Students can check their own **points, rewards, tab and recent activity**, plus a
 **leaderboard**, on their phone. It has its own, more playful look (cream, brand red, the
@@ -326,6 +348,12 @@ removing it signs them out everywhere.
 - points, and every live reward: ready now (*ask at the stall*) or how many points to go;
 - their tab: what they can put on it, what they owe and when it's due, or how much more to
   spend to unlock one;
+- a **streak**: how many days in a row the stall was open and they bought something (weekends,
+  holidays and closed lunches don't break it, and today isn't over until it's over);
+- **badges**, e.g. *First sip*, *Regular* (10 days), *On a roll* (5-day streak), *Explorer*
+  (5 different things), *Good for it* (a tab paid on time), *Double trouble* (bought on a
+  double points day), with progress bars for the ones still to get;
+- any double points day that's on now or coming up;
 - recent activity in plain words (staff notes and names are never shown);
 - **Leaderboard**, this month and all time, ranked by points *earned* (redeeming rewards
   doesn't drop you down). Only students with a passcode are on it - getting one is opting
@@ -344,7 +372,7 @@ keep the student site behind the tunnel. That host only serves the student pages
 isn't affected by the device lock. Without `FIZZY_PUBLIC_HOST`, the student pages are at
 `/me` on the staff site (handy for trying it out, but behind the device lock if that's on).
 
-## 7. Tools
+## 8. Tools
 
 **Tools** in the top bar holds the occasional jobs. Hover or tap **i** to see what a tool
 does, and click its name to open it. Tools in red change a lot at once or can't be undone,
@@ -382,7 +410,7 @@ says who you might mean, so a typo can't hit the wrong student.
 
 ---
 
-## 8. Search and keyboard shortcuts
+## 9. Search and keyboard shortcuts
 
 ### Search
 
@@ -437,27 +465,27 @@ you out of the box first. The key boxes are hidden on phones.
 
 ---
 
-## 9. Setting up
+## 10. Setting up
 
 Do these once, in order.
 
-### 9.1 Fizzy itself
+### 10.1 Fizzy itself
 
-See [Running it](#10-running-it). You'll need a `.env` file. Copy `.env.example` and fill in
+See [Running it](#11-running-it). You'll need a `.env` file. Copy `.env.example` and fill in
 at least `FIZZY_PASSWORD` and `FIZZY_SECRET_KEY`:
 
 ```sh
 python -c "import secrets; print(secrets.token_urlsafe(48))"   # makes a secret key
 ```
 
-### 9.2 Import the school list
+### 10.2 Import the school list
 
 **Import** page (or `python -m fizzy import directory.csv`). The CSV needs a name column
 (`Cleaned Name` or `Name`) and `Email`. Only those two are stored; every other column is
 ignored. Emails must look like `rns<digits>@reddamnorthshore.nsw.edu.au`. Re-importing a
 newer list adds new students and updates changed names, and never deletes anyone.
 
-### 9.3 Put everyone into Square
+### 10.3 Put everyone into Square
 
 1. **Customers → Square import CSV: new only** downloads everyone who isn't linked to a
    Square profile yet, in Square's customer-import format. The first time, that's everyone.
@@ -472,7 +500,7 @@ imports, or people imported but not yet linked will be in the next file too. **E
 exports the whole list; importing it again would give Square a second copy of everyone, so
 only use it for the very first import.
 
-### 9.4 Square: the discount, the item, and payment types
+### 10.4 Square: the discount, the item, and payment types
 
 In the Square Dashboard → Items:
 
@@ -487,7 +515,7 @@ Square app → Settings → Checkout → Payment types:
 - **Other Payment Types**: not used by Fizzy. A sale paid with Other counts as a normal sale.
 - **House Account**: leave disabled ([why](#why-not-square-house-accounts)).
 
-### 9.5 Square API access
+### 10.5 Square API access
 
 [Square Developer Dashboard](https://developer.squareup.com/apps) → create an application →
 **Production**:
@@ -504,7 +532,7 @@ Fizzy never writes to Square.
 `SQUARE_SYNC_FROM=YYYY-MM-DD` sets how far back the **first** sync reaches. Use it to give
 points for sales made before Fizzy existed; otherwise it starts from the day before.
 
-### 9.6 Test before going live
+### 10.6 Test before going live
 
 Test this once on the real Terminal, with a real customer attached each time. After each step, open Fizzy's **Square** page and
 press **Sync now**.
@@ -528,7 +556,7 @@ subscribed. Polling catches it within 5 minutes regardless.
 
 ---
 
-## 10. Running it
+## 11. Running it
 
 ### Docker on the home PC (recommended)
 
@@ -557,7 +585,7 @@ never needs a manual database step.
 1. Cloudflare Zero Trust → Networks → Tunnels → **Create a tunnel** (cloudflared). Copy the
    token into `CLOUDFLARE_TUNNEL_TOKEN`.
 2. Add a public hostname: `fizzy.cookedcoke.co` → service `http://fizzy:8000`. For the
-   [student site](#6-student-site), add a second one (e.g. `my.cookedcoke.co`) to the same
+   [student site](#7-student-site), add a second one (e.g. `my.cookedcoke.co`) to the same
    service.
 3. Optional: a Cloudflare WAF rate-limit rule on `/login`. Fizzy limits wrong passwords
    itself:
@@ -637,6 +665,10 @@ thing with **registered devices**:
   `data/fizzy.db`, delete `data/fizzy.db-wal` and `data/fizzy.db-shm` if they exist, then
   start it again.
 
+- **Health:** the dashboard shows when the last backup ran, and turns red if backups are off,
+  the last one failed (e.g. the SSD is unplugged or full; Fizzy retries hourly), the file is
+  missing, or there hasn't been one for over a day.
+
 Backups contain students' names and emails. Keep them somewhere private.
 
 ### Without Docker (Linux, systemd)
@@ -672,7 +704,7 @@ docker compose exec -u fizzy fizzy python -m fizzy backup /backups
 
 ---
 
-## 11. Configuration reference
+## 12. Configuration reference
 
 All configuration is environment variables, in `.env`. Never commit `.env`. A setting left
 blank (`KEY=`) counts as not set and uses its default.
@@ -709,7 +741,7 @@ The tab limit, days to pay and spend threshold live in the database and are chan
 
 ---
 
-## 12. Data and privacy
+## 13. Data and privacy
 
 Most customers are under 18, so Fizzy keeps the minimum:
 
@@ -731,7 +763,7 @@ Most customers are under 18, so Fizzy keeps the minimum:
 
 ---
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 | Problem | Check |
 |---|---|
@@ -740,7 +772,7 @@ Most customers are under 18, so Fizzy keeps the minimum:
 | A sale didn't give points | The customer probably wasn't attached on the Terminal. **Square** page → *Only unlinked* → **Assign to…** |
 | A tab sale isn't on their tab | No customer attached: it's under **Needs attention**, so assign it there. No discount: see [Fixing a mistake](#fixing-a-mistake) |
 | A repayment didn't clear the tab | No customer attached: assign it under **Needs attention**. Otherwise the item must be called exactly **Tab repayment** |
-| A customer shows "Not in Square yet" | Import the Square CSV (8.3), then sync. Or paste their Square customer ID into **Edit customer** |
+| A customer shows "Not in Square yet" | Import the Square CSV, *new only* (10.3), then sync. Or paste their Square customer ID into **Edit customer** |
 | Webhooks not arriving | `SQUARE_WEBHOOK_URL` must match Square's subscription URL exactly; no Cloudflare Access on `/square/webhook`. Polling still catches everything within 5 minutes |
 | Can't log in after an update | Check `FIZZY_SECURE_COOKIES=1` and that you're using `https://` |
 | Counter device keeps getting sent to `fizzy-remote` | Its registration was lost (browser data cleared, different browser) or removed. Register it again |
@@ -750,7 +782,7 @@ Most customers are under 18, so Fizzy keeps the minimum:
 
 ---
 
-## 14. Development
+## 15. Development
 
 ```sh
 pip install -r requirements.txt pytest

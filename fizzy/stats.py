@@ -51,8 +51,31 @@ def line_items(order):
             qty = int(float(li.get("quantity") or 1))
         except ValueError:
             qty = 1
-        out.append({"qty": qty, "name": name, "cents": (li.get("total_money") or {}).get("amount", 0)})
+        out.append({"qty": qty, "name": name, "cents": _line_revenue(order, li)})
     return out
+
+
+def _amt(obj, key):
+    return ((obj or {}).get(key) or {}).get("amount", 0) or 0
+
+
+def _line_revenue(order, li):
+    """What a line sold for: before the Fizzy Tab discount (that money comes later, as a
+    repayment) but after any other discount, e.g. a reward."""
+    if not li.get("gross_sales_money"):
+        return _amt(li, "total_money")
+    discounts = {d.get("uid"): d for d in order.get("discounts", []) or []}
+    applied = li.get("applied_discounts") or []
+    if applied:
+        other = sum(_amt(a, "applied_money") for a in applied
+                    if not square_is_tab(discounts.get(a.get("discount_uid"), {}).get("name")))
+    else:  # no per-discount detail: count it all as the tab's if the order used the tab discount
+        other = 0 if any(square_is_tab(d.get("name")) for d in discounts.values()) else _amt(li, "total_discount_money")
+    return _amt(li, "gross_sales_money") - other
+
+
+def square_is_tab(name):
+    return bool(config.SQUARE_TAB_DISCOUNT) and config.SQUARE_TAB_DISCOUNT.lower() in (name or "").lower()
 
 
 def checkouts(conn, start, end):
@@ -148,7 +171,7 @@ def dashboard(conn):
     _, week_end = day_bounds(d)
     week_checkouts = checkouts(conn, week_start, week_end)
     return {
-        "today": t,
+        "today": t, "profit": profit(t["checkouts"], costs(conn)),
         "vs_last_week_cents": sum(c["sold_cents"] for c in lw_so_far),
         "hours": hours_today, "hour_max": max([h["cents"] for h in hours_today] + [h["last_week"] for h in hours_today] + [1]),
         "week": week, "week_max": max([w["sold_cents"] for w in week] + [1]),
@@ -156,3 +179,55 @@ def dashboard(conn):
         "top_today": top_items(t["checkouts"]), "top_week": top_items(week_checkouts),
         "recent": [c for c in reversed(t["checkouts"]) if c["items"] or c["sold_cents"] or c["repay_cents"]][:6],
     }
+
+
+# ---- profit -----------------------------------------------------------------------------------
+# Square's item costs need Retail Plus, so Fizzy keeps its own: what one of each item costs us.
+
+def item_key(name):
+    return " ".join((name or "").lower().split())
+
+
+def costs(conn):
+    return {r["name_key"]: r["cost_cents"] for r in conn.execute("SELECT * FROM item_costs")}
+
+
+def set_cost(conn, name, cost_cents, staff):
+    from .db import now_iso
+    key = item_key(name)
+    if cost_cents is None:
+        conn.execute("DELETE FROM item_costs WHERE name_key = ?", (key,))
+    else:
+        conn.execute("INSERT INTO item_costs(name_key, name, cost_cents, updated_by, updated_at) VALUES (?, ?, ?, ?, ?) "
+                     "ON CONFLICT(name_key) DO UPDATE SET name = excluded.name, cost_cents = excluded.cost_cents, "
+                     "updated_by = excluded.updated_by, updated_at = excluded.updated_at",
+                     (key, name, cost_cents, staff, now_iso()))
+
+
+def profit(checkouts_, cost_map):
+    """Per item and in total: sold, revenue, cost and profit. Items without a cost are listed but
+    left out of the profit totals (and counted, so the page can say what's missing)."""
+    items = {}
+    for c in checkouts_:
+        for it in c["items"]:
+            row = items.setdefault(item_key(it["name"]), {"name": it["name"], "qty": 0, "revenue": 0})
+            row["qty"] += it["qty"]
+            row["revenue"] += it["cents"]
+    rev = cost = 0
+    missing = 0
+    for k, row in items.items():
+        each = cost_map.get(k)
+        row["cost_each"] = each
+        if each is None:
+            row["cost"] = row["profit"] = row["margin"] = None
+            missing += row["revenue"]
+            continue
+        row["cost"] = each * row["qty"]
+        row["profit"] = row["revenue"] - row["cost"]
+        row["margin"] = round(100 * row["profit"] / row["revenue"]) if row["revenue"] else None
+        rev += row["revenue"]
+        cost += row["cost"]
+    rows = sorted(items.values(), key=lambda r: (r["profit"] is None, -(r["profit"] or 0), -r["revenue"]))
+    return {"items": rows, "revenue": rev, "cost": cost, "profit": rev - cost,
+            "margin": round(100 * (rev - cost) / rev) if rev else None,
+            "uncosted_revenue": missing, "uncosted": sum(1 for r in rows if r["cost_each"] is None)}

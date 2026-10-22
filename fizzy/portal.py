@@ -20,7 +20,7 @@ import anyio
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi.responses import RedirectResponse
 
-from . import config, logic, rewards
+from . import badges, config, events, logic, rewards
 from .db import audit, now_iso
 from .web import get_conn, staff, templates
 
@@ -214,12 +214,14 @@ templates.env.globals["me_url"] = _url
 def home(request: Request, conn=Depends(get_conn)):
     c = current(request, conn)
     if c is None:
-        return _page(request, "me_login.html", error=None, who="", live=rewards.active(conn))
+        return _page(request, "me_login.html", error=None, who="", live=rewards.active(conn),
+                     events_on=events.on(conn), events_soon=events.upcoming(conn))
     s = logic.customer_summary(conn, c)
     month, month_me = leaderboard(conn, since=month_start(), me=c["id"])
     alltime, alltime_me = leaderboard(conn, me=c["id"])
     return _page(request, "me.html", c=c, s=s, offers=rewards.offers_for(conn, c["id"], s["points"]),
-                 activity=activity(conn, c["id"]), boards=[("This month", month, month_me), ("All time", alltime, alltime_me)])
+                 activity=activity(conn, c["id"]), boards=[("This month", month, month_me), ("All time", alltime, alltime_me)],
+                 me=badges.for_customer(conn, c["id"]), events_on=events.on(conn), events_soon=events.upcoming(conn))
 
 
 @router.post("/me/login")
@@ -231,13 +233,13 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
     # same account, so they share one allowance).
     buckets = _buckets(request, who) + [(("acct", c["id"]), LIMIT_PER_NAME) for c in found]
     if any(len(_recent(k, now)) >= limit for k, limit in buckets if k[0] != "acct"):
-        return _page(request, "me_login.html", who=who, live=rewards.active(conn),
+        return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
                      error="Too many tries. Wait 15 minutes and try again.")
     # A locked *account* gets the ordinary "don't match" answer (even for the right passcode).
     # Saying "too many tries" would tell anyone which name goes with which student number.
     acct_locked = any(len(_recent(k, now)) >= limit for k, limit in buckets if k[0] == "acct")
     if _in_flight >= MAX_IN_FLIGHT:
-        return _page(request, "me_login.html", who=who, live=rewards.active(conn),
+        return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
                      error="Lots of people are signing in right now. Try again in a moment.")
     # Count the attempt before checking it, so a burst of parallel guesses can't all get past
     # the limits before the first one fails. Taken back off if it turns out to be right.
@@ -255,7 +257,7 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
         _in_flight -= 1
     if c is None:
         await asyncio.sleep(FAIL_DELAY)
-        return _page(request, "me_login.html", who=who, live=rewards.active(conn),
+        return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
                      error="That name and passcode don't match. No passcode yet? Ask at the Cooked Coke stall.")
     for k, _ in buckets:
         if k[0] != "ip" and now in _fails.get(k, []):
@@ -285,6 +287,8 @@ def activity(conn, customer_id, limit=15):
         what = REASONS.get(p["reason"], "Adjustment")
         if p["reason"] in ("redeem", "redeem_undo") and p["note"]:
             what = p["note"]                       # "Redeemed: Free Coke" - written by Fizzy, not staff
+        elif p["reason"] == "bonus" and p["event_id"] and p["note"]:
+            what = f"Bonus: {p['note']}"           # the double points day's public name
         rows.append({"at": p["created_at"], "what": what, "points": p["delta"], "money": None})
     for t in conn.execute("SELECT charged_at, amount_cents FROM tab_charges WHERE customer_id = ? "
                           "ORDER BY charged_at DESC LIMIT ?", (customer_id, limit)):

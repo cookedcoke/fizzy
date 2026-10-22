@@ -104,7 +104,8 @@ CREATE TABLE IF NOT EXISTS points_ledger (
     square_payment_id TEXT,
     repayment_id INTEGER,
     staff TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    event_id INTEGER                 -- bonus from a scheduled double-points day (points_events)
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -160,6 +161,24 @@ CREATE TABLE IF NOT EXISTS redemptions (
     undone_by TEXT
 );
 
+CREATE TABLE IF NOT EXISTS item_costs (
+    name_key TEXT PRIMARY KEY,       -- lower-case item name as Square sends it
+    name TEXT NOT NULL,
+    cost_cents INTEGER NOT NULL,     -- what one costs us, for profit margins
+    updated_by TEXT,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS points_events (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,              -- e.g. "Double points Friday"
+    multiplier REAL NOT NULL,        -- 2 = double points
+    start_date TEXT NOT NULL,        -- local dates, inclusive
+    end_date TEXT NOT NULL,
+    created_by TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);
@@ -198,6 +217,7 @@ MIGRATIONS = [
     ("customers", "merged_into", "INTEGER REFERENCES customers(id)"),
     ("customers", "passcode_enc", "TEXT"),
     ("customers", "passcode_set_at", "TEXT"),
+    ("points_ledger", "event_id", "INTEGER"),
 ]
 
 

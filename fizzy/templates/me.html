@@ -8,10 +8,18 @@
 <main>
   <h1 class="hello">Hey <span>{{ c.name.split(' ')[0] }}</span> 👋</h1>
 
+  {% include "_me_events.html" %}
   <div class="points">
     <div class="k">Your points</div>
     <div class="v">{{ '{:,}'.format(s.points) }}</div>
     <div class="sub">1 point for every cent you spend at the stall.</div>
+  </div>
+
+  <div class="streak {{ 'hot' if me.streak }}">
+    <div class="flame" aria-hidden="true">{{ '🔥' if me.streak else '🧊' }}</div>
+    <div><b>{% if me.streak %}{{ me.streak }}-day streak{% else %}No streak yet{% endif %}</b>
+      <span>{% if me.today %}Bought today - nice.{% elif me.streak %}Grab something today to keep it going.{% else %}Buy something on days the stall's open to start one.{% endif %}
+        {% if me.best > me.streak %} Best: {{ me.best }}.{% endif %}</span></div>
   </div>
 
   {% if offers %}
@@ -71,6 +79,15 @@
       {% else %}<p class="empty">No points yet{{ ' this month' if title == 'This month' }}.</p>{% endif %}
     </div>
     {% endfor %}
+  </div>
+
+  <h2 class="section">Badges <small>{{ me.earned }} of {{ me.badges|length }}</small></h2>
+  <div class="badges">
+    {% for b in me.badges %}<div class="badge {{ 'got' if b.earned }}" title="{{ b.how }}">
+      <div class="ico" aria-hidden="true">{{ b.icon }}</div>
+      <b>{{ b.name }}</b><span>{{ b.how }}</span>
+      {% if not b.earned and b.count %}<div class="bar"><i style="width:{{ b.progress }}%"></i></div><small>{{ b.count }}</small>{% endif %}
+    </div>{% endfor %}
   </div>
 
   <h2 class="section">Recent activity</h2>

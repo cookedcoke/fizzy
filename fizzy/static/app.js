@@ -116,7 +116,7 @@
 
   // ---- shortcuts ----------------------------------------------------------------------------
   var GO = { d: ["/", "Dashboard"], c: ["/customers", "Customers"], s: ["/square", "Square"], t: ["/tools", "Tools"], r: ["/rewards", "Rewards"],
-             i: ["/import", "Import"], l: ["/audit", "Log"], ",": ["/settings", "Settings"] };
+             i: ["/import", "Import"], l: ["/audit", "Log"], ",": ["/settings", "Settings"], p: ["/profit", "Profit"] };
   var pendingG = 0;
 
   function trigger(el) {

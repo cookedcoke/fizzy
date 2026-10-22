@@ -5,6 +5,7 @@ import secrets
 from html import escape
 import json
 import logging
+import os
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -17,7 +18,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import config, customers, db, devices, logic, portal, rewards, square, stats, tools
+from . import config, customers, db, devices, events, logic, portal, rewards, square, stats, tools
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff
 
 log = logging.getLogger("fizzy")
@@ -49,13 +50,26 @@ def _poller():
             due = not last or datetime.now(timezone.utc) - logic.parse_ts(last) >= timedelta(seconds=config.SQUARE_POLL_SECONDS)
             if config.SQUARE_TOKEN and due:
                 square.sync(conn)
+            if events.reconcile(conn):
+                conn.commit()
             if config.BACKUP_DIR:
                 last_b = db.get_setting(conn, "last_backup")
-                if not last_b or datetime.now(timezone.utc) - logic.parse_ts(last_b) >= timedelta(hours=24):
-                    path = db.backup(conn, config.BACKUP_DIR, config.BACKUP_KEEP)
-                    db.set_setting(conn, "last_backup", db.now_iso())
-                    db.set_setting(conn, "last_backup_path", path)
-                    conn.commit()
+                tried = db.get_setting(conn, "backup_last_attempt")
+                due = not last_b or datetime.now(timezone.utc) - logic.parse_ts(last_b) >= timedelta(hours=24)
+                retry_ok = not tried or datetime.now(timezone.utc) - logic.parse_ts(tried) >= timedelta(hours=1)
+                if due and retry_ok:
+                    try:
+                        path = db.backup(conn, config.BACKUP_DIR, config.BACKUP_KEEP)
+                    except Exception as e:  # e.g. the backup drive is unplugged or full
+                        log.exception("backup failed")
+                        db.set_setting(conn, "backup_error", f"{db.now_iso()}: {e}")
+                        db.set_setting(conn, "backup_last_attempt", db.now_iso())
+                        conn.commit()
+                    else:
+                        db.set_setting(conn, "last_backup", db.now_iso())
+                        db.set_setting(conn, "last_backup_path", path)
+                        db.set_setting(conn, "backup_error", "")
+                        conn.commit()
         except Exception:
             log.exception("background job failed")
         finally:
@@ -164,7 +178,25 @@ def create_app(background=True):
     app.include_router(tools.router)
     app.include_router(rewards.router)
     app.include_router(portal.router)
+    app.include_router(events.router)
     return app
+
+
+def backup_health(conn):
+    """For the dashboard: is the daily backup actually happening? Returns (ok, text)."""
+    if not config.BACKUP_DIR:
+        return False, "Backups are off - set FIZZY_BACKUP_DIR (Docker sets it for you)."
+    last, path, err = (db.get_setting(conn, k) for k in ("last_backup", "last_backup_path", "backup_error"))
+    if err:
+        return False, f"Last backup failed: {err.split(': ', 1)[-1]}. Check the backup drive."
+    if not last:
+        return False, "No backup yet - the first one runs within a minute of starting."
+    age = datetime.now(timezone.utc) - logic.parse_ts(last)
+    if path and not os.path.exists(path):
+        return False, "The latest backup file is missing. Check the backup drive."
+    if age > timedelta(hours=26):
+        return False, f"No backup for {age.days} day(s)." if age.days else f"No backup for {int(age.total_seconds() // 3600)} hours."
+    return True, local(last)
 
 
 # ---- auth -------------------------------------------------------------------------------------
@@ -316,8 +348,52 @@ def register(app):
             tabs_paused=cfg["tabs_paused"],
             people=conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
             if unlinked_tabs else [],
-            live_rewards=rewards.active(conn), sales=stats.dashboard(conn),
+            live_rewards=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn, 7),
+            sales=stats.dashboard(conn), backup=backup_health(conn),
         )
+
+    PROFIT_RANGES = {"today": ("Today", 0), "7": ("Last 7 days", 6), "30": ("Last 30 days", 29)}
+
+    @app.get("/profit", response_class=HTMLResponse)
+    def profit_page(request: Request, range: str = "7", who=Depends(staff), conn=Depends(get_conn)):
+        label, back_days = PROFIT_RANGES.get(range, PROFIT_RANGES["7"])
+        d = stats.today()
+        start, _ = stats.day_bounds(d - timedelta(days=back_days))
+        _, end = stats.day_bounds(d)
+        p = stats.profit(stats.checkouts(conn, start, end), stats.costs(conn))
+        # Items with a cost but no sales in this range still show, so their cost can be edited.
+        sold = {stats.item_key(r["name"]) for r in p["items"]}
+        idle = [r for r in conn.execute("SELECT * FROM item_costs ORDER BY name") if r["name_key"] not in sold]
+        return render(request, "profit.html", pr=p, idle=idle, range=range if range in PROFIT_RANGES else "7",
+                      ranges=PROFIT_RANGES, label=label)
+
+    @app.post("/profit")
+    async def profit_save(request: Request, who=Depends(staff)):
+        form = await request.form()
+        names, values = form.getlist("name"), form.getlist("cost")
+        conn = db.connect()
+        try:
+            changed = 0
+            have = stats.costs(conn)
+            for name, value in zip(names, values):
+                value = value.strip().replace("$", "")
+                cents_v = None
+                if value:
+                    try:
+                        cents_v = round(float(value) * 100)
+                    except ValueError:
+                        return back(request, request.headers.get("referer") or "/profit", f"'{value}' isn't a dollar amount ({name}).")
+                    if cents_v < 0:
+                        return back(request, request.headers.get("referer") or "/profit", f"A cost can't be negative ({name}).")
+                if have.get(stats.item_key(name)) != cents_v:
+                    stats.set_cost(conn, name, cents_v, who)
+                    changed += 1
+            if changed:
+                db.audit(conn, who, "item_costs", None, f"{changed} item cost(s) changed")
+            conn.commit()
+        finally:
+            conn.close()
+        return back(request, request.headers.get("referer") or "/profit", f"Saved {changed} cost(s)." if changed else "No changes.")
 
     @app.post("/breach/{charge_id}/ack")
     def ack_breach(request: Request, charge_id: int, who=Depends(staff), conn=Depends(get_conn)):

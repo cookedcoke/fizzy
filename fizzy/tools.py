@@ -268,21 +268,6 @@ def h_bulk_points(request, conn, who, form):
     return done(request, "bulk_points", msg)
 
 
-def _purchases_in(conn, start, end):
-    """Points-earning spend per customer for purchases made between start and end. Tab purchases
-    count by when they were bought (not repaid), for the part that has been repaid so far."""
-    totals = {r["customer_id"]: r["pts"] for r in conn.execute(
-        "SELECT customer_id, SUM(delta) AS pts FROM points_ledger WHERE reason IN ('purchase', 'refund') "
-        "AND created_at >= ? AND created_at < ? GROUP BY customer_id", (start, end))}
-    for (cid,) in conn.execute("SELECT DISTINCT customer_id FROM tab_charges WHERE charged_at >= ? AND charged_at < ?",
-                               (start, end)).fetchall():
-        by_money = logic.paid_by_money(conn, cid)  # written-off purchases earn nothing, bonus included
-        paid = sum(by_money.get(r["id"], 0) for r in conn.execute(
-            "SELECT id FROM tab_charges WHERE customer_id = ? AND charged_at >= ? AND charged_at < ?", (cid, start, end)))
-        totals[cid] = totals.get(cid, 0) + paid
-    return totals
-
-
 def h_bonus_points(request, conn, who, form):
     try:
         mult = float(form.get("multiplier") or 0)
@@ -293,7 +278,7 @@ def h_bonus_points(request, conn, who, form):
     start, end = day_start(form.get("start")), day_start(form.get("end"), end=True)
     note = f"x{mult:g} bonus {form['start']} to {form['end']}" + (f" - {form['note'].strip()}" if form.get("note", "").strip() else "")
     total = given = 0
-    for cid, pts in _purchases_in(conn, start, end).items():
+    for cid, pts in logic.purchases_in(conn, start, end).items():
         extra = round(pts * (mult - 1))
         if extra <= 0:
             continue

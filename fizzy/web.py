@@ -1,5 +1,6 @@
 """Shared web helpers: templates, auth dependency, form parsing."""
 import hashlib
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException, Request
@@ -36,6 +37,7 @@ def local(ts, fmt="%a %d %b %H:%M"):
 
 templates.env.filters["money"] = money
 templates.env.filters["local"] = local
+templates.env.filters["ymd"] = lambda d, fmt="%a %d %b": datetime.strptime(d, "%Y-%m-%d").strftime(fmt) if d else ""
 templates.env.globals["STATUS_LABELS"] = logic.STATUS_LABELS
 templates.env.globals["TZ"] = config.TZ.key
 

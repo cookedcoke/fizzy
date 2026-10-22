@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% block title %}Profit{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Profit</h1>
+  <div class="meta">Type what one of each item costs you; Fizzy does the rest. Square's own item costs need Retail Plus - these don't.</div></div>
+  <div class="actions" style="margin:0">{% for k, (l, _) in ranges.items() %}<a class="btn {{ 'primary' if k == range }}" href="/profit?range={{ k }}">{{ l }}</a>{% endfor %}</div>
+</div>
+<div class="stats">
+  <div class="stat"><div class="k">Revenue</div><div class="v">{{ pr.revenue|money }}</div><div class="sub">{{ label|lower }}, items with a cost</div></div>
+  <div class="stat"><div class="k">Cost of goods</div><div class="v">{{ pr.cost|money }}</div></div>
+  <div class="stat"><div class="k">Profit</div><div class="v">{{ pr.profit|money }}</div></div>
+  <div class="stat"><div class="k">Margin</div><div class="v">{{ '%d%%'|format(pr.margin) if pr.margin is not none else '-' }}</div></div>
+  <div class="stat {{ 'alert' if pr.uncosted }}"><div class="k">No cost set</div><div class="v">{{ pr.uncosted }}</div>
+    <div class="sub">{{ pr.uncosted_revenue|money }} of sales not counted</div></div>
+</div>
+<form class="panel" method="post" action="/profit"><h2>Items <span class="count">{{ pr['items']|length + idle|length }}</span></h2>
+  {% if pr['items'] or idle %}<div class="scroll"><table>
+    <tr><th>Item</th><th class="n">Sold</th><th class="n">Revenue</th><th class="n" style="width:130px">Cost each ($)</th><th class="n">Profit</th><th class="n">Margin</th></tr>
+    {% for r in pr['items'] %}<tr>
+      <td>{{ r.name }}<input type="hidden" name="name" value="{{ r.name }}"></td><td class="n">{{ r.qty }}</td><td class="n">{{ r.revenue|money }}</td>
+      <td class="n"><input class="cost {{ 'missing' if r.cost_each is none }}" type="text" name="cost" inputmode="decimal" placeholder="e.g. 1.20"
+        value="{{ '%.2f'|format(r.cost_each / 100) if r.cost_each is not none else '' }}" aria-label="Cost of one {{ r.name }}"></td>
+      <td class="n">{{ r.profit|money if r.profit is not none else '' }}</td>
+      <td class="n">{% if r.margin is not none %}<span class="{{ 'red' if r.margin < 20 }}">{{ r.margin }}%</span>{% endif %}</td></tr>{% endfor %}
+    {% for r in idle %}<tr class="muted">
+      <td>{{ r.name }} <span class="small">· none sold</span><input type="hidden" name="name" value="{{ r.name }}"></td><td class="n">0</td><td></td>
+      <td class="n"><input class="cost" type="text" name="cost" inputmode="decimal" value="{{ '%.2f'|format(r.cost_cents / 100) }}" aria-label="Cost of one {{ r.name }}"></td><td></td><td></td></tr>{% endfor %}
+  </table></div>
+  <div class="actions"><button class="primary">Save costs <kbd>Ctrl</kbd> <kbd>Enter</kbd></button>
+    <span class="hint" style="margin:0;align-self:center">Leave a cost blank to remove it. Margins under 20% show in red.</span></div>
+  {% else %}<p class="empty">No items sold {{ label|lower }} yet.</p>{% endif %}
+</form>
+<p class="hint">Revenue is what each item sold for after discounts like rewards, but before the Fizzy Tab discount (tab money comes in later, as repayments). Refunds aren't taken off here. Prices include GST if you charge it.</p>
+{% endblock %}

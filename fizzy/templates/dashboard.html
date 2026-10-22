@@ -7,19 +7,29 @@
 {% if tabs_paused %}<div class="err">All tabs are paused. <a href="/tools#pause_tabs">Turn back on</a></div>{% endif %}
 {% if not square_on %}<div class="err">Square isn't connected - set <code>SQUARE_ACCESS_TOKEN</code>. Points and tabs won't update on their own until it is.</div>
 {% elif sync_error %}<div class="err">Last Square sync failed: {{ sync_error }}</div>{% endif %}
+{% if not backup[0] %}<div class="err">{{ backup[1] }}</div>{% endif %}
 
+{% if events_on or events_soon %}<div class="flash" style="border-left-color:var(--ok)">
+  {% for e in events_on %}<b>{{ e.name }} (×{{ '%g'|format(e.multiplier) }}) is on today</b>{{ ' · ' if not loop.last }}{% endfor %}
+  {% if events_on and events_soon %} · {% endif %}
+  {% if events_soon %}Coming up: {% for e in events_soon %}{{ e.name }} {{ e.start_date|ymd('%a %-d %b') }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}
+  · <a href="/rewards#events">Manage</a></div>{% endif %}
 {% if live_rewards %}<div class="flash" style="border-left-color:var(--ok)">Rewards on:
   {% for r in live_rewards %}<b>{{ r.name }}</b> ({{ '{:,}'.format(r.points_cost) }} pts){{ ', ' if not loop.last }}{% endfor %}
   · <a href="/rewards">Manage</a></div>{% endif %}
 {% set t = sales.today %}<span hidden data-autorefresh="60"></span>
 <div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }} · updates by itself while this page is open</div></div>
-  <a class="btn" href="/tools#takings" title="Takings report for any dates">Takings report</a></div>
+  <div class="actions" style="margin:0"><a class="btn" href="/profit" title="Profit and item costs - G then P">Profit</a>
+    <a class="btn" href="/tools#takings" title="Takings report for any dates">Takings report</a></div></div>
 <div class="stats">
   <div class="stat"><div class="k">Sold</div><div class="v">{{ t.sold_cents|money }}</div>
     {% set lw = sales.vs_last_week_cents %}<div class="sub">{% if lw %}{% set pct = ((t.sold_cents - lw) * 100 / lw)|round|int %}{{ '▲' if pct >= 0 else '▼' }} {{ pct|abs }}% vs last {{ t.day.strftime('%A') }} by now{% else %}Nothing last {{ t.day.strftime('%A') }} by now{% endif %}</div></div>
   <div class="stat"><div class="k">Taken</div><div class="v">{{ t.taken_cents|money }}</div><div class="sub">money in, after refunds</div></div>
   <div class="stat"><div class="k">Orders</div><div class="v">{{ t.orders }}</div><div class="sub">{{ t.avg_cents|money }} average</div></div>
   <div class="stat"><div class="k">Customers</div><div class="v">{{ t.customers }}</div><div class="sub">+ {{ t.walkups }} with no customer</div></div>
+  {% set pr = sales.profit %}<div class="stat"><div class="k">Profit</div>
+    {% if pr.revenue %}<div class="v">{{ pr.profit|money }}</div><div class="sub">{{ pr.margin }}% margin{% if pr.uncosted %} · <a href="/profit?range=today">{{ pr.uncosted }} item{{ '' if pr.uncosted == 1 else 's' }} without a cost</a>{% endif %}</div>
+    {% else %}<div class="v sm"><a href="/profit">Set item costs</a></div><div class="sub">to see profit</div>{% endif %}</div>
   <div class="stat"><div class="k">Put on tabs</div><div class="v">{{ t.tab_cents|money }}</div><div class="sub">{{ t.repaid_cents|money }} repaid today</div></div>
 </div>
 
@@ -69,6 +79,8 @@
   <div class="stat"><div class="k">Due in 2 days</div><div class="v">{{ due_soon|length }}</div><div class="sub">charge{{ '' if due_soon|length == 1 else 's' }}</div></div>
   <div class="stat"><div class="k">Awaiting approval</div><div class="v">{{ eligible|length }}</div><div class="sub">eligible for a tab</div></div>
   <div class="stat"><div class="k">Square sync</div><div class="v sm">{{ last_sync|local or 'Never' }}</div></div>
+  <div class="stat {{ 'alert' if not backup[0] }}"><div class="k">Last backup</div><div class="v sm">{{ backup[1] if backup[0] else 'Problem' }}</div>
+    {% if not backup[0] %}<div class="sub red">{{ backup[1] }}</div>{% endif %}</div>
 </div>
 
 {% if breaches or unlinked_tabs %}

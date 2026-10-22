@@ -376,3 +376,18 @@ def customer_summary(conn, customer, cfg=None):
         "status": tab_status(conn, customer, ledger, cfg),
         "points": points_balance(conn, customer["id"]),
     }
+
+
+def purchases_in(conn, start, end):
+    """Points-earning spend per customer for purchases made between start and end. Tab purchases
+    count by when they were bought (not repaid), for the part that has been repaid so far."""
+    totals = {r["customer_id"]: r["pts"] for r in conn.execute(
+        "SELECT customer_id, SUM(delta) AS pts FROM points_ledger WHERE reason IN ('purchase', 'refund') "
+        "AND created_at >= ? AND created_at < ? GROUP BY customer_id", (start, end))}
+    for (cid,) in conn.execute("SELECT DISTINCT customer_id FROM tab_charges WHERE charged_at >= ? AND charged_at < ?",
+                               (start, end)).fetchall():
+        by_money = paid_by_money(conn, cid)  # written-off purchases earn nothing, bonus included
+        paid = sum(by_money.get(r["id"], 0) for r in conn.execute(
+            "SELECT id FROM tab_charges WHERE customer_id = ? AND charged_at >= ? AND charged_at < ?", (cid, start, end)))
+        totals[cid] = totals.get(cid, 0) + paid
+    return totals

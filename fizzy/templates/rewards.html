@@ -18,6 +18,18 @@
           <button class="sm danger" data-confirm="End “{{ r.name }}”? It stops showing on customer pages.">End</button></form></td></tr>{% endfor %}
     </table></div>{% else %}<p class="empty">No rewards running. Start one on the right.</p>{% endif %}
   </div>
+  <div class="panel" id="events"><h2>Double points days <span class="count">{{ events|length }}</span></h2>
+    {% if events %}<div class="scroll"><table>
+      <tr><th>Event</th><th>When</th><th class="n">Bonus given</th><th></th></tr>
+      {% for e in events %}{% set state = 'on' if e.start_date <= today <= e.end_date else ('soon' if e.start_date > today else 'past') %}<tr>
+        <td><b>{{ e.name }}</b> <span class="muted">· ×{{ '%g'|format(e.multiplier) }}</span>
+          {% if state == 'on' %} <span class="tag approved">On now</span>{% elif state == 'soon' %} <span class="tag eligible">Coming up</span>{% endif %}</td>
+        <td class="small">{{ e.start_date|ymd('%a %-d %b') }}{% if e.end_date != e.start_date %} to {{ e.end_date|ymd('%a %-d %b') }}{% endif %}</td>
+        <td class="n">{{ '{:,}'.format(e.given) }}{% if e.people %}<br><span class="muted small">{{ e.people }} {{ 'person' if e.people == 1 else 'people' }}</span>{% endif %}</td>
+        <td class="n">{% if state != 'past' %}<form class="inline" method="post" action="/events/{{ e.id }}/cancel">
+          <button class="sm danger" data-confirm="{{ 'Delete' if state == 'soon' else 'End' }} “{{ e.name }}”?{{ '' if state == 'soon' else ' It ends after today; bonus already earned stays.' }}">{{ 'Delete' if state == 'soon' else 'End' }}</button></form>{% endif %}</td></tr>{% endfor %}
+    </table></div>{% else %}<p class="empty">None scheduled. Set one up on the right.</p>{% endif %}
+  </div>
   {% if ended %}
   <div class="panel"><h2>Ended</h2><div class="scroll"><table>
     <tr><th>Reward</th><th class="n">Points</th><th>Ran</th><th class="n">Redeemed</th></tr>
@@ -35,6 +47,15 @@
     <div class="actions"><button class="primary">Start</button></div>
     <p class="hint">For each reward, make a matching discount in Square (Items → Discounts), e.g. “Points: Free Coke” at 100% on the item,
       or “Points: $2 off” as a fixed amount. Don't use the Fizzy Tab discount. 1 point = 1 cent spent, so 1000 points = $10 spent.</p>
+  </form>
+  <form class="panel" method="post" action="/events"><h2>Schedule double points</h2>
+    <label>Name<input type="text" name="name" value="Double points" required></label>
+    <div class="row"><div><label for="ev-mult">Multiplier</label><input id="ev-mult" type="number" name="multiplier" value="2" min="1.1" max="5" step="0.1"></div>
+      <div><label for="ev-start">First day</label><input id="ev-start" type="date" name="start" value="{{ today }}" min="{{ today }}" required></div>
+      <div><label for="ev-end">Last day</label><input id="ev-end" type="date" name="end" min="{{ today }}" placeholder="Same day"></div></div>
+    <div class="actions"><button class="primary">Schedule</button></div>
+    <p class="hint">Purchases on those days earn the extra points automatically, within a minute. Something bought on the tab gets its bonus when it's paid off.
+      Students see it coming on the student site. Leave Last day blank for a single day.</p>
   </form>
 </div>
 </div>

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from . import config, logic
+from .stats import today
 from .db import audit, now_iso
 from .web import back, get_conn, render, staff
 
@@ -158,8 +159,12 @@ def rewards_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         "SELECT r.*, (SELECT COUNT(*) FROM redemptions d WHERE d.reward_id = r.id AND d.undone_at IS NULL) AS used, "
         "(SELECT COUNT(DISTINCT customer_id) FROM redemptions d WHERE d.reward_id = r.id AND d.undone_at IS NULL) AS people "
         "FROM rewards r ORDER BY r.ended_at IS NOT NULL, r.created_at DESC").fetchall()
+    events = conn.execute(
+        "SELECT e.*, (SELECT COALESCE(SUM(delta), 0) FROM points_ledger p WHERE p.event_id = e.id) AS given, "
+        "(SELECT COUNT(DISTINCT customer_id) FROM points_ledger p WHERE p.event_id = e.id AND p.delta > 0) AS people "
+        "FROM points_events e ORDER BY e.start_date DESC, e.id DESC LIMIT 30").fetchall()
     return render(request, "rewards.html", live=[r for r in rows if not r["ended_at"]],
-                  ended=[r for r in rows if r["ended_at"]][:30])
+                  ended=[r for r in rows if r["ended_at"]][:30], events=events, today=today().isoformat())
 
 
 @router.post("/rewards")

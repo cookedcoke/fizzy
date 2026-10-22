@@ -4,6 +4,7 @@
   <img class="logo" src="/static/logo.svg?v={{ V }}" alt="">
   <h1>My Cooked Coke</h1>
   <p class="lede">Your points, rewards and tab.</p>
+  {% include "_me_events.html" %}
   <form class="card" method="post" action="{{ me_url('/login') }}">
     {% if error %}<div class="oops" role="alert">{{ error }}</div>{% endif %}
     <label for="who">Your name or student number</label>
