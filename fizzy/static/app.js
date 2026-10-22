@@ -169,6 +169,34 @@
     if (el) { e.preventDefault(); trigger(el); }
   });
 
+  // ---- clock (desktop header) -------------------------------------------------------------
+  var clock = $("[data-clock]");
+  if (clock) {
+    var fmtTime = new Intl.DateTimeFormat("en-AU", { timeZone: clock.dataset.tz, hour: "numeric", minute: "2-digit" });
+    var fmtDay = new Intl.DateTimeFormat("en-AU", { timeZone: clock.dataset.tz, weekday: "short", day: "numeric", month: "short" });
+    var tick = function () {
+      var now = new Date();
+      clock.innerHTML = '<span class="d">' + esc(fmtDay.format(now)) + "</span>" + esc(fmtTime.format(now).replace(" ", "").toLowerCase());
+    };
+    tick();
+    setInterval(tick, 1000);
+  }
+
+  // ---- pages that refresh themselves (dashboard) -----------------------------------------
+  // Reloads after the given seconds with nobody touching anything, so the numbers stay current
+  // on a screen left open - but never while someone is typing or has a dialog open.
+  var auto = $("[data-autorefresh]");
+  if (auto) {
+    var idle = Number(auto.dataset.autorefresh) * 1000, last = Date.now();
+    ["keydown", "pointerdown", "pointermove", "input", "scroll", "wheel"].forEach(function (ev) {
+      addEventListener(ev, function () { last = Date.now(); }, { passive: true, capture: true });
+    });
+    setInterval(function () {
+      if (Date.now() - last < idle || typing() || document.visibilityState !== "visible" || $("dialog[open]")) return;
+      location.reload();
+    }, 5000);
+  }
+
   // Hover tips naming the shortcut for anything that has one (visible chips are in the templates).
   $$("[data-key]").forEach(function (el) {
     var key = el.dataset.key.toUpperCase(), what = el.dataset.keyLabel || el.textContent.trim();

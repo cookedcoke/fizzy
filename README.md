@@ -240,15 +240,25 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 
 | Page | What's on it |
 |---|---|
-| **Dashboard** | Search; noticeboard; warnings (Square not connected, tabs paused); totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers; people waiting for tab approval |
+| **Dashboard** | Search; noticeboard; warnings (Square not connected, tabs paused). **Today's sales:** sold, taken, orders and average, customers, put on tabs and repaid; sold by hour against the same day last week; the last 7 school days; top items; latest sales. It refreshes itself every minute while nobody's touching it. **Tabs:** totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers; people waiting for tab approval |
 | **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend (with a progress bar to $30); record repayment; approve / reject / revoke; adjust points; tab charges with due dates and status; repayments; points history; Square payments; decision history; activity log; edit (name, Square ID, archive) |
 | **Customers** | Search with a results table; download the Square import CSV |
+| **Claim sale** (`K` on a customer) | The latest Square sales with no customer; `Enter` gives the newest to this customer |
 | **Rewards** | Start and end reward events; see how many were redeemed |
 | **Square** | Connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer |
 | **Tools** | Occasional jobs (next section) |
 | **Import** | Upload the school CSV: preview, then confirm |
 | **Settings** | Tab limit, days to pay, spend threshold; backups (back up now, download a copy) |
 | **Log** | Every action by every staff member, newest first; export to CSV |
+
+**The sales numbers**, all worked out from what Square sync has stored:
+- **Sold:** the value of goods sold, including what went on tabs.
+- **Taken:** money actually received - Square sales and tab repayments, plus repayments
+  recorded by hand, minus refunds. A tab sale adds nothing until it's paid off.
+- **Orders:** checkouts with something sold (a repayment on its own isn't an order).
+- **vs last week:** compared with the same weekday last week, up to the same time of day.
+
+The desktop header also shows the time (and the date on wider screens).
 
 ---
 

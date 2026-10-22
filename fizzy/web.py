@@ -37,6 +37,7 @@ def local(ts, fmt="%a %d %b %H:%M"):
 templates.env.filters["money"] = money
 templates.env.filters["local"] = local
 templates.env.globals["STATUS_LABELS"] = logic.STATUS_LABELS
+templates.env.globals["TZ"] = config.TZ.key
 
 
 class LoginRequired(Exception):

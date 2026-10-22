@@ -11,6 +11,58 @@
 {% if live_rewards %}<div class="flash" style="border-left-color:var(--ok)">Rewards on:
   {% for r in live_rewards %}<b>{{ r.name }}</b> ({{ '{:,}'.format(r.points_cost) }} pts){{ ', ' if not loop.last }}{% endfor %}
   · <a href="/rewards">Manage</a></div>{% endif %}
+{% set t = sales.today %}<span hidden data-autorefresh="60"></span>
+<div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }} · updates by itself while this page is open</div></div>
+  <a class="btn" href="/tools#takings" title="Takings report for any dates">Takings report</a></div>
+<div class="stats">
+  <div class="stat"><div class="k">Sold</div><div class="v">{{ t.sold_cents|money }}</div>
+    {% set lw = sales.vs_last_week_cents %}<div class="sub">{% if lw %}{% set pct = ((t.sold_cents - lw) * 100 / lw)|round|int %}{{ '▲' if pct >= 0 else '▼' }} {{ pct|abs }}% vs last {{ t.day.strftime('%A') }} by now{% else %}Nothing last {{ t.day.strftime('%A') }} by now{% endif %}</div></div>
+  <div class="stat"><div class="k">Taken</div><div class="v">{{ t.taken_cents|money }}</div><div class="sub">money in, after refunds</div></div>
+  <div class="stat"><div class="k">Orders</div><div class="v">{{ t.orders }}</div><div class="sub">{{ t.avg_cents|money }} average</div></div>
+  <div class="stat"><div class="k">Customers</div><div class="v">{{ t.customers }}</div><div class="sub">+ {{ t.walkups }} with no customer</div></div>
+  <div class="stat"><div class="k">Put on tabs</div><div class="v">{{ t.tab_cents|money }}</div><div class="sub">{{ t.repaid_cents|money }} repaid today</div></div>
+</div>
+
+<div class="cols">
+<div class="col" style="flex-grow:2">
+  <div class="panel"><h2>Sold by hour</h2>
+    <div class="legend"><span><i class="sw now"></i>Today</span><span><i class="sw then"></i>Last {{ t.day.strftime('%A') }}</span></div>
+    <div class="bars hours" role="img" aria-label="Sold by hour today compared with last week">
+      {% for h in sales.hours %}<div class="bar" title="{{ '%d:00'|format(h.hour) }} - today {{ h.cents|money }}, last week {{ h.last_week|money }}">
+        <div class="pair"><i class="then" style="height:{{ (100 * h.last_week / sales.hour_max)|round(1) }}%"></i><i class="now" style="height:{{ (100 * h.cents / sales.hour_max)|round(1) }}%"></i></div>
+        <span class="lbl">{{ (h.hour - 1) % 12 + 1 }}{{ 'am' if h.hour < 12 else 'pm' }}</span></div>{% endfor %}
+    </div>
+  </div>
+  <div class="panel"><h2>Last 7 school days <span class="count">{{ sales.week_sold_cents|money }} sold · {{ sales.week_orders }} orders</span></h2>
+    <div class="bars week" role="img" aria-label="Sold per day, last 7 days">
+      {% for w in sales.week %}<div class="bar {{ 'today' if loop.last }}" title="{{ w.day.strftime('%a %-d %b') }} - sold {{ w.sold_cents|money }}, taken {{ w.taken_cents|money }}, {{ w.orders }} orders">
+        <span class="val">{{ w.sold_cents|money if w.sold_cents else '' }}</span>
+        <div class="pair"><i class="now" style="height:{{ (100 * w.sold_cents / sales.week_max)|round(1) }}%"></i></div>
+        <span class="lbl">{{ 'Today' if loop.last else w.day.strftime('%a %-d') }}</span></div>{% endfor %}
+    </div>
+  </div>
+</div>
+<div class="col">
+  <div class="panel"><h2>Top items</h2>
+    <div class="scroll"><table>
+      <tr><th>Today</th><th class="n">Sold</th></tr>
+      {% for it in sales.top_today %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet today.</td></tr>{% endfor %}
+      <tr><th>Last 7 school days</th><th class="n">Sold</th></tr>
+      {% for it in sales.top_week %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet.</td></tr>{% endfor %}
+    </table></div>
+  </div>
+  <div class="panel"><h2>Latest sales</h2>
+    {% if sales.recent %}<div class="scroll"><table>
+      {% for c in sales.recent %}<tr><td class="muted">{{ c.at|local('%H:%M') }}</td>
+        <td>{% if c.customer_id %}<a href="/customers/{{ c.customer_id }}">{{ c.customer }}</a>{% else %}<span class="muted">No customer</span>{% endif %}
+          <br><span class="small muted">{% for it in c['items'] %}{{ it.qty }}× {{ it.name }}{{ ', ' if not loop.last }}{% else %}Tab repayment{% endfor %}</span></td>
+        <td class="n">{{ (c.sold_cents or c.repay_cents)|money }}{% if c.tab_cents %}<br><span class="small" style="color:var(--warn)">tab</span>{% elif not c.sold_cents %}<br><span class="small" style="color:var(--ok)">repaid</span>{% endif %}</td></tr>{% endfor %}
+    </table></div>{% else %}<p class="empty">No sales yet today.</p>{% endif %}
+  </div>
+</div>
+</div>
+
+<h2 class="section-h">Tabs</h2>
 <div class="stats">
   <div class="stat"><div class="k">Total owed</div><div class="v">{{ total_owed|money }}</div></div>
   <div class="stat {{ 'alert' if total_overdue }}"><div class="k">Overdue</div><div class="v">{{ total_overdue|money }}</div><div class="sub">{{ overdue|length }} charge{{ '' if overdue|length == 1 else 's' }}</div></div>

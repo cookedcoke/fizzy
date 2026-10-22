@@ -17,7 +17,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import config, customers, db, devices, logic, portal, rewards, square, tools
+from . import config, customers, db, devices, logic, portal, rewards, square, stats, tools
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff
 
 log = logging.getLogger("fizzy")
@@ -316,7 +316,7 @@ def register(app):
             tabs_paused=cfg["tabs_paused"],
             people=conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
             if unlinked_tabs else [],
-            live_rewards=rewards.active(conn),
+            live_rewards=rewards.active(conn), sales=stats.dashboard(conn),
         )
 
     @app.post("/breach/{charge_id}/ack")
