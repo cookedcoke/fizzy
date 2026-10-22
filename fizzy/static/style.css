@@ -339,3 +339,17 @@ header nav.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparen
 @media (max-width: 1400px) { .hsearch { flex-basis: 180px } }
 input.cost { width: 110px; height: 30px; text-align: right; font-variant-numeric: tabular-nums }
 input.cost.missing { border-color: #EBD08A; background: var(--warn-wash) }
+/* Money page */
+.period input[type=date] { width: auto; height: 34px }
+tr.total td { border-top: 1px solid var(--line-strong); background: var(--hover) }
+input.pct { width: 52px; height: 26px; text-align: right; display: inline-block }
+.panel > table.lines { width: 100%; margin: var(--s3) 0 0 }
+table.lines th, table.lines td { padding: 2px 4px 2px 0; border: 0; background: none }
+table.lines td:first-child { width: 60% }
+table.lines input { height: 32px }
+.calc { background: var(--hover); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3) }
+.calc .row { margin-top: 0 }
+.split { display: flex; flex-wrap: wrap; gap: var(--s3); margin: var(--s3) 0; font-size: 15px }
+.payrow { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s2) }
+.payrow .check { flex: 1; margin: 0 }
+.payrow input[type=text] { width: 120px; text-align: right }

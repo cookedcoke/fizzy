@@ -19,7 +19,8 @@
   · <a href="/rewards">Manage</a></div>{% endif %}
 {% set t = sales.today %}<span hidden data-autorefresh="60"></span>
 <div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }} · updates by itself while this page is open</div></div>
-  <div class="actions" style="margin:0"><a class="btn" href="/profit" title="Profit and item costs - G then P">Profit</a>
+  <div class="actions" style="margin:0"><a class="btn" href="/money" title="Restocks, payouts, cash and bank - G then M">Money</a>
+    <a class="btn" href="/profit" title="Profit and item costs - G then P">Profit</a>
     <a class="btn" href="/tools#takings" title="Takings report for any dates">Takings report</a></div></div>
 <div class="stats">
   <div class="stat"><div class="k">Sold</div><div class="v">{{ t.sold_cents|money }}</div>

@@ -3,6 +3,7 @@
 Money is always integer cents. Times are UTC ISO-8601 strings.
 """
 import os
+import shutil
 import sqlite3
 from datetime import datetime, timezone
 
@@ -179,6 +180,37 @@ CREATE TABLE IF NOT EXISTS points_events (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS restocks (
+    id INTEGER PRIMARY KEY,
+    day TEXT NOT NULL,               -- local date bought
+    shop TEXT,
+    paid_from TEXT NOT NULL,         -- cash | bank | other (see money.SOURCES)
+    note TEXT,
+    total_cents INTEGER NOT NULL,
+    receipt TEXT,                    -- file name in data/receipts/
+    created_by TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS restock_items (
+    id INTEGER PRIMARY KEY,
+    restock_id INTEGER NOT NULL REFERENCES restocks(id),
+    name TEXT NOT NULL,
+    qty INTEGER NOT NULL,
+    cost_cents INTEGER NOT NULL      -- for the whole line, e.g. 24 cans for 1800
+);
+
+CREATE TABLE IF NOT EXISTS payouts (
+    id INTEGER PRIMARY KEY,
+    day TEXT NOT NULL,
+    partner TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    paid_from TEXT NOT NULL,
+    note TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);
@@ -263,4 +295,12 @@ def backup(conn, dest_dir, keep=30):
     files = sorted(f for f in os.listdir(dest_dir) if f.startswith("fizzy-") and f.endswith(".db"))
     for old in files[:-keep] if keep > 0 else []:
         os.remove(os.path.join(dest_dir, old))
+    # Receipt photos (Money page) live next to the database: copy any new ones across too.
+    receipts = os.path.join(os.path.dirname(os.path.abspath(config.DB_PATH)), "receipts")
+    if os.path.isdir(receipts):
+        out = os.path.join(dest_dir, "receipts")
+        os.makedirs(out, exist_ok=True)
+        for f in os.listdir(receipts):
+            if not os.path.exists(os.path.join(out, f)):
+                shutil.copy2(os.path.join(receipts, f), os.path.join(out, f))
     return dest_path

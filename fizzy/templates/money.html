@@ -1,0 +1,143 @@
+{% extends "base.html" %}{% block title %}Money{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Money</h1>
+  <div class="meta">{{ start.strftime('%-d %b %Y') }} to {{ end.strftime('%-d %b %Y') }} · restocks, payouts, and where the money is</div></div>
+  <form class="actions period" method="get" action="/money" style="margin:0">
+    {% for label, (s, e) in quick.items() %}<a class="btn {{ 'primary' if s == start and e == end }}" href="/money?start={{ s }}&end={{ e }}">{{ label }}</a>{% endfor %}
+    <input type="date" name="start" value="{{ start }}" aria-label="From"><input type="date" name="end" value="{{ end }}" aria-label="To">
+    <button>Show</button></form>
+</div>
+
+{% set t = pic.total %}
+<div class="stats">
+  <div class="stat"><div class="k">Money in</div><div class="v">{{ (t['in'] - t.refunds)|money }}</div><div class="sub">sales &amp; tab repayments, after refunds</div></div>
+  <div class="stat"><div class="k">Card fees</div><div class="v">{{ t.fees|money }}</div><div class="sub">≈ {{ pic.fee_pct }}% of card takings</div></div>
+  <div class="stat"><div class="k">Restocks</div><div class="v">{{ t.restocks|money }}</div><div class="sub">{{ restocks|length }} shop{{ '' if restocks|length == 1 else 's' }}</div></div>
+  <div class="stat"><div class="k">Cash profit</div><div class="v">{{ pic.profit_before_payouts|money }}</div><div class="sub">money in − fees − restocks</div></div>
+  <div class="stat"><div class="k">Paid out</div><div class="v">{{ t.payouts|money }}</div></div>
+  <div class="stat {{ 'alert' if t.net < 0 }}"><div class="k">Left</div><div class="v">{{ t.net|money }}</div><div class="sub">not yet paid out</div></div>
+</div>
+
+<div class="cols">
+<div class="col" style="flex-grow:2">
+  <div class="panel"><h2>Where it is</h2>
+    <div class="scroll"><table>
+      <tr><th></th>{% for k, v in pic.by.items() %}<th class="n">{{ sources[k] }}</th>{% endfor %}<th class="n">Total</th></tr>
+      {% for row, label in [('in', 'Money in'), ('refunds', 'Refunds'), ('fees', 'Card fees'), ('restocks', 'Restocks'), ('payouts', 'Payouts')] %}
+      <tr><td>{{ label }}</td>{% for k, v in pic.by.items() %}<td class="n">{{ ('−' if row != 'in' and v[row] else '') ~ (v[row]|money if v[row] else '-') }}</td>{% endfor %}
+        <td class="n">{{ ('−' if row != 'in' and t[row] else '') ~ (t[row]|money if t[row] else '-') }}</td></tr>{% endfor %}
+      <tr class="total"><td><b>Change</b></td>{% for k, v in pic.by.items() %}<td class="n"><b class="{{ 'red' if v.net < 0 }}">{{ v.net|money }}</b></td>{% endfor %}
+        <td class="n"><b>{{ t.net|money }}</b></td></tr>
+    </table></div>
+    <p class="hint">How much each place should have gained or lost over these dates (not a balance - it doesn't know what was there before).
+      Card money reaches the bank minus Square's fee, estimated at
+      <form class="inline" method="post" action="/money/fee"><input class="pct" type="text" name="fee_pct" value="{{ pic.fee_pct }}" inputmode="decimal" aria-label="Card fee percent">% <button class="sm">Set</button></form>.</p>
+  </div>
+
+  <div class="panel"><h2>Restocks <span class="count">{{ restocks|length }}</span></h2>
+    {% if restocks %}<div class="scroll"><table>
+      <tr><th>Day</th><th>Shop</th><th>Items</th><th>Paid from</th><th class="n">Total</th><th></th></tr>
+      {% for r in restocks %}<tr>
+        <td>{{ r.day|ymd('%a %-d %b') }}</td><td>{{ r.shop or '' }}{% if r.note %}<br><span class="muted small">{{ r.note }}</span>{% endif %}</td>
+        <td class="small">{% for it in items.get(r.id, []) %}{{ it.qty }}× {{ it.name }} <span class="muted">({{ it.cost_cents|money }})</span>{{ '<br>'|safe if not loop.last }}{% endfor %}</td>
+        <td class="small">{{ sources[r.paid_from] }}</td><td class="n">{{ r.total_cents|money }}</td>
+        <td class="n">{% if r.receipt %}<a class="btn sm" href="/money/receipts/{{ r.receipt }}" target="_blank" rel="noopener">Receipt</a>{% endif %}
+          <form class="inline" method="post" action="/money/restock/{{ r.id }}/delete"><button class="sm danger" data-confirm="Delete this restock ({{ r.total_cents|money }})?">Delete</button></form></td></tr>{% endfor %}
+    </table></div>{% else %}<p class="empty">No restocks in these dates.</p>{% endif %}
+  </div>
+
+  <div class="panel"><h2>Payouts <span class="count">{{ payouts|length }}</span></h2>
+    {% if payouts %}<div class="scroll"><table>
+      <tr><th>Day</th><th>Who</th><th>From</th><th>Note</th><th class="n">Amount</th><th></th></tr>
+      {% for p in payouts %}<tr><td>{{ p.day|ymd('%a %-d %b') }}</td><td>{{ p.partner }}</td><td class="small">{{ sources[p.paid_from] }}</td>
+        <td class="small">{{ p.note or '' }}</td><td class="n">{{ p.amount_cents|money }}</td>
+        <td class="n"><form class="inline" method="post" action="/money/payout/{{ p.id }}/delete"><button class="sm danger" data-confirm="Delete {{ p.partner }}'s {{ p.amount_cents|money }} payout?">Delete</button></form></td></tr>{% endfor %}
+      <tr class="total"><td colspan="6" class="small">Totals: {% for n, v in pic.paid.items() %}<b>{{ n }}</b> {{ v|money }}{{ ' · ' if not loop.last }}{% endfor %}</td></tr>
+    </table></div>{% else %}<p class="empty">No payouts in these dates.</p>{% endif %}
+  </div>
+</div>
+
+<div class="col">
+  <form class="panel" id="restock" method="post" action="/money/restock" enctype="multipart/form-data"><h2>Add a restock</h2>
+    <div class="row"><div><label for="rs-day">Day</label><input id="rs-day" type="date" name="day" value="{{ today }}" max="{{ today }}"></div>
+      <div><label for="rs-from">Paid from</label><select id="rs-from" name="paid_from">{% for k, l in sources.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div></div>
+    <label for="rs-shop">Shop</label><input id="rs-shop" type="text" name="shop" placeholder="e.g. Costco, Woolies">
+    <table class="lines" id="rs-lines">
+      <tr><th>Item</th><th class="n">Qty</th><th class="n">Cost ($)</th></tr>
+      <tr><td><input type="text" name="item" list="known-items" placeholder="As named in Square" aria-label="Item"></td>
+        <td><input type="number" name="qty" min="1" step="1" value="1" aria-label="Quantity"></td>
+        <td><input type="text" name="cost" inputmode="decimal" placeholder="for all" aria-label="Cost for the whole line"></td></tr>
+    </table>
+    <datalist id="known-items">{% for n in known %}<option value="{{ n }}">{% endfor %}</datalist>
+    <div class="actions" style="margin-top:6px"><button type="button" class="sm" id="rs-add">+ Another item</button><span class="hint" style="margin:0;align-self:center">Total: <b id="rs-total">$0.00</b></span></div>
+    <label for="rs-receipt">Receipt photo <span class="muted">(optional)</span></label><input id="rs-receipt" type="file" name="receipt" accept="image/*,application/pdf" capture="environment">
+    <label for="rs-note">Note</label><input id="rs-note" type="text" name="note" placeholder="Optional">
+    <div class="actions"><button class="primary">Save restock</button></div>
+    <p class="hint">Cost is for the whole line, e.g. 24 Coke for $18. Fizzy works out the cost of one ($0.75) and uses it on the Profit page.</p>
+  </form>
+
+  <form class="panel" id="payout" method="post" action="/money/payout"><h2>Pay the partners</h2>
+    <div class="calc">
+      <div class="row"><div><label for="pc-pool">Money to split ($)</label><input id="pc-pool" type="text" inputmode="decimal" value="{{ '%.2f'|format([t.net, 0]|max / 100) }}"></div>
+        <div><label for="pc-keep">Keep for stock ($)</label><input id="pc-keep" type="text" inputmode="decimal" value="0"></div></div>
+      <div class="split" id="pc-split"></div>
+      <button type="button" class="sm" id="pc-use">Use these amounts</button>
+    </div>
+    <p class="hint">The calculator splits evenly between the people ticked. Change any amount below - record what was actually paid.</p>
+    {% for n in partners %}<div class="payrow">
+      <label class="check"><input type="checkbox" class="pc-who" value="{{ n }}" checked> {{ n }}</label>
+      <input type="hidden" name="partner" value="{{ n }}">
+      <input type="text" name="amount" inputmode="decimal" placeholder="$0.00" aria-label="Paid to {{ n }}"></div>{% endfor %}
+    <div class="row"><div><label for="po-day">Day</label><input id="po-day" type="date" name="day" value="{{ today }}" max="{{ today }}"></div>
+      <div><label for="po-from">Paid from</label><select id="po-from" name="paid_from"><option value="cash">Cash box</option><option value="bank">Bank (Square)</option></select></div></div>
+    <label for="po-note">Note</label><input id="po-note" type="text" name="note" placeholder="Optional">
+    <div class="actions"><button class="primary">Record payouts</button></div>
+  </form>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  function dollars(v) { var n = parseFloat(String(v).replace(/[$,]/g, "")); return isNaN(n) ? 0 : n; }
+  function fmt(n) { return "$" + n.toFixed(2); }
+  // Restock: add item rows, keep the total up to date.
+  var lines = document.getElementById("rs-lines");
+  function total() {
+    var t = 0; lines.querySelectorAll("input[name=cost]").forEach(function (i) { t += dollars(i.value); });
+    document.getElementById("rs-total").textContent = fmt(t);
+  }
+  document.getElementById("rs-add").addEventListener("click", function () {
+    var row = lines.rows[1].cloneNode(true);
+    row.querySelectorAll("input").forEach(function (i) { i.value = i.name === "qty" ? "1" : ""; });
+    lines.tBodies[0].appendChild(row);
+    row.querySelector("input").focus();
+  });
+  lines.addEventListener("input", total);
+  // Payout calculator: an even split of (pool - keep) between whoever's ticked, to the cent.
+  var pool = document.getElementById("pc-pool"), keep = document.getElementById("pc-keep"), out = document.getElementById("pc-split");
+  var who = Array.prototype.slice.call(document.querySelectorAll(".pc-who"));
+  function split() {
+    var names = who.filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
+    var cents = Math.max(0, Math.round((dollars(pool.value) - dollars(keep.value)) * 100)), res = {};
+    names.forEach(function (n, i) { res[n] = Math.floor(cents / names.length) + (i < cents % names.length ? 1 : 0); });
+    return res;
+  }
+  function show() {
+    var res = split(), names = Object.keys(res);
+    out.innerHTML = names.length ? names.map(function (n) { return "<span><b>" + n.replace(/[&<>"]/g, "") + "</b> " + fmt(res[n] / 100) + "</span>"; }).join("")
+                                 : "<span class='muted'>Tick someone below.</span>";
+  }
+  [pool, keep].forEach(function (i) { i.addEventListener("input", show); });
+  who.forEach(function (c) { c.addEventListener("change", show); });
+  document.getElementById("pc-use").addEventListener("click", function () {
+    var res = split();
+    document.querySelectorAll(".payrow").forEach(function (row) {
+      var n = row.querySelector("input[name=partner]").value, amt = row.querySelector("input[name=amount]");
+      amt.value = res[n] ? (res[n] / 100).toFixed(2) : "";
+    });
+  });
+  show();
+})();
+</script>
+{% endblock %}

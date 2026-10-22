@@ -19,6 +19,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, portal, rewards, square, stats, tools
+from . import money as money_pages
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff
 
 log = logging.getLogger("fizzy")
@@ -179,6 +180,7 @@ def create_app(background=True):
     app.include_router(rewards.router)
     app.include_router(portal.router)
     app.include_router(events.router)
+    app.include_router(money_pages.router)
     return app
 
 
