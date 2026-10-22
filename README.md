@@ -30,6 +30,20 @@ their tab?*
 
 ## 1. At the counter
 
+**The quick way: claim it in Fizzy (type the name once)**
+1. In Fizzy: `Esc`, type their name, `Enter`. Their page shows points, tab and rewards.
+2. On the Square Terminal, ring it up **without adding a customer** (with the Fizzy Tab
+   discount or the Tab repayment item if needed) and take payment.
+3. Back in Fizzy, press `K` (**Claim sale**). The newest sale with no customer is at the top:
+   `Enter` gives it to them (or `1`–`6` for an earlier one). Points, tab charges and
+   repayments land straight away.
+
+Fizzy asks Square for the latest sales when you press `K`, so there's no waiting. If a tab sale
+is more than they're allowed, the claim page says so before you claim it. Forget to claim?
+Nothing breaks: the sale waits on the **Square** page to be assigned later.
+
+**Or attach the customer in Square** (the steps below), and Fizzy picks it up by itself.
+
 **Normal sale**
 1. On the Square Terminal, **attach the customer's profile**, then take payment as usual.
 2. Points arrive in Fizzy automatically (within seconds with webhooks, otherwise within 5 minutes).
@@ -396,6 +410,7 @@ you out of the box first. The key boxes are hidden on phones.
 | `↑` `↓` `Enter` | Pick a search result |
 | `1`–`8` | Open that search result (results are numbered). While searching by student number, use `Alt`+number, since plain digits are part of the number |
 | `Esc` | Leave the box you're in, then press again to go back to the dashboard |
+| `K` | Customer: claim the sale just rung up in Square with no customer (`Enter` claims the newest, `1`–`6` pick one) |
 | `R` | Customer: record repayment (amount pre-filled; `Enter` saves) |
 | `P` | Customer: adjust points (`Tab` to the reason, `Enter` saves) |
 | `O` | Customer: redeem the reward they can have (asks first) |

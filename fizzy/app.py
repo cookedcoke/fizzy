@@ -393,6 +393,28 @@ def register(app):
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
                       passcode=portal.reveal_passcode(c["passcode_enc"]))
 
+    @app.get("/customers/{cid}/claim", response_class=HTMLResponse)
+    def claim_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
+        """Pick the sale just rung up in Square (with no customer) and give it to this customer."""
+        c = load_customer(conn, cid)
+        note = None
+        if config.SQUARE_TOKEN:
+            result = square.sync(conn, wait=8)  # fetch the sale that was just taken, if the webhook hasn't
+            if "error" in result:
+                note = square.describe_sync(result)
+        return render(request, "claim.html", c=c, checkouts=square.unclaimed(conn), note=note, st=logic.tab_status(conn, c),
+                      hours=square.CLAIM_HOURS, square_on=bool(config.SQUARE_TOKEN))
+
+    @app.post("/customers/{cid}/claim")
+    def claim(request: Request, cid: int, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
+        c = load_customer(conn, cid)
+        try:
+            square.claim(conn, key, c, who)
+        except ValueError as e:
+            return back(request, f"/customers/{cid}/claim", str(e))
+        conn.commit()
+        return back(request, f"/customers/{cid}", f"Sale claimed for {c['name']}.")
+
     @app.post("/customers/{cid}/repay")
     def repay(request: Request, cid: int, amount: str = Form(...), method: str = Form(...), note: str = Form(""),
               confirm_dup: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):

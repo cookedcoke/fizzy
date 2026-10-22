@@ -502,6 +502,60 @@ def assign_customer(conn, square_payment_id, customer, staff):
     audit(conn, staff, "assign_customer", customer["id"], f"{base} ({', '.join(r['kind'] for r in rows)})")
 
 
+# ---- claiming a sale at the counter -----------------------------------------------------------
+# Staff ring a sale up in Square without picking a customer, then claim it from the customer's
+# page in Fizzy. One checkout can be several rows (a tab charge from the order, the payment, and
+# a ":sale" split), so they're grouped by order and claimed together.
+
+CLAIM_HOURS = 6
+
+
+def _checkout_key(row):
+    return f"o:{row['square_order_id']}" if row["square_order_id"] else f"p:{row['square_payment_id'].removesuffix(':sale')}"
+
+
+def unclaimed(conn, hours=CLAIM_HOURS, limit=6):
+    """Recent checkouts with nobody attached, newest first."""
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
+    groups = {}
+    for r in conn.execute("SELECT * FROM square_payments WHERE customer_id IS NULL AND created_at >= ? "
+                          "ORDER BY created_at DESC", (since,)):
+        g = groups.setdefault(_checkout_key(r), {"key": _checkout_key(r), "at": r["created_at"], "items": "",
+                                                 "sale_cents": 0, "tab_cents": 0, "repay_cents": 0, "tenders": []})
+        g[{"sale": "sale_cents", "tab_charge": "tab_cents", "tab_repayment": "repay_cents"}[r["kind"]]] += r["amount_cents"]
+        g["at"] = max(g["at"], r["created_at"])
+        if r["kind"] != "tab_repayment" and r["items"] and not g["items"]:
+            g["items"] = r["items"]
+        if r["tender"] and r["tender"] not in g["tenders"]:
+            g["tenders"].append(r["tender"])
+    out = [g for g in groups.values() if g["sale_cents"] or g["tab_cents"] or g["repay_cents"]]
+    out.sort(key=lambda g: g["at"], reverse=True)
+    return out[:limit]
+
+
+def claim(conn, key, customer, staff):
+    """Attach one unclaimed checkout (see unclaimed) to a customer. Raises ValueError if it's gone."""
+    kind, _, ident = key.partition(":")
+    if kind == "o":
+        rows = conn.execute("SELECT * FROM square_payments WHERE square_order_id = ?", (ident,)).fetchall()
+    elif kind == "p":
+        rows = conn.execute("SELECT * FROM square_payments WHERE square_payment_id IN (?, ?)",
+                            (ident, f"{ident}:sale")).fetchall()
+    else:
+        rows = []
+    bases = {r["square_payment_id"].removesuffix(":sale") for r in rows}
+    claimed = 0
+    for base in sorted(bases):
+        pair = [r for r in rows if r["square_payment_id"].removesuffix(":sale") == base]
+        if any(r["customer_id"] is not None for r in pair):
+            continue  # someone (or a sync) got there first: never move a sale that's already somebody's
+        assign_customer(conn, base, customer, staff)
+        claimed += 1
+    if not claimed:
+        raise ValueError("That sale has already been claimed.")
+    return claimed
+
+
 def link_pending(conn):
     """After customers are linked, apply payments that arrived before their customer was known."""
     rows = conn.execute(
@@ -679,8 +733,9 @@ def sync(conn, client=None, wait=False):
     """Full poll: customers, then payments, tab orders and refunds since the cursor.
 
     If a sync is already running, the request is queued and the running sync goes round once
-    more when it finishes (wait=True blocks up to a minute instead, for staff-triggered syncs)."""
-    got = _sync_lock.acquire(timeout=60) if wait else _sync_lock.acquire(blocking=False)
+    more when it finishes (wait=True blocks up to a minute instead, for staff-triggered syncs;
+    a number waits that many seconds)."""
+    got = _sync_lock.acquire(timeout=60 if wait is True else wait) if wait else _sync_lock.acquire(blocking=False)
     if not got:
         _sync_pending.set()
         # The running sync may have finished between our failed acquire and setting the flag;

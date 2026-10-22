@@ -6,6 +6,8 @@
     <h1>{{ c.name }} <span class="tag {{ st.status }}">{{ st.label }}</span>{% if c.archived_at %} <span class="tag">Archived</span>{% endif %}</h1>
     <div class="meta"><span class="mono">{{ c.email.split('@')[0] }}</span> · {{ 'Linked to Square' if c.square_customer_id else 'Not in Square yet' }}</div>
   </div>
+  <a class="btn primary" href="/customers/{{ c.id }}/claim" data-key="k" data-key-label="Claim the sale just rung up in Square"
+     title="Rang it up in Square without a customer? Claim it for {{ c.name.split(' ')[0] }}">Claim sale <kbd>K</kbd></a>
 </div>
 
 {% if st.can_charge %}

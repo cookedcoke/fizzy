@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% block title %}Claim sale · {{ c.name }}{% endblock %}
+{% block body %}
+<div class="pagehead">
+  <div><h1>Claim a sale for {{ c.name }}</h1>
+    <div class="meta">Sales from the last {{ hours }} hours with no customer, newest first. Pick the one you just rang up.</div></div>
+  <a class="btn" href="/customers/{{ c.id }}" title="Back to {{ c.name }}">Back</a>
+</div>
+{% if note %}<div class="err">{{ note }} Showing what Fizzy already has.</div>{% endif %}
+{% if checkouts %}
+<form method="post" action="/customers/{{ c.id }}/claim" class="claims">
+  {% for k in checkouts %}
+  <button name="key" value="{{ k.key }}" class="claim {{ 'first' if loop.first }}" data-key="{{ loop.index }}"
+    data-key-label="Claim the {{ k.at|local('%H:%M') }} sale" {{ 'autofocus' if loop.first }}>
+    <kbd class="num">{{ loop.index }}</kbd>
+    <span class="when">{{ k.at|local('%H:%M') }}<small>{{ k.at|local('%a %d %b') }}</small></span>
+    <span class="what">{{ k['items'] or ('Tab repayment' if k.repay_cents else 'Sale') }}
+      <small>{% for t in k.tenders %}{{ t }}{{ ' · ' if not loop.last }}{% endfor %}</small></span>
+    <span class="amts">
+      {% if k.sale_cents %}<span>{{ k.sale_cents|money }} <small>paid</small></span>{% endif %}
+      {% if k.tab_cents %}<span class="tab">{{ k.tab_cents|money }} <small>on tab</small></span>
+        {% if not st.can_charge or k.tab_cents > st.available_cents %}<small class="red">{{ c.name.split(' ')[0] }} can't put this on a tab{% if st.can_charge %} (only {{ st.available_cents|money }} left){% endif %} - it'll be flagged</small>{% endif %}{% endif %}
+      {% if k.repay_cents %}<span class="repay">{{ k.repay_cents|money }} <small>repaid</small></span>{% endif %}
+    </span>
+    {% if loop.first %}<span class="go">Claim <kbd>Enter</kbd></span>{% endif %}
+  </button>
+  {% endfor %}
+</form>
+<p class="hint">Points, tab charges and repayments land on {{ c.name.split(' ')[0] }} straight away. Claimed the wrong one? Reassign it on the Square page.</p>
+{% else %}
+<div class="panel"><p class="empty" style="font-size:14px">No unclaimed sales from the last {{ hours }} hours.
+  {% if square_on %}If you just took it, give Square a moment, then <a href="/customers/{{ c.id }}/claim" data-key="k" data-key-label="Check again">check again <kbd>K</kbd></a>.
+  {% else %}Square isn't connected (SQUARE_ACCESS_TOKEN), so there's nothing to claim.{% endif %}</p></div>
+{% endif %}
+{% endblock %}

@@ -300,3 +300,17 @@ header nav.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparen
 .secret::after { content: "Show"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--muted) }
 .secret:focus .mono, .secret:active .mono { filter: none; user-select: text }
 .secret:focus::after, .secret:active::after { content: none }
+/* Claim a sale (customer page, K) */
+.claims { display: flex; flex-direction: column; gap: var(--s2) }
+.claim { display: flex; align-items: center; gap: var(--s4); width: 100%; height: auto; padding: 12px var(--s4); text-align: left;
+  background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--line-strong); border-radius: var(--r); font-weight: 400 }
+.claim:hover, .claim:focus { border-color: var(--line-strong); border-left-color: var(--ink); background: var(--hover) }
+.claim.first { border-left-color: var(--ink) }
+.claim small { display: block; color: var(--muted); font-size: 12px; font-weight: 400 }
+.claim .when { flex: none; width: 74px; font-weight: 650; font-size: 16px }
+.claim .what { flex: 1; min-width: 0 }
+.claim .amts { display: flex; flex-direction: column; align-items: flex-end; font-weight: 650 }
+.claim .amts small { display: inline; margin-left: 2px }
+.claim .amts .tab { color: var(--warn) } .claim .amts .repay { color: var(--ok) }
+.claim .go { flex: none; color: var(--muted); font-size: 12.5px; font-weight: 600 }
+@media (max-width: 720px) { .claim .go { display: none } .claim { gap: var(--s3) } }
