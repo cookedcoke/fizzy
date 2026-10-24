@@ -10,11 +10,11 @@
   <p class="hint">1 point per cent. Tab buys earn points once they're paid off. Changing days to pay only affects new charges.</p>
 </form>
 <form class="panel" id="pin" method="post" action="/settings/pin"><h2>Admin PIN</h2>
-  {% if pin_on %}<p>A PIN is set. Fizzy asks for it before anything on Tools, hand points, repayments, tab decisions, editing people, deleting money records, imports and Settings.</p>
+  {% if pin_on %}<p>A PIN is set. Fizzy asks for it before anything done by hand: giving points, rewards, tabs, restocks and payouts, Tools, Settings and so on. Claiming Square sales doesn't need it.</p>
   <label>New PIN<input type="password" name="new" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="new-password" placeholder="4 to 8 digits"></label>
   <div class="actions"><button class="primary">Change PIN</button>
     <button name="remove" value="1" class="danger" data-confirm="Remove the PIN? Manual changes won't need it any more.">Remove PIN</button></div>
-  {% else %}<p>Optional. Set one and Fizzy asks for it before manual changes: anything on Tools, hand points, repayments, tab decisions and so on. Sales and claiming still work without it.</p>
+  {% else %}<p>Optional. Set one and Fizzy asks for it before anything done by hand: giving points, rewards, tabs, restocks and payouts, Tools, Settings and so on. Square sales, claiming them and syncing never ask.</p>
   <label>PIN<input type="password" name="new" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="new-password" placeholder="4 to 8 digits" required></label>
   <div class="actions"><button class="primary">Set PIN</button></div>{% endif %}
   <p class="hint">Once entered it stays unlocked for 10 minutes, or until someone else is put on the counter. Forgot it? On the home PC run <code>docker compose exec fizzy python -m fizzy clear-pin</code></p>

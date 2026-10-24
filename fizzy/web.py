@@ -84,7 +84,7 @@ def render(request, name, **ctx):
             ctx["pin_until"] = pin.unlocked_until(request, conn)
         finally:
             conn.close()
-        ctx["pin_paths"] = pin.PROTECTED
+        ctx["pin_paths"] = {"protect": pin.PROTECTED, "exempt": pin.EXEMPT}
     return templates.TemplateResponse(request, name, ctx)
 
 

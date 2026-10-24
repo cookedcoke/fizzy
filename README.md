@@ -456,9 +456,11 @@ says who you might mean, so a typo can't hit the wrong student.
 ### Admin PIN
 
 Optional, set under **Settings → Admin PIN** (4 to 8 digits). Once set, Fizzy asks for it
-before anything on Tools, hand points and repayments, tab decisions, editing a customer,
-deleting restocks or payouts, changing how a Square payment is counted, imports and
-Settings. Ringing up sales, claiming them and redeeming rewards never ask. Entering it unlocks
+before anything done by hand: giving or taking points, redeeming and setting up rewards,
+double points days, tab decisions and repayments, editing customers and passcodes,
+restocks and payouts, costs, imports, everything on Tools and Settings. Things that come
+from Square or happen by themselves never ask: claiming a sale, saying whose sale it was,
+syncing, and the automatic bonus points. Entering it unlocks
 that browser for 10 minutes, or until someone else is picked as on the counter. Five wrong
 tries locks it for 10 minutes. Forgot it? On the home PC:
 

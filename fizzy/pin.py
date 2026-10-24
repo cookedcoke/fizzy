@@ -1,5 +1,5 @@
-"""Optional admin PIN for the manual, can't-easily-undo stuff: everything on the Tools page, hand
-points and repayments, tab decisions, editing customers, deleting restocks and payouts, Settings.
+"""Optional admin PIN for anything done by hand: giving points, rewards, tabs, money records, tools,
+settings. Square-linked and automatic things (claiming a sale, syncing) never ask.
 
 Set it on the Settings page. Entering it unlocks this browser for a few minutes. Forgot it?
 On the home PC: docker compose exec fizzy python -m fizzy clear-pin
@@ -22,15 +22,24 @@ UNLOCK_SECONDS = 600
 FAIL_LIMIT, FAIL_WINDOW = 5, 600
 _fails = []
 
-# (method, path) that need the PIN. The same list goes to the browser so it can ask before sending.
+# Every staff POST needs the PIN except these: Square-linked and automatic things, signing in and
+# out, and the student site. New pages are covered automatically. (The browser gets both lists.)
 PROTECTED = [
-    ("POST", r"^/tools/"),
+    ("POST", r"^/"),
     ("GET", r"^/tools/(export/|backup\.db)"),
-    ("POST", r"^/customers/\d+/(points|repay|tab|edit)$"),
-    ("POST", r"^/money/(restock|payout)/\d+/delete$"),
-    ("POST", r"^/square/payments/[^/]+/kind$"),
-    ("POST", r"^/import$"),
-    ("POST", r"^/settings"),
+]
+EXEMPT = [
+    r"^/(login|logout|switch)$",
+    r"^/me(/|$)",
+    r"^/enrol/",
+    r"^/customers/\d+/claim$",            # claiming a Square sale
+    r"^/square/(sync|webhook)$",
+    r"^/square/payments/[^/]+/assign$",   # saying whose Square sale it was
+    r"^/tools/sync_now$",
+    r"^/profit/refresh$",                 # re-read the catalogue from Square
+    r"^/breach/\d+/ack$",                 # just dismisses a warning
+    r"^/settings/backup$",
+    r"^/settings/pin/unlock$",
 ]
 
 
@@ -55,7 +64,8 @@ def check(conn, pin):
 
 
 def protected(method, path):
-    return any(m == method and re.search(p, path) for m, p in PROTECTED)
+    return (any(m == method and re.search(p, path) for m, p in PROTECTED)
+            and not any(re.search(p, path) for p in EXEMPT))
 
 
 def unlocked_until(request, conn):
@@ -70,7 +80,7 @@ def unlocked_until(request, conn):
 
 def guard(request: Request):
     """App-wide dependency: refuse protected actions until the PIN has been entered."""
-    if not request.session.get("auth") or not protected(request.method, request.url.path) or request.url.path in ("/settings/pin/unlock",):
+    if not request.session.get("auth") or not protected(request.method, request.url.path):
         return
     conn = db.connect()
     try:

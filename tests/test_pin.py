@@ -57,3 +57,14 @@ def test_clear_pin_from_the_command_line(client):
         assert pin.stored(conn) == ""
     finally:
         conn.close()
+
+
+def test_everything_by_hand_is_covered_but_square_stuff_is_not():
+    for path in ("/customers/1/points", "/customers/1/redeem/2", "/rewards", "/events", "/money/restock",
+                 "/money/payout", "/customers/1/passcode/reveal", "/profit", "/tools/bulk_points", "/settings/pin",
+                 "/redemptions/3/undo", "/square/payments/abc/kind", "/some/new/page"):
+        assert pin.protected("POST", path), path
+    for path in ("/login", "/logout", "/switch", "/me/login", "/customers/1/claim", "/square/sync", "/square/webhook",
+                 "/square/payments/abc/assign", "/tools/sync_now", "/profit/refresh", "/settings/pin/unlock"):
+        assert not pin.protected("POST", path), path
+    assert not pin.protected("GET", "/customers/1")

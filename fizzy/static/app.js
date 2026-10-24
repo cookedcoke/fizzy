@@ -219,14 +219,15 @@
 
   // ---- passcode reveal (customer page): fetched only when asked for; the server logs each look ----
   $$("[data-reveal]").forEach(function (b) {
-    b.addEventListener("click", function () {
+    b.addEventListener("click", function () { fizzyPin("POST", b.dataset.reveal, reveal); });
+    function reveal() {
       fetch(b.dataset.reveal, { method: "POST", credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (d) {
         var out = document.createElement("span");
         out.className = "mono revealed";
         out.textContent = d.passcode || "can't be read - set a new one";
         b.replaceWith(out);
       }).catch(function () { b.textContent = "Couldn't load - try again"; });
-    });
+    }
   });
 
   // ---- "i" tips: open towards whichever side has room ------------------------------------------
@@ -314,12 +315,14 @@
     fizzyAsk(b.dataset.confirm, function () { passed = b; b.click(); });
   }, true);
   // Admin PIN: protected forms and downloads ask for it in a box first, then carry on.
-  var pinPaths = $("#pin-paths") ? JSON.parse($("#pin-paths").textContent) : [];
+  var pinPaths = $("#pin-paths") ? JSON.parse($("#pin-paths").textContent) : { protect: [], exempt: [] };
   function needsPin(method, url) {
     var until = Number(document.body.dataset.pinUntil || 0);
     if (!until || until > Date.now() / 1000 + 5) return false;
     var path = new URL(url, location.href).pathname;
-    return pinPaths.some(function (p) { return p[0] === method && new RegExp(p[1]).test(path); });
+    if (new URL(url, location.href).origin !== location.origin) return false;
+    return pinPaths.protect.some(function (p) { return p[0] === method && new RegExp(p[1]).test(path); }) &&
+           !pinPaths.exempt.some(function (p) { return new RegExp(p).test(path); });
   }
   var pinBox = document.createElement("dialog"), pinThen = null;
   pinBox.className = "ask";
@@ -344,6 +347,7 @@
   function askPin(then) {
     pinThen = then; pinIn.value = ""; pinErr.hidden = true; pinBox.showModal(); pinIn.focus();
   }
+  window.fizzyPin = function (method, url, then) { if (needsPin(method, url)) askPin(then); else then(); };
   document.addEventListener("submit", function (e) {
     var f = e.target, method = (f.getAttribute("method") || "get").toUpperCase();
     if (e.defaultPrevented || f.closest("dialog.ask") || !needsPin(method, f.action)) return;
