@@ -86,9 +86,19 @@ def back(request, url, msg=None):
     return RedirectResponse(url, status_code=303)
 
 
+MAX_DOLLARS = 10_000
+
+
 def cents(value: str) -> int:
     v = (value or "").replace("$", "").replace(",", "").strip()
     try:
-        return round(float(v) * 100)
+        n = float(v)
     except ValueError:
-        raise HTTPException(400, f"'{value}' isn't a dollar amount")
+        n = None
+    if n is None or n != n or n in (float("inf"), float("-inf")):
+        raise HTTPException(400, f"'{value}' isn't a dollar amount." if v else "Type an amount.")
+    if n < 0:
+        raise HTTPException(400, "Amounts can't be negative.")
+    if n > MAX_DOLLARS:
+        raise HTTPException(400, f"${n:,.0f} is way too much. The most is ${MAX_DOLLARS:,}.")
+    return round(n * 100)

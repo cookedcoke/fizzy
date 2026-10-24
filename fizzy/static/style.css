@@ -252,7 +252,9 @@ button kbd { margin-left: 4px; background: transparent; color: inherit; opacity:
 .keys-btn { width: 30px; height: 30px; padding: 0; background: #22252B; color: #B7BCC4; border: 1px solid #3A3E46; font-weight: 700 }
 .keys-btn:hover { background: #2C3038; color: #fff; border-color: #3A3E46 }
 dialog#keys { border: 1px solid var(--line-strong); border-radius: 6px; padding: var(--s5); width: min(760px, 94vw); box-shadow: 0 20px 60px rgba(0, 0, 0, .25) }
-dialog#keys::backdrop { background: rgba(21, 23, 27, .45) }
+dialog.ask { border: 1px solid var(--line-strong); border-radius: 6px; padding: var(--s5); width: min(420px, 92vw); box-shadow: 0 20px 60px rgba(0, 0, 0, .25) }
+dialog.ask p { margin: 0 0 var(--s4); font-size: 15px }
+dialog.ask::backdrop, dialog#keys::backdrop { background: rgba(21, 23, 27, .45) }
 dialog#keys h2 { margin-bottom: var(--s2) }
 dialog#keys td { border: none; padding: 5px var(--s3) 5px 0; vertical-align: middle }
 dialog#keys td:first-child { width: 45%; line-height: 22px }

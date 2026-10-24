@@ -41,6 +41,7 @@
 
 <div class="col">
   <form class="panel" id="restock" method="post" action="/money/restock" enctype="multipart/form-data"><h2>Add a restock</h2>
+    <div class="err" id="rs-problem" role="alert" hidden></div>
     <label for="rs-day">Day</label><input id="rs-day" type="date" name="day" value="{{ today }}" max="{{ today }}">
     <label for="rs-shop">Shop</label><input id="rs-shop" type="text" name="shop" placeholder="e.g. Costco, Woolies">
     <table class="lines" id="rs-lines">
@@ -118,7 +119,9 @@
       else if (!(qty >= 1) || qty % 1) problem = "The quantity for " + name + " must be a whole number, 1 or more.";
     });
     if (!problem && !any) problem = "Add at least one item.";
-    if (problem) { e.preventDefault(); alert(problem); }
+    var box = document.getElementById("rs-problem");
+    box.hidden = !problem; box.textContent = problem || "";
+    if (problem) { e.preventDefault(); box.scrollIntoView({ block: "center" }); }
   });
   // Payout calculator: an even split of (pool - keep) between whoever's ticked, to the cent.
   var pool = document.getElementById("pc-pool"), keep = document.getElementById("pc-keep"), out = document.getElementById("pc-split");

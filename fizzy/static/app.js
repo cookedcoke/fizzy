@@ -291,9 +291,27 @@
     if (b.form && b.form.method === "post") b.title = "Ctrl+Enter submits from anywhere in this form";
   });
   // Any button with data-confirm asks first, however it's pressed (click, shortcut, Enter).
+  // Asked in Fizzy's own box rather than the browser's.
+  var ask = document.createElement("dialog"), onYes = null, passed = null;
+  ask.className = "ask";
+  ask.innerHTML = '<p></p><div class="actions"><button type="button" class="primary" value="ok">Yes, do it</button>' +
+                  '<button type="button" value="no">Cancel</button></div>';
+  document.body.appendChild(ask);
+  ask.addEventListener("click", function (e) {
+    var v = e.target.value;
+    if (e.target === ask || v === "no") ask.close();
+    if (v === "ok") { var f = onYes; ask.close(); f(); }
+  });
+  window.fizzyAsk = function (text, yes) {
+    onYes = yes; ask.querySelector("p").textContent = text; ask.showModal();
+    ask.querySelector("[value=ok]").focus();
+  };
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("[data-confirm]");
-    if (b && b.tagName !== "DETAILS" && !confirm(b.dataset.confirm)) { e.preventDefault(); e.stopImmediatePropagation(); }
+    if (!b || b.tagName === "DETAILS") return;
+    if (passed === b) { passed = null; return; }  // the second, confirmed click
+    e.preventDefault(); e.stopImmediatePropagation();
+    fizzyAsk(b.dataset.confirm, function () { passed = b; b.click(); });
   }, true);
   $$("input[data-search]").forEach(bindSearch);
   var hb = $("#keys-btn"); if (hb) hb.addEventListener("click", help);

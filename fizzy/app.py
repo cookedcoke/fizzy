@@ -296,6 +296,9 @@ def register(app):
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(request, exc):
+        ref = _same_site_referer(request)
+        if exc.status_code == 400 and request.method == "POST" and ref and isinstance(exc.detail, str):
+            return back(request, ref, exc.detail)  # a typo in a form: back to it with what was wrong
         detail = exc.detail if isinstance(exc.detail, str) and exc.detail not in ("Not Found", "Method Not Allowed") else None
         return error_page(request, exc.status_code, detail if exc.status_code != 404 else None)
 
@@ -615,7 +618,7 @@ def register(app):
               confirm_dup: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         load_customer(conn, cid)
         if method not in ("cash", "card", "other"):
-            raise HTTPException(400, "bad method")
+            raise HTTPException(400, "Pick cash, card or other.")
         amt = cents(amount)
         # Repayments are normally rung up in Square and recorded automatically; don't let the
         # same money be entered twice. (A hand entry made first is matched when Square's arrives.)
@@ -651,7 +654,7 @@ def register(app):
         load_customer(conn, cid)
         mapping = {"approve": "approved", "reject": "rejected", "revoke": "revoked", "reset": None}
         if decision not in mapping:
-            raise HTTPException(400, "bad decision")
+            raise HTTPException(400, "Pick approve, reject, revoke or reset.")
         logic.set_tab_decision(conn, cid, mapping[decision], note, who)
         conn.commit()
         return back(request, f"/customers/{cid}", f"Tab {decision} saved.")
@@ -781,8 +784,8 @@ def register(app):
     @app.post("/settings")
     def save_settings(request: Request, tab_limit: str = Form(...), due_days: int = Form(...),
                       unlock_spend: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
-        if due_days < 1:
-            return back(request, "/settings", "Due days must be at least 1.")
+        if not 1 <= due_days <= 365:
+            return back(request, "/settings", "Days to pay must be between 1 and 365.")
         new = {"tab_limit_cents": cents(tab_limit), "tab_due_days": due_days, "unlock_spend_cents": cents(unlock_spend)}
         for k, v in new.items():
             db.set_setting(conn, k, v)

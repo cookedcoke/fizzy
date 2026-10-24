@@ -48,3 +48,18 @@ def test_not_found_and_crash_pages(client, monkeypatch):
     monkeypatch.setattr(stats, "today", lambda: 1 / 0)
     r = TestClient(client.app, raise_server_exceptions=False, cookies=client.cookies).get("/")
     assert r.status_code == 500 and "Something broke" in r.text and "<html" in r.text
+
+
+def test_silly_dollar_amounts_go_back_with_a_note(client):
+    login(client)
+    cid = _customer()
+    ref = {"referer": f"http://testserver/customers/{cid}"}
+    for amount, msg in (("1e309", "isn&#39;t a dollar amount"), ("99999999999999999999", "way too much"),
+                        ("-5", "can&#39;t be negative"), ("nan", "isn&#39;t a dollar amount"), ("", "missing or not a proper number")):
+        r = client.post(f"/customers/{cid}/repay", data={"amount": amount, "method": "cash"}, headers=ref)
+        assert r.status_code == 200 and msg in r.text, amount
+    r = client.post("/settings", data={"tab_limit": "1e309", "due_days": "7", "unlock_spend": "30"},
+                    headers={"referer": "http://testserver/settings"})
+    assert r.status_code == 200 and "dollar amount" in r.text
+    r = client.post("/settings", data={"tab_limit": "10", "due_days": "99999999", "unlock_spend": "30"})
+    assert "between 1 and 365" in r.text
