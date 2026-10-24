@@ -63,3 +63,18 @@ def test_silly_dollar_amounts_go_back_with_a_note(client):
     assert r.status_code == 200 and "dollar amount" in r.text
     r = client.post("/settings", data={"tab_limit": "10", "due_days": "99999999", "unlock_spend": "30"})
     assert "between 1 and 365" in r.text
+
+
+def test_card_scan_opens_the_student(client):
+    login(client)
+    conn = db.connect()
+    try:
+        cid = conn.execute("INSERT INTO customers(name, email, created_at) VALUES ('Scan Kid', "
+                           "'rns01234567@reddamnorthshore.nsw.edu.au', ?)", (db.now_iso(),)).lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+    r = client.get("/scan?code=RNS01234567", follow_redirects=False)
+    assert r.headers["location"] == f"/customers/{cid}"
+    assert "No one with student number RNS07654321" in client.get("/scan?code=rns07654321").text
+    assert "No one with" in client.get("/scan?code=rns%25").text

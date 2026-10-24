@@ -102,6 +102,7 @@
       else if (e.key === "ArrowUp") { sel = Math.max(sel - 1, 0); mark(); e.preventDefault(); }
       else if (e.key === "Enter") {
         e.preventDefault();
+        if (window.fizzyScan && fizzyScan(box.value.trim())) return;  // card scanned into the search box
         if (!index) { location.href = "/customers?q=" + encodeURIComponent(box.value.trim()); }  // server search fallback
         else if (rows[sel]) location.href = "/customers/" + rows[sel].id;
       }
@@ -134,6 +135,33 @@
     }).join("") : '<tr><td colspan="2" class="empty">None on this page.</td></tr>';
     dlg.showModal();
   }
+
+  // ---- student card scans ------------------------------------------------------------------
+  // A USB barcode scanner "types" the card's RNS number fast and presses Enter. Catch it before
+  // the shortcuts see it (R would open the repayment box), and open that student. Keys held back
+  // that turn out to be a person typing are passed on to the shortcuts as normal.
+  var SCAN = /^(r|rn|rns\d{0,8})$/i, scanBuf = "", scanHeld = [], scanTimer = 0;
+  function scanFlush() {
+    var held = scanHeld; scanBuf = ""; scanHeld = []; clearTimeout(scanTimer);
+    held.forEach(function (k) { document.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true })); });
+  }
+  window.fizzyScan = function (code) {
+    if (!/^rns\d{8}$/i.test(code)) return false;
+    location.href = "/scan?code=" + encodeURIComponent(code.toLowerCase());
+    return true;
+  };
+  document.addEventListener("keydown", function (e) {
+    if (!e.isTrusted || e.ctrlKey || e.metaKey || e.altKey || typing() || document.querySelector("dialog[open]")) return;
+    if (e.key === "Enter" && scanBuf) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (fizzyScan(scanBuf)) { scanBuf = ""; scanHeld = []; clearTimeout(scanTimer); } else scanFlush();
+      return;
+    }
+    if (e.key.length !== 1 || !SCAN.test(scanBuf + e.key)) { if (scanBuf) scanFlush(); return; }
+    e.preventDefault(); e.stopImmediatePropagation();
+    scanBuf += e.key; scanHeld.push(e.key);
+    clearTimeout(scanTimer); scanTimer = setTimeout(scanFlush, 80);  // scanners send keys a few ms apart
+  }, true);
 
   document.addEventListener("keydown", function (e) {
     if (e.defaultPrevented || e.altKey) return;

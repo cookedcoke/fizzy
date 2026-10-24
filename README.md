@@ -79,6 +79,14 @@ Switch it with `W` or the dropdown. **Lock** signs the device out.
 
 ---
 
+### Scanning student cards
+
+Student ID cards have a barcode with the student's RNS number. Plug a USB barcode scanner
+(any cheap "keyboard" one) into the counter PC and scan a card on any Fizzy page: that student's
+page opens. No setup and nothing to link, because Fizzy already knows everyone's RNS number from
+the school list. If the cursor is in a text box, the number goes into that box instead (in the
+search box, Enter still opens the student).
+
 ## 2. Rules
 
 | Rule | Default | Change it in |

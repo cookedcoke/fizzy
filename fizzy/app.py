@@ -6,6 +6,7 @@ from html import escape
 import json
 import logging
 import os
+import re
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -537,6 +538,16 @@ def register(app):
         for r in rows:
             r["reward"] = r["id"] in can
         return JSONResponse(rows, headers={"Cache-Control": "no-store"})
+
+    @app.get("/scan")
+    def scan(request: Request, code: str = "", who=Depends(staff), conn=Depends(get_conn)):
+        """A student card's barcode (their RNS number) scanned at the counter."""
+        sid = code.strip().lower()
+        c = conn.execute("SELECT id FROM customers WHERE email LIKE ? ORDER BY archived_at IS NOT NULL LIMIT 1",
+                         (sid.replace("%", "").replace("_", "") + "@%",)).fetchone() if re.fullmatch(r"rns\d{8}", sid) else None
+        if c is None:
+            return back(request, "/", f"No one with student number {sid.upper()} yet. Add them on Tools, Add a customer.")
+        return RedirectResponse(f"/customers/{c['id']}", status_code=303)
 
     @app.get("/api/search")
     def api_search(q: str = "", who=Depends(staff), conn=Depends(get_conn)):
