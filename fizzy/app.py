@@ -13,14 +13,16 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, URLSafeSerializer
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, portal, rewards, square, stats, tools
 from . import money as money_pages
-from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff
+from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
 log = logging.getLogger("fizzy")
 
@@ -171,7 +173,7 @@ def create_app(background=True):
             request.state.public = True
             return await call_next(request)
         if config.PUBLIC_HOST and (path == "/me" or path.startswith("/me/")):
-            return PlainTextResponse("Not found", status_code=404)
+            return error_page(request, 404)
         return await call_next(request)
 
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -252,7 +254,56 @@ def _record_fail(buckets, now):
             del _fails[k]
 
 
+ERRORS = {
+    400: ("That didn't work", "Something in that request wasn't right. Go back and try again."),
+    403: ("Not allowed", "This device or account can't open that."),
+    404: ("Page not found", "That page doesn't exist, or whatever was on it has been deleted."),
+    405: ("Page not found", "That page doesn't exist."),
+    500: ("Something broke", "Fizzy hit an error. Nothing was saved from that last step. Try again, and if it keeps "
+                             "happening, check the logs on the home PC."),
+}
+
+
+def error_page(request, status, message=None):
+    heading, default = ERRORS.get(status, ERRORS[400] if status < 500 else ERRORS[500])
+    if getattr(request.state, "public", False) or request.url.path == "/me" or request.url.path.startswith("/me/"):
+        home = "/" if getattr(request.state, "public", False) else "/me"
+        response = templates.TemplateResponse(request, "me_error.html", {"heading": heading, "message": message or default,
+                                                                          "home": home}, status_code=status)
+    else:
+        response = render(request, "error.html", heading=heading, message=message or default, home="/")
+        response.status_code = status
+    return response
+
+
+def _same_site_referer(request):
+    ref = request.headers.get("referer") or ""
+    host = request.headers.get("host") or ""
+    for scheme in ("https://", "http://"):
+        if host and ref.startswith(scheme + host + "/"):
+            return ref[len(scheme + host):]
+    return None
+
+
 def register(app):
+    @app.exception_handler(RequestValidationError)
+    async def _bad_form(request, exc):
+        """A missing or garbled form field: back to the form with a note, not a page of JSON."""
+        ref = _same_site_referer(request)
+        if request.method == "POST" and ref:
+            return back(request, ref, "Something in that form was missing or not a proper number. Check it and try again.")
+        return error_page(request, 400)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_error(request, exc):
+        detail = exc.detail if isinstance(exc.detail, str) and exc.detail not in ("Not Found", "Method Not Allowed") else None
+        return error_page(request, exc.status_code, detail if exc.status_code != 404 else None)
+
+    @app.exception_handler(Exception)
+    async def _crash(request, exc):
+        log.exception("Error on %s %s", request.method, request.url.path)
+        return error_page(request, 500)
+
     @app.exception_handler(LoginRequired)
     async def _login_redirect(request, exc):
         return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
@@ -262,7 +313,9 @@ def register(app):
         return render(request, "login.html", next=next, error=None)
 
     @app.post("/login")
-    async def login(request: Request, password: str = Form(...), who: str = Form(...), next: str = Form("/")):
+    async def login(request: Request, password: str = Form(""), who: str = Form(""), next: str = Form("/")):
+        if not password:
+            return render(request, "login.html", next=next, error="Type the password first.")
         now, buckets = time.time(), _fail_buckets(request)
         if _locked(buckets, now):
             return render(request, "login.html", next=next, error="Too many attempts. Wait 15 minutes.")
@@ -581,10 +634,11 @@ def register(app):
         return back(request, f"/customers/{cid}", f"Recorded {money(amt)} repayment ({method}).")
 
     @app.post("/customers/{cid}/points")
-    def points(request: Request, cid: int, delta: int = Form(...), note: str = Form(""), who=Depends(staff),
+    def points(request: Request, cid: int, delta: str = Form(""), note: str = Form(""), who=Depends(staff),
                conn=Depends(get_conn)):
         load_customer(conn, cid)
         try:
+            delta = logic.whole_points(delta)
             logic.adjust_points(conn, cid, delta, note, who)
         except ValueError as e:
             return back(request, f"/customers/{cid}", str(e))

@@ -239,6 +239,8 @@ def _int(form, key, minimum=None):
         raise ToolError(f"'{form.get(key, '')}' isn't a whole number.")
     if minimum is not None and v < minimum:
         raise ToolError(f"Must be at least {minimum}.")
+    if abs(v) > 1_000_000:
+        raise ToolError(f"{v:,} is way too big.")
     return v
 
 
@@ -249,6 +251,8 @@ def _confirm(form, word):
 
 def h_bulk_points(request, conn, who, form):
     delta = _int(form, "delta")
+    if abs(delta) > logic.MAX_POINTS_CHANGE:
+        raise ToolError(f"The most in one go is {logic.MAX_POINTS_CHANGE:,} points.")
     if delta == 0:
         raise ToolError("Points can't be 0.")
     note = form.get("note", "").strip()

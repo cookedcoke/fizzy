@@ -173,3 +173,4 @@ details.more > summary { cursor: pointer; color: var(--red-deep); font-weight: 6
 details.more > summary::-webkit-details-marker { display: none }
 details.more[open] > summary { margin-bottom: 8px }
 .section small.red { color: var(--red-deep); font-weight: 700 }
+a.go { display: block; box-sizing: border-box; text-align: center; text-decoration: none }

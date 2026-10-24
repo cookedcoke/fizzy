@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block title %}{{ heading }}{% endblock %}
+{% block body %}
+<div class="panel" style="max-width:560px;margin:40px auto">
+  <h1>{{ heading }}</h1>
+  <p>{{ message }}</p>
+  <div class="actions"><a class="btn primary" href="{{ home }}">{{ 'Go to the dashboard' if staff else 'Sign in' }}</a>
+    <button type="button" onclick="history.back()">Go back</button></div>
+</div>
+{% endblock %}

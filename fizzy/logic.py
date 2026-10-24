@@ -151,7 +151,24 @@ def set_tab_decision(conn, customer_id, decision, note, staff):
     audit(conn, staff, f"tab_{decision or 'reset'}", customer_id, note or "")
 
 
+MAX_POINTS_CHANGE = 100_000
+
+
+def whole_points(value):
+    """Staff-typed points ("1,000", "-50") as an int, or ValueError with a message for the page."""
+    v = str(value or "").replace(",", "").replace(" ", "").strip()
+    try:
+        n = int(v)
+    except ValueError:
+        raise ValueError(f"'{value}' isn't a whole number of points." if v else "Type how many points.")
+    if abs(n) > MAX_POINTS_CHANGE:
+        raise ValueError(f"That's too many points. The most in one go is {MAX_POINTS_CHANGE:,}.")
+    return n
+
+
 def adjust_points(conn, customer_id, delta, note, staff):
+    if abs(delta) > MAX_POINTS_CHANGE:
+        raise ValueError(f"That's too many points. The most in one go is {MAX_POINTS_CHANGE:,}.")
     if not note or not note.strip():
         raise ValueError("A reason is required for manual points changes.")
     if delta == 0:
