@@ -11,7 +11,8 @@
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ V }}">
 <link rel="stylesheet" href="/static/style.css?v={{ V }}">
 </head>
-<body>
+<body{% if pin_until %} data-pin-until="{{ pin_until }}"{% endif %}>
+{% if pin_until %}<script type="application/json" id="pin-paths">{{ pin_paths|tojson }}</script>{% endif %}
 {% if staff %}
 <header>
   <a class="brand" href="/">{% include "_logo.html" %}<span>Fizzy</span><small>Cooked Coke Co.</small></a>

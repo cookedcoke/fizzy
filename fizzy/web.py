@@ -77,6 +77,14 @@ def render(request, name, **ctx):
     ctx.setdefault("staff", request.session.get("staff"))
     ctx["staff_names"] = config.STAFF_NAMES
     ctx["flash"] = request.session.pop("flash", None)
+    if request.session.get("auth"):
+        from . import pin
+        conn = db.connect()
+        try:
+            ctx["pin_until"] = pin.unlocked_until(request, conn)
+        finally:
+            conn.close()
+        ctx["pin_paths"] = pin.PROTECTED
     return templates.TemplateResponse(request, name, ctx)
 
 

@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import config, customers, db, devices, events, logic, portal, rewards, square, stats, tools
+from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
@@ -106,7 +106,7 @@ async def lifespan(app):
 
 
 def create_app(background=True):
-    app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None, dependencies=[Depends(pin.guard)])
     app.state.background = background
     app.add_middleware(
         SessionMiddleware, secret_key=config.SECRET_KEY or "unset", session_cookie="fizzy",
@@ -182,6 +182,7 @@ def create_app(background=True):
     app.include_router(rewards.router)
     app.include_router(portal.router)
     app.include_router(events.router)
+    app.include_router(pin.router)
     app.include_router(money_pages.router)
     return app
 
@@ -307,6 +308,13 @@ def register(app):
         log.exception("Error on %s %s", request.method, request.url.path)
         return error_page(request, 500)
 
+    @app.exception_handler(pin.PinRequired)
+    async def _need_pin(request, exc):
+        msg = "Enter the PIN first. Nothing was changed."
+        if request.method == "GET":
+            return back(request, "/tools", msg)
+        return back(request, _same_site_referer(request) or "/", msg)
+
     @app.exception_handler(LoginRequired)
     async def _login_redirect(request, exc):
         return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
@@ -348,6 +356,7 @@ def register(app):
     def switch(request: Request, who: str = Form(...), _=Depends(staff)):
         if who in config.STAFF_NAMES:
             request.session["staff"] = who
+            request.session.pop("pin_until", None)  # a new person on the counter enters it again
         return RedirectResponse(request.headers.get("referer") or "/", status_code=303)
 
     @app.post("/logout")
@@ -771,7 +780,7 @@ def register(app):
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
-        return render(request, "settings.html", cfg=logic.settings(conn),
+        return render(request, "settings.html", cfg=logic.settings(conn), pin_on=bool(pin.stored(conn)),
                       devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
                       device_list=conn.execute("SELECT * FROM devices ORDER BY revoked_at IS NOT NULL, created_at DESC").fetchall(),
                       this_device=getattr(request.state, "device", None),

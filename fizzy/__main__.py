@@ -1,7 +1,7 @@
-"""CLI: python -m fizzy import FILE.csv | backup DIR | sync | device-link NAME"""
+"""CLI: python -m fizzy import FILE.csv | backup DIR | sync | device-link NAME | clear-pin"""
 import sys
 
-from . import config, customers, db, devices, square
+from . import config, customers, db, devices, pin, square
 
 
 def main(argv):
@@ -20,6 +20,10 @@ def main(argv):
         print(devices.create_link(conn, argv[1], "cli"))
         print(f"Open it on the device within {devices.LINK_MINUTES} minutes.")
         conn.commit()
+    elif argv == ["clear-pin"]:
+        pin.set_pin(conn, "", "cli")
+        conn.commit()
+        print("Admin PIN removed.")
     elif argv == ["sync"]:
         print(square.sync(conn))
     else:

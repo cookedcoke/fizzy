@@ -313,6 +313,50 @@
     e.preventDefault(); e.stopImmediatePropagation();
     fizzyAsk(b.dataset.confirm, function () { passed = b; b.click(); });
   }, true);
+  // Admin PIN: protected forms and downloads ask for it in a box first, then carry on.
+  var pinPaths = $("#pin-paths") ? JSON.parse($("#pin-paths").textContent) : [];
+  function needsPin(method, url) {
+    var until = Number(document.body.dataset.pinUntil || 0);
+    if (!until || until > Date.now() / 1000 + 5) return false;
+    var path = new URL(url, location.href).pathname;
+    return pinPaths.some(function (p) { return p[0] === method && new RegExp(p[1]).test(path); });
+  }
+  var pinBox = document.createElement("dialog"), pinThen = null;
+  pinBox.className = "ask";
+  pinBox.innerHTML = '<form method="dialog"><p><b>Enter the admin PIN</b></p>' +
+    '<input type="password" inputmode="numeric" autocomplete="off" aria-label="Admin PIN" maxlength="8">' +
+    '<div class="err" role="alert" hidden></div>' +
+    '<div class="actions"><button class="primary" value="ok">Unlock</button><button type="button" value="no">Cancel</button></div></form>';
+  document.body.appendChild(pinBox);
+  var pinIn = $("input", pinBox), pinErr = $(".err", pinBox);
+  $("[value=no]", pinBox).addEventListener("click", function () { pinBox.close(); });
+  $("form", pinBox).addEventListener("submit", function (e) {
+    e.preventDefault();
+    var body = new URLSearchParams({ pin: pinIn.value });
+    fetch("/settings/pin/unlock", { method: "POST", body: body, credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) { pinErr.hidden = false; pinErr.textContent = r.error; pinIn.select(); return; }
+        document.body.dataset.pinUntil = r.until; pinBox.close(); pinThen();
+      })
+      .catch(function () { pinErr.hidden = false; pinErr.textContent = "Couldn't reach Fizzy. Try again."; });
+  });
+  function askPin(then) {
+    pinThen = then; pinIn.value = ""; pinErr.hidden = true; pinBox.showModal(); pinIn.focus();
+  }
+  document.addEventListener("submit", function (e) {
+    var f = e.target, method = (f.getAttribute("method") || "get").toUpperCase();
+    if (e.defaultPrevented || f.closest("dialog.ask") || !needsPin(method, f.action)) return;
+    e.preventDefault();
+    var by = e.submitter;
+    askPin(function () { f.requestSubmit(by && by.form === f ? by : undefined); });
+  });
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a[href]");
+    if (!a || !needsPin("GET", a.href)) return;
+    e.preventDefault();
+    askPin(function () { location.href = a.href; });
+  });
   $$("input[data-search]").forEach(bindSearch);
   var hb = $("#keys-btn"); if (hb) hb.addEventListener("click", help);
   // Warm the index as soon as the page is idle so the first keystroke is instant.
