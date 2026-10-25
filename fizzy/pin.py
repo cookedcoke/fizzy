@@ -28,8 +28,8 @@ OPEN, PIN, OWNER = 0, 1, 2
 LEVELS = {"open": OPEN, "pin": PIN, "owner": OWNER}
 LEVEL_LABELS = {"open": "Anyone signed in", "pin": "PIN", "owner": "Owner only"}
 UNLOCK_SECONDS = {PIN: 600, OWNER: 300}
-FAIL_LIMIT, FAIL_WINDOW = 5, 600
-_fails = []
+FAIL_LIMIT, FAIL_LIMIT_ALL, FAIL_WINDOW = 5, 30, 600  # per browser, and across everyone
+_fails = {}
 
 # Never asked, whatever the settings say: signing in and out, the student site, devices joining.
 FREE = [r"^/(login|logout|switch)$", r"^/me(/|$)", r"^/enrol/", r"^/square/webhook$", r"^/settings/pin/unlock$"]
@@ -166,7 +166,8 @@ def required(conn, method, path, form=None):
             return OPEN
         level = LEVELS[OTHER]
     if form is not None and re.search(BIG_PATHS, path):
-        big = (form.get("everyone") or _number(form.get("delta")) > perms["big_points"]
+        people = max(1, len([x for x in re.split(r"[\n;]+", form.get("people") or "") if x.strip()]))
+        big = (form.get("everyone") or _number(form.get("delta")) * people > perms["big_points"]
                or _number(form.get("points")) > perms["big_points"] or _number(form.get("amount")) > perms["big_dollars"])
         if big:
             level = max(level, LEVELS[perms["big"]])
@@ -210,22 +211,29 @@ async def guard(request: Request):
 
 # ---- pages -----------------------------------------------------------------------------------
 
-def _locked_out(now):
-    _fails[:] = [t for t in _fails if t > now - FAIL_WINDOW]
-    return len(_fails) >= FAIL_LIMIT
+def _browser(request):
+    # The signed "known browser" cookie from sign-in, so one person typing wrong codes on
+    # purpose only locks their own browser out (the overall cap still stops guessing).
+    return request.cookies.get("fizzy_known") or (request.client.host if request.client else "?")
+
+
+def _recent(key, now):
+    _fails[key] = [t for t in _fails.get(key, []) if t > now - FAIL_WINDOW]
+    return len(_fails[key])
 
 
 @router.post("/settings/pin/unlock")
 def unlock(request: Request, pin: str = Form(""), need: int = Form(PIN), who=Depends(staff), conn=Depends(get_conn)):
-    now = time.time()
-    if _locked_out(now):
+    now, me = time.time(), _browser(request)
+    if _recent(me, now) >= FAIL_LIMIT or _recent("*", now) >= FAIL_LIMIT_ALL:
         return JSONResponse({"ok": False, "error": "Too many wrong tries. Wait 10 minutes."})
     rank = OWNER if is_owner(pin) else PIN if check(conn, pin) else OPEN
     if rank < max(need, PIN):  # a PIN where the owner's is needed is just a wrong passcode
-        _fails.append(now)
+        _fails[me].append(now)
+        _fails["*"].append(now)
         db.audit(conn, who, "passcode_wrong", None, "")
         conn.commit()
-        left = FAIL_LIMIT - len(_fails)
+        left = FAIL_LIMIT - len(_fails[me])
         return JSONResponse({"ok": False, "error": "Wrong passcode." + (f" {left} more tries." if left <= 2 else "")})
     until = int(now + UNLOCK_SECONDS[rank])
     request.session["unlock"] = {"rank": rank, "until": until, "for": stored(conn)[:12]}

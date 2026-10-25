@@ -21,7 +21,7 @@ def _points(cid):
 @pytest.fixture
 def owner(monkeypatch):
     monkeypatch.setattr(config, "ADMIN_PASSWORD", "owner-pw")
-    monkeypatch.setattr(pin, "_fails", [])
+    monkeypatch.setattr(pin, "_fails", {})
 
 
 def _unlock(client, code, need=1):
@@ -121,6 +121,8 @@ def test_rules():
         assert r("POST", "/customers/1/repay", {"amount": "$60"}) == pin.OWNER
         assert r("POST", "/tools/bulk_points", {"delta": "5", "everyone": "1"}) == pin.OWNER
         assert r("POST", "/tools/revoke_all", {}) == pin.OWNER
+        assert r("POST", "/tools/bulk_points", {"delta": "499", "people": "A\nB"}) == pin.OWNER   # 998 in total
+        assert r("POST", "/tools/bulk_points", {"delta": "100", "people": "A\nB"}) == pin.PIN
         assert r("GET", "/tools/backup.db") == pin.OWNER
         assert r("POST", "/customers/1/claim", {}) == pin.OPEN
         assert r("POST", "/login", {}) == pin.OPEN
@@ -138,10 +140,15 @@ def test_bad_pins_and_lockout(client, monkeypatch):
     login(client)
     assert "4 to 8 digits" in client.post("/settings/pin", data={"new": "12"}).text
     client.post("/settings/pin", data={"new": "123456"})
-    monkeypatch.setattr(pin, "_fails", [])
+    monkeypatch.setattr(pin, "_fails", {})
     for _ in range(pin.FAIL_LIMIT):
         _unlock(client, "000000")
     assert "Too many" in _unlock(client, "123456")["error"]
+    # Another browser isn't locked out by that.
+    from fastapi.testclient import TestClient
+    other = TestClient(client.app)
+    login(other)
+    assert _unlock(other, "123456")["ok"] is True
 
 
 def test_clear_pin_from_the_command_line(client):

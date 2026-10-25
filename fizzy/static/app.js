@@ -360,7 +360,8 @@
     if (locked) return locked[1];
     var act = R.actions.filter(function (a) { return a[0] === method && test(a[1]); })[0];
     var level = act ? act[2] : method === "POST" ? R.other : 0;
-    if (data && test(R.big.paths) && (data.get("everyone") || num(data.get("delta")) > R.big.points ||
+    var people = data ? Math.max(1, String(data.get("people") || "").split(/[\n;]+/).filter(function (x) { return x.trim(); }).length) : 1;
+    if (data && test(R.big.paths) && (data.get("everyone") || num(data.get("delta")) * people > R.big.points ||
         num(data.get("points")) > R.big.points || num(data.get("amount")) > R.big.dollars)) {
       level = Math.max(level, R.big.level);
     }
