@@ -10,10 +10,16 @@
 <link rel="icon" href="/static/favicon.ico?v={{ V }}" sizes="any">
 <link rel="icon" href="/static/logo.svg?v={{ V }}" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ V }}">
+<link rel="manifest" href="{{ me_url('/manifest.webmanifest') }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Cooked Coke">
 <link rel="preload" href="/static/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/me.css?v={{ V }}">
 </head>
 <body>
 {% block body %}{% endblock %}
+<script>if ("serviceWorker" in navigator) addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });</script>
 </body>
 </html>

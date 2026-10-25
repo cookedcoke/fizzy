@@ -79,6 +79,17 @@ Switch it with `W` or the dropdown. **Lock** signs the device out.
 
 ---
 
+### Install it like an app
+
+Fizzy and the student site can both be added to a phone's home screen. They then open full
+screen with their own icon, like an app. On iPhone: Safari → Share → **Add to Home Screen**. On
+Android: Chrome → ⋮ → **Install app**. Pages are always loaded fresh (nothing about students is
+stored on the phone). If the home PC or the internet is down, you get a "You're offline" page
+with a Try again button instead of a browser error.
+
+On iPhone, a home-screen app keeps its own sign-in, separate from Safari's, so sign in again
+inside it (and register the device again if you use device registration).
+
 ### Scanning student cards
 
 Student ID cards have a barcode with the student's RNS number. Plug a USB barcode scanner

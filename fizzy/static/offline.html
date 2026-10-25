@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline</title>
+<style>
+  :root { color-scheme: light dark; --bg: #FFF7EE; --ink: #2A1F18; --muted: #6B5D52; --btn: #E4231B }
+  @media (prefers-color-scheme: dark) { :root { --bg: #17120F; --ink: #F5EDE6; --muted: #B3A69B } }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 system-ui, sans-serif; text-align: center; padding: 0 16px; box-sizing: border-box }
+  img { width: 72px; height: 72px }
+  h1 { font-size: 22px; margin: 12px 0 4px }
+  p { color: var(--muted); margin: 0 0 20px }
+  button { border: 0; border-radius: 999px; padding: 12px 28px; font: 600 16px system-ui, sans-serif; color: #fff; background: var(--btn) }
+</style>
+</head>
+<body>
+<main>
+  <img src="/static/icon-192.png" alt="">
+  <h1>You're offline</h1>
+  <p>Can't reach Cooked Coke right now. Check your internet and try again.</p>
+  <button onclick="location.reload()">Try again</button>
+</main>
+<script>addEventListener("online", function () { location.reload(); });</script>
+</body>
+</html>

@@ -23,12 +23,13 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
+from . import pwa
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
 log = logging.getLogger("fizzy")
 
 
-GATE_EXEMPT = ("/static/", "/healthz", "/square/webhook", "/enrol/")
+GATE_EXEMPT = ("/static/", "/healthz", "/square/webhook", "/enrol/", "/sw.js", "/manifest.webmanifest")
 GATE_PAGE = ("<!doctype html><meta name=viewport content='width=device-width'><title>{title}</title>"
              "<body style='font:15px system-ui;max-width:520px;margin:15vh auto;padding:0 16px'>"
              "<h1 style='font-size:20px'>{title}</h1><p>{body}</p>")
@@ -184,6 +185,7 @@ def create_app(background=True):
     app.include_router(portal.router)
     app.include_router(events.router)
     app.include_router(pin.router)
+    app.include_router(pwa.router)
     app.include_router(money_pages.router)
     return app
 

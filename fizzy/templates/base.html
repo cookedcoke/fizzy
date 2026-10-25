@@ -9,6 +9,11 @@
 <link rel="icon" href="/static/favicon.ico?v={{ V }}" sizes="any">
 <link rel="icon" href="/static/logo.svg?v={{ V }}" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ V }}">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Fizzy">
 <link rel="stylesheet" href="/static/style.css?v={{ V }}">
 </head>
 <body{% if pin_until %} data-pin-until="{{ pin_until }}"{% endif %}>
@@ -71,6 +76,7 @@
 </dialog>
 <script src="/static/fuzzy.js?v={{ V }}" defer></script>
 <script src="/static/app.js?v={{ V }}" defer></script>
+<script>if ("serviceWorker" in navigator) addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
