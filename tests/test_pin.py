@@ -68,3 +68,58 @@ def test_everything_by_hand_is_covered_but_square_stuff_is_not():
                  "/square/payments/abc/assign", "/tools/sync_now", "/profit/refresh", "/settings/pin/unlock"):
         assert not pin.protected("POST", path), path
     assert not pin.protected("GET", "/customers/1")
+
+
+def test_owner_password_guards_the_dangerous_stuff(client, monkeypatch):
+    from fizzy import config
+    monkeypatch.setattr(config, "ADMIN_PASSWORD", "owner-pw")
+    monkeypatch.setattr(pin, "_fails", [])
+    login(client)
+    cid = _customer()
+    ref = {"referer": f"http://testserver/customers/{cid}"}
+    client.post(f"/customers/{cid}/points", data={"delta": "50", "note": "x"})          # small: fine
+    assert _owing(cid) == 50
+    r = client.post(f"/customers/{cid}/points", data={"delta": "-9000000", "note": "lol"}, headers=ref)
+    assert "owner password" in r.text and _owing(cid) == 50
+    r = client.post("/tools/reset_points", data={"confirm": "RESET", "note": "x"}, headers=ref)
+    assert "owner password" in r.text and _owing(cid) == 50
+    assert "owner password" in client.post("/settings/pin", data={"new": "1234"}, headers=ref).text
+    assert client.post("/settings/pin/unlock", data={"pin": "nope", "tier": "admin"}).json()["ok"] is False
+    assert client.post("/settings/pin/unlock", data={"pin": "owner-pw", "tier": "admin"}).json()["ok"] is True
+    client.post(f"/customers/{cid}/points", data={"delta": "-50", "note": "fix"})
+    assert _owing(cid) == 0
+    client.post("/switch", data={"who": "Mike"})
+    r = client.post(f"/customers/{cid}/points", data={"delta": "600", "note": "x"}, headers=ref)
+    assert "owner password" in r.text
+
+
+def test_rules_for_admin():
+    from fizzy import config
+    old, config.ADMIN_PASSWORD = config.ADMIN_PASSWORD, "x"
+    try:
+        assert pin.admin_needed("POST", "/customers/1/points", {"delta": "501"})
+        assert not pin.admin_needed("POST", "/customers/1/points", {"delta": "-500"})
+        assert pin.admin_needed("POST", "/customers/1/repay", {"amount": "$60"})
+        assert pin.admin_needed("POST", "/tools/bulk_points", {"delta": "5", "everyone": "1"})
+        assert pin.admin_needed("POST", "/tools/revoke_all", {})
+        assert pin.admin_needed("GET", "/tools/backup.db")
+        assert not pin.admin_needed("POST", "/customers/1/claim", {})
+        assert not pin.admin_needed("POST", "/rewards", {"points": "1000"})   # a reward's price isn't a points change
+    finally:
+        config.ADMIN_PASSWORD = old
+
+
+def test_owner_password_works_wherever_the_pin_does(client, monkeypatch):
+    from fizzy import config
+    monkeypatch.setattr(config, "ADMIN_PASSWORD", "owner-pw")
+    monkeypatch.setattr(pin, "_fails", [])
+    login(client)
+    cid = _customer()
+    client.post("/settings/pin/unlock", data={"pin": "owner-pw", "tier": "admin"})
+    client.post("/settings/pin", data={"new": "4821"})
+    client.post("/switch", data={"who": "Mike"})
+    r = client.post("/settings/pin/unlock", data={"pin": "owner-pw", "tier": "pin"}).json()
+    assert r["ok"] and r["tier"] == "admin"
+    client.post(f"/customers/{cid}/points", data={"delta": "5", "note": "x"})
+    client.post(f"/customers/{cid}/points", data={"delta": "900", "note": "x"})
+    assert _owing(cid) == 905

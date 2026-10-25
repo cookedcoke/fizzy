@@ -10,6 +10,7 @@
   <p class="hint">1 point per cent. Tab buys earn points once they're paid off. Changing days to pay only affects new charges.</p>
 </form>
 <form class="panel" id="pin" method="post" action="/settings/pin"><h2>Admin PIN</h2>
+  <p class="{{ 'muted' if admin_on else 'notice' }} small">{% if admin_on %}Owner password is on: over {{ limits.delta }} points or ${{ limits.amount }} by hand, the whole-school tools, deletes, downloads, imports and Settings need it.{% else %}No owner password yet. Put <code>FIZZY_ADMIN_PASSWORD</code> in <code>.env</code> on the home PC to lock the dangerous stuff (like giving someone -9 million points) behind it.{% endif %}</p>
   {% if pin_on %}<p>A PIN is set. Fizzy asks for it before anything done by hand: giving points, rewards, tabs, restocks and payouts, Tools, Settings and so on. Claiming Square sales doesn't need it.</p>
   <label>New PIN<input type="password" name="new" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="new-password" placeholder="4 to 8 digits"></label>
   <div class="actions"><button class="primary">Change PIN</button>

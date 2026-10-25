@@ -90,6 +90,21 @@ with a Try again button instead of a browser error.
 On iPhone, a home-screen app keeps its own sign-in, separate from Safari's, so sign in again
 inside it (and register the device again if you use device registration).
 
+### Owner password
+
+A second, stronger lock for the dangerous stuff, set only in `.env` on the home PC as
+`FIZZY_ADMIN_PASSWORD` (so nobody can change or remove it from inside Fizzy). It's needed for:
+
+- giving or taking more than 500 points by hand, or more than $50 in tab charges, write-offs
+  or repayments by hand, and anything aimed at everyone at once;
+- the whole-school tools: reset points, revoke all, approve all eligible, pause tabs, bonus
+  points for a period, archive/restore many, merge, re-sync, sign everyone out;
+- deleting restocks and payouts, exports and backup downloads, imports, and all of Settings
+  (including changing or removing the PIN).
+
+It stays unlocked for 5 minutes, and locks again when someone else is put on the counter.
+Every unlock is in the activity log. Leave it blank and those things just need the PIN.
+
 ### Scanning student cards
 
 Student ID cards have a barcode with the student's RNS number. Plug a USB barcode scanner

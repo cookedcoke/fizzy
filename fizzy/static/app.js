@@ -342,20 +342,29 @@
     e.preventDefault(); e.stopImmediatePropagation();
     fizzyAsk(b.dataset.confirm, function () { passed = b; b.click(); });
   }, true);
-  // Admin PIN: protected forms and downloads ask for it in a box first, then carry on.
-  var pinPaths = $("#pin-paths") ? JSON.parse($("#pin-paths").textContent) : { protect: [], exempt: [] };
-  function needsPin(method, url) {
-    var until = Number(document.body.dataset.pinUntil || 0);
-    if (!until || until > Date.now() / 1000 + 5) return false;
-    var path = new URL(url, location.href).pathname;
-    if (new URL(url, location.href).origin !== location.origin) return false;
-    return pinPaths.protect.some(function (p) { return p[0] === method && new RegExp(p[1]).test(path); }) &&
-           !pinPaths.exempt.some(function (p) { return new RegExp(p).test(path); });
+  // PIN and owner password: protected forms and downloads ask in a box first, then carry on.
+  var pinPaths = $("#pin-paths") ? JSON.parse($("#pin-paths").textContent) : { protect: [], exempt: [], admin: [], limited: "^$", limits: {} };
+  function stillOpen(key) { var u = Number(document.body.dataset[key] || 0); return u > Date.now() / 1000 + 5; }
+  function num(v) { var n = parseFloat(String(v || "").replace(/[$,\s]/g, "")); return isNaN(n) ? 0 : Math.abs(n); }
+  // Which lock this needs right now: "admin", "pin" or "" (none, or already unlocked).
+  function needsPin(method, url, data) {
+    var u = new URL(url, location.href), path = u.pathname;
+    if (u.origin !== location.origin) return "";
+    var guarded = pinPaths.protect.some(function (p) { return p[0] === method && new RegExp(p[1]).test(path); }) &&
+                  !pinPaths.exempt.some(function (p) { return new RegExp(p).test(path); });
+    if (!guarded) return "";
+    var admin = pinPaths.admin.some(function (p) { return p[0] === method && new RegExp(p[1]).test(path); });
+    if (!admin && data && new RegExp(pinPaths.limited).test(path)) {
+      admin = !!data.get("everyone") || Object.keys(pinPaths.limits).some(function (k) { return num(data.get(k)) > pinPaths.limits[k]; });
+    }
+    if (admin) return stillOpen("adminUntil") ? "" : "admin";
+    var pin = Number(document.body.dataset.pinUntil || 0);
+    return !pin || stillOpen("pinUntil") || stillOpen("adminUntil") ? "" : "pin";
   }
-  var pinBox = document.createElement("dialog"), pinThen = null;
+  var pinBox = document.createElement("dialog"), pinThen = null, pinTier = "pin";
   pinBox.className = "ask";
-  pinBox.innerHTML = '<form method="dialog"><p><b>Enter the admin PIN</b></p>' +
-    '<input type="password" inputmode="numeric" autocomplete="off" aria-label="Admin PIN" maxlength="8">' +
+  pinBox.innerHTML = '<form method="dialog"><p><b></b><br><span class="muted small"></span></p>' +
+    '<input type="password" autocomplete="off" aria-label="PIN or password">' +
     '<div class="err" role="alert" hidden></div>' +
     '<div class="actions"><button class="primary" value="ok">Unlock</button><button type="button" value="no">Cancel</button></div></form>';
   document.body.appendChild(pinBox);
@@ -363,31 +372,41 @@
   $("[value=no]", pinBox).addEventListener("click", function () { pinBox.close(); });
   $("form", pinBox).addEventListener("submit", function (e) {
     e.preventDefault();
-    var body = new URLSearchParams({ pin: pinIn.value });
+    var body = new URLSearchParams({ pin: pinIn.value, tier: pinTier });
     fetch("/settings/pin/unlock", { method: "POST", body: body, credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (r) {
         if (!r.ok) { pinErr.hidden = false; pinErr.textContent = r.error; pinIn.select(); return; }
-        document.body.dataset.pinUntil = r.until; pinBox.close(); pinThen();
+        document.body.dataset[r.tier === "admin" ? "adminUntil" : "pinUntil"] = r.until; pinBox.close();
+        var again = pinThen; pinThen = null; again();
       })
       .catch(function () { pinErr.hidden = false; pinErr.textContent = "Couldn't reach Fizzy. Try again."; });
   });
-  function askPin(then) {
-    pinThen = then; pinIn.value = ""; pinErr.hidden = true; pinBox.showModal(); pinIn.focus();
+  function askPin(tier, then) {
+    pinTier = tier; pinThen = then; pinIn.value = ""; pinErr.hidden = true;
+    var admin = tier === "admin";
+    var owner = pinPaths.admin.length > 0;
+    $("b", pinBox).textContent = admin ? "Owner password" : owner ? "Enter the PIN or owner password" : "Enter the admin PIN";
+    $(".muted", pinBox).textContent = admin ? "This one's a big change, so it needs the owner's password." : "";
+    pinIn.inputMode = admin || owner ? "text" : "numeric";
+    pinBox.showModal(); pinIn.focus();
   }
-  window.fizzyPin = function (method, url, then) { if (needsPin(method, url)) askPin(then); else then(); };
+  window.fizzyPin = function (method, url, then) { var t = needsPin(method, url); if (t) askPin(t, then); else then(); };
   document.addEventListener("submit", function (e) {
     var f = e.target, method = (f.getAttribute("method") || "get").toUpperCase();
-    if (e.defaultPrevented || f.closest("dialog.ask") || !needsPin(method, f.action)) return;
+    if (e.defaultPrevented || f.closest("dialog.ask")) return;
+    var tier = needsPin(method, f.action, new FormData(f));
+    if (!tier) return;
     e.preventDefault();
     var by = e.submitter;
-    askPin(function () { f.requestSubmit(by && by.form === f ? by : undefined); });
+    askPin(tier, function () { f.requestSubmit(by && by.form === f ? by : undefined); });
   });
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest("a[href]");
-    if (!a || !needsPin("GET", a.href)) return;
+    var tier = a && needsPin("GET", a.href);
+    if (!tier) return;
     e.preventDefault();
-    askPin(function () { location.href = a.href; });
+    askPin(tier, function () { location.href = a.href; });
   });
   $$("input[data-search]").forEach(bindSearch);
   var hb = $("#keys-btn"); if (hb) hb.addEventListener("click", help);

@@ -313,7 +313,8 @@ def register(app):
 
     @app.exception_handler(pin.PinRequired)
     async def _need_pin(request, exc):
-        msg = "Enter the PIN first. Nothing was changed."
+        msg = ("That needs the owner password. Nothing was changed." if exc.tier == "admin"
+               else "Enter the PIN first. Nothing was changed.")
         if request.method == "GET":
             return back(request, "/tools", msg)
         return back(request, _same_site_referer(request) or "/", msg)
@@ -360,6 +361,7 @@ def register(app):
         if who in config.STAFF_NAMES:
             request.session["staff"] = who
             request.session.pop("pin_until", None)  # a new person on the counter enters it again
+            request.session.pop("admin_until", None)
         return RedirectResponse(request.headers.get("referer") or "/", status_code=303)
 
     @app.post("/logout")
@@ -793,7 +795,7 @@ def register(app):
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
-        return render(request, "settings.html", cfg=logic.settings(conn), pin_on=bool(pin.stored(conn)),
+        return render(request, "settings.html", cfg=logic.settings(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), limits=pin.ADMIN_LIMITS,
                       devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
                       device_list=conn.execute("SELECT * FROM devices ORDER BY revoked_at IS NOT NULL, created_at DESC").fetchall(),
                       this_device=getattr(request.state, "device", None),

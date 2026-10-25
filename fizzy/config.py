@@ -11,6 +11,7 @@ def _env(name, default=""):
 
 DB_PATH = _env("FIZZY_DB", "data/fizzy.db")
 PASSWORD = _env("FIZZY_PASSWORD")
+ADMIN_PASSWORD = _env("FIZZY_ADMIN_PASSWORD")  # owner password for the dangerous stuff (optional)
 SECRET_KEY = _env("FIZZY_SECRET_KEY")
 STAFF_NAMES = [s.strip() for s in _env("FIZZY_STAFF", "Will,Mike,Frankie").split(",") if s.strip()]
 TZ = ZoneInfo(_env("FIZZY_TZ", "Australia/Sydney"))
