@@ -402,6 +402,21 @@ form.panel.attn:has(.red), .panel.attn.bad { box-shadow: inset 4px 0 0 var(--red
 .clip-more { margin: var(--s3) 0 0 var(--s4) } tr[hidden] { display: none }
 
 .panel.wide { grid-column: 1 / -1 }
-.perms td { vertical-align: middle; padding: 6px var(--s3) 6px 0 }
-.perms select { width: auto }
-.perms input { display: inline-block; margin: 0 4px }
+.perms td { vertical-align: middle; padding-top: 8px; padding-bottom: 8px }
+.perms td.n { width: 1% }
+.perms select { width: auto; min-width: 170px }
+.perms input { display: inline-block; margin: 2px 4px; height: 32px }
+@media (max-width: 720px) {
+  .perms tr { display: grid; gap: 6px; padding: 10px var(--s4); border-top: 1px solid var(--line) }
+  .perms td { display: block; border: 0; padding: 0 !important; width: auto }
+  .perms td.n { width: auto; text-align: left }
+  .perms select { width: 100% }
+}
+.hint code { white-space: normal; overflow-wrap: anywhere }
+@media (max-width: 720px) {
+  .todo .inline-set { display: flex; width: 100%; margin-left: 0 }
+  .todo .inline-set input { flex: 1; width: auto; min-width: 0 }
+  table.lines td:first-child { width: auto }
+  table.lines td:nth-child(2) input { width: 52px }
+  table.lines td:nth-child(3) input { width: 76px }
+}

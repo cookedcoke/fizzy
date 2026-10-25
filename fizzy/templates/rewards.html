@@ -16,7 +16,7 @@
         <td class="n">{{ r.used }}{% if r.used %}<br><span class="muted small">{{ r.people }} {{ 'person' if r.people == 1 else 'people' }}</span>{% endif %}</td>
         <td class="n"><form class="inline" method="post" action="/rewards/{{ r.id }}/end">
           <button class="sm danger" data-confirm="End “{{ r.name }}”? It stops showing on customer pages.">End</button></form></td></tr>{% endfor %}
-    </table></div>{% else %}<p class="empty">No rewards running. Start one on the right.</p>{% endif %}
+    </table></div>{% else %}<p class="empty">No rewards running. Start one with the form.</p>{% endif %}
   </div>
   {% if rules %}<div class="panel"><h2>Every week <span class="count">{{ rules|length }}</span></h2>
     <div class="scroll"><table>{% for r in rules %}<tr><td><b>{{ r.name }}</b> <span class="muted">· ×{{ '%g'|format(r.multiplier) }}</span></td>
