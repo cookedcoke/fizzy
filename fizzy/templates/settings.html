@@ -9,16 +9,25 @@
   <div class="actions"><button class="primary">Save</button></div>
   <p class="hint">1 point per cent. Tab buys earn points once they're paid off. Changing days to pay only affects new charges.</p>
 </form>
-<form class="panel" id="pin" method="post" action="/settings/pin"><h2>Admin PIN</h2>
-  <p class="{{ 'muted' if admin_on else 'notice' }} small">{% if admin_on %}Owner password is on: over {{ limits.delta }} points or ${{ limits.amount }} by hand, the whole-school tools, deletes, downloads, imports and Settings need it.{% else %}No owner password yet. Put <code>FIZZY_ADMIN_PASSWORD</code> in <code>.env</code> on the home PC to lock the dangerous stuff (like giving someone -9 million points) behind it.{% endif %}</p>
-  {% if pin_on %}<p>A PIN is set. Fizzy asks for it before anything done by hand: giving points, rewards, tabs, restocks and payouts, Tools, Settings and so on. Claiming Square sales doesn't need it.</p>
-  <label>New PIN<input type="password" name="new" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="new-password" placeholder="4 to 8 digits"></label>
-  <div class="actions"><button class="primary">Change PIN</button>
-    <button name="remove" value="1" class="danger" data-confirm="Remove the PIN? Manual changes won't need it any more.">Remove PIN</button></div>
-  {% else %}<p>Optional. Set one and Fizzy asks for it before anything done by hand: giving points, rewards, tabs, restocks and payouts, Tools, Settings and so on. Square sales, claiming them and syncing never ask.</p>
-  <label>PIN<input type="password" name="new" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="new-password" placeholder="4 to 8 digits" required></label>
-  <div class="actions"><button class="primary">Set PIN</button></div>{% endif %}
-  <p class="hint">Once entered it stays unlocked for 10 minutes, or until someone else is put on the counter. Forgot it? On the home PC run <code>docker compose exec fizzy python -m fizzy clear-pin</code></p>
+<form class="panel" id="pin" method="post" action="/settings/pin"><h2>PIN</h2>
+  {% if not admin_on %}<p class="notice small">No owner password yet. Put <code>FIZZY_ADMIN_PASSWORD</code> in <code>.env</code> on the home PC, then you can lock the dangerous stuff (like giving someone -9 million points) behind it.</p>{% endif %}
+  <p>{{ 'A PIN is set.' if pin_on else 'Optional.' }} Staff type it when they do something set to "PIN" under Who can do what.{% if admin_on %} The owner password works anywhere the PIN does.{% endif %}</p>
+  <label>{{ 'New PIN' if pin_on else 'PIN' }}<input type="password" name="new" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="new-password" placeholder="4 to 8 digits" {{ '' if pin_on else 'required' }}></label>
+  <div class="actions"><button class="primary">{{ 'Change PIN' if pin_on else 'Set PIN' }}</button>
+    {% if pin_on %}<button name="remove" value="1" class="danger" data-confirm="Remove the PIN?">Remove PIN</button>{% endif %}</div>
+  <p class="hint">Stays unlocked for 10 minutes (owner password: 5), or until someone else is put on the counter. Forgot the PIN? On the home PC: <code>docker compose exec fizzy python -m fizzy clear-pin</code></p>
+</form>
+<form class="panel wide" id="permissions" method="post" action="/settings/permissions"><h2>Who can do what</h2>
+  {% if not admin_on %}<p class="hint" style="margin-top:0">"Owner only" means the PIN until there's an owner password.{% if not pin_on %} With no PIN either, everything's open to anyone signed in.{% endif %}</p>{% endif %}
+  <table class="perms">
+    {% for aid, label, _, _ in actions %}<tr><td>{{ label }}</td><td class="n"><select name="{{ aid }}" aria-label="{{ label }}">
+      {% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms[aid] == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>{% endfor %}
+    <tr><td><b>Big changes by hand</b>: more than <input type="text" name="big_points" inputmode="numeric" value="{{ perms.big_points }}" style="width:90px" aria-label="Points limit"> points,
+      or more than $<input type="text" name="big_dollars" inputmode="numeric" value="{{ perms.big_dollars }}" style="width:70px" aria-label="Dollar limit">, or for everyone at once</td>
+      <td class="n"><select name="big" aria-label="Big changes">{% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms.big == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>
+  </table>
+  <div class="actions"><button class="primary">Save</button></div>
+  <p class="hint">Signing in, the student site, the PIN and this table itself aren't on the list: this table and the PIN are always owner only.</p>
 </form>
 <form class="panel" method="post" action="/settings/backup"><h2>Backups</h2>
   <table>

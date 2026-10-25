@@ -90,20 +90,23 @@ with a Try again button instead of a browser error.
 On iPhone, a home-screen app keeps its own sign-in, separate from Safari's, so sign in again
 inside it (and register the device again if you use device registration).
 
-### Owner password
+### Owner password and who can do what
 
-A second, stronger lock for the dangerous stuff, set only in `.env` on the home PC as
-`FIZZY_ADMIN_PASSWORD` (so nobody can change or remove it from inside Fizzy). It's needed for:
+There are three levels: **anyone signed in**, the **PIN**, and the **owner password**. Each one
+can do everything below it. The owner password lives only in `.env` on the home PC as
+`FIZZY_ADMIN_PASSWORD`, so nobody can change or remove it from inside Fizzy.
 
-- giving or taking more than 500 points by hand, or more than $50 in tab charges, write-offs
-  or repayments by hand, and anything aimed at everyone at once;
-- the whole-school tools: reset points, revoke all, approve all eligible, pause tabs, bonus
-  points for a period, archive/restore many, merge, re-sync, sign everyone out;
-- deleting restocks and payouts, exports and backup downloads, imports, and all of Settings
-  (including changing or removing the PIN).
+**Settings → Who can do what** (owner only) sets the level for each kind of action: claiming
+sales, giving points, rewards, tabs, restocks, tools, downloads, imports, settings and so on.
+It also sets what counts as a **big change by hand** (by default more than 500 points, more
+than $50, or anything for everyone at once) and the level that needs. The PIN and that table
+are always owner only. Things set to "PIN" are open while no PIN is set, and "Owner only"
+falls back to the PIN while there's no owner password.
 
-It stays unlocked for 5 minutes, and locks again when someone else is put on the counter.
-Every unlock is in the activity log. Leave it blank and those things just need the PIN.
+The pop-up just says **Enter passcode**. Typing the PIN where the owner's is needed is simply
+a wrong passcode. The PIN stays unlocked for 10 minutes, the owner password for 5, and both
+lock again when someone else is put on the counter. Every owner unlock and wrong try is in the
+activity log.
 
 ### Scanning student cards
 
@@ -489,13 +492,10 @@ says who you might mean, so a typo can't hit the wrong student.
 
 ### Admin PIN
 
-Optional, set under **Settings → Admin PIN** (4 to 8 digits). Once set, Fizzy asks for it
-before anything done by hand: giving or taking points, redeeming and setting up rewards,
-double points days, tab decisions and repayments, editing customers and passcodes,
-restocks and payouts, costs, imports, everything on Tools and Settings. Things that come
-from Square or happen by themselves never ask: claiming a sale, saying whose sale it was,
-syncing, and the automatic bonus points. Entering it unlocks
-that browser for 10 minutes, or until someone else is picked as on the counter. Five wrong
+Optional, set under **Settings → PIN** (4 to 8 digits). By default it's needed for anything
+done by hand: giving or taking points, rewards, double points days, tabs, customers and
+passcodes, restocks and payouts, costs and most tools. Claiming Square sales and syncing never
+ask. The owner can change all of this under Who can do what (below). Five wrong
 tries locks it for 10 minutes. Forgot it? On the home PC:
 
 ```

@@ -400,3 +400,8 @@ table.lines td:nth-child(2) { width: 56px } table.lines td:nth-child(2) input { 
 form.panel.attn:has(.red), .panel.attn.bad { box-shadow: inset 4px 0 0 var(--red) }
 .more details > form { padding: var(--s3) 0 }
 .clip-more { margin: var(--s3) 0 0 var(--s4) } tr[hidden] { display: none }
+
+.panel.wide { grid-column: 1 / -1 }
+.perms td { vertical-align: middle; padding: 6px var(--s3) 6px 0 }
+.perms select { width: auto }
+.perms input { display: inline-block; margin: 0 4px }

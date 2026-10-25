@@ -16,8 +16,8 @@
 <meta name="apple-mobile-web-app-title" content="Fizzy">
 <link rel="stylesheet" href="/static/style.css?v={{ V }}">
 </head>
-<body{% if pin_until %} data-pin-until="{{ pin_until }}"{% endif %}{% if admin_until %} data-admin-until="{{ admin_until }}"{% endif %}>
-{% if pin_until or admin_until %}<script type="application/json" id="pin-paths">{{ pin_paths|tojson }}</script>{% endif %}
+<body{% if lock_rules %} data-unlocked="{{ unlocked }}" data-unlocked-until="{{ unlocked_until }}"{% endif %}>
+{% if lock_rules %}<script type="application/json" id="lock-rules">{{ lock_rules|tojson }}</script>{% endif %}
 {% if staff %}
 <header>
   <a class="brand" href="/">{% include "_logo.html" %}<span>Fizzy</span><small>Cooked Coke Co.</small></a>

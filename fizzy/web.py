@@ -81,11 +81,11 @@ def render(request, name, **ctx):
         from . import pin
         conn = db.connect()
         try:
-            ctx["pin_until"] = pin.unlocked_until(request, conn)
-            ctx["admin_until"] = pin.admin_until(request)
+            ctx["lock_rules"] = pin.rules(conn)
+            ctx["unlocked"] = pin.unlocked(request, conn)
+            ctx["unlocked_until"] = (request.session.get("unlock") or {}).get("until", 0)
         finally:
             conn.close()
-        ctx["pin_paths"] = pin.rules()
     return templates.TemplateResponse(request, name, ctx)
 
 
