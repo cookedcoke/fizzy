@@ -276,6 +276,7 @@ MIGRATIONS = [
     ("restock_items", "item_key", "TEXT"),
     ("points_events", "ended_at", "TEXT"),
     ("points_events", "rule_id", "INTEGER"),
+    ("customers", "kind", "TEXT"),  # NULL (a normal customer), admin (staff themselves) or test
 ]
 
 

@@ -434,7 +434,8 @@ def register(app):
         ).fetchall()
         top = conn.execute(
             "SELECT c.id, c.name, SUM(p.delta) AS points, SUM(p.spend_cents) AS spent FROM customers c "
-            "JOIN points_ledger p ON p.customer_id = c.id WHERE c.archived_at IS NULL GROUP BY c.id ORDER BY spent DESC LIMIT 10"
+            "JOIN points_ledger p ON p.customer_id = c.id WHERE c.archived_at IS NULL AND c.kind IS NOT 'test' "
+            "GROUP BY c.id ORDER BY spent DESC LIMIT 10"
         ).fetchall()
         breaches = conn.execute(
             "SELECT t.*, c.name FROM tab_charges t JOIN customers c ON c.id = t.customer_id "
@@ -622,7 +623,8 @@ def register(app):
         opened = datetime.now(timezone.utc)
         watch_since = (opened - timedelta(seconds=90)).isoformat(timespec="seconds")
         opened = opened.isoformat(timespec="seconds")
-        return render(request, "customer.html", s=s, c=c, points=points, payments=payments, watch_since=watch_since, opened=opened,
+        kind_levels = {lv: pin.customer_level(conn, c["kind"], lv) for lv in (pin.OPEN, pin.PIN, pin.OWNER)}
+        return render(request, "customer.html", kind_levels=kind_levels, s=s, c=c, points=points, payments=payments, watch_since=watch_since, opened=opened,
                       decisions=decisions, audit_rows=audit_rows,
                       offers=rewards.offers_for(conn, cid, s["points"]),
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
@@ -713,6 +715,16 @@ def register(app):
         logic.set_tab_decision(conn, cid, mapping[decision], note, who)
         conn.commit()
         return back(request, f"/customers/{cid}", f"Tab {decision} saved.")
+
+    @app.post("/customers/{cid}/kind")
+    def set_kind(request: Request, cid: int, kind: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+        c = load_customer(conn, cid)
+        kind = kind if kind in ("admin", "test") else None
+        conn.execute("UPDATE customers SET kind = ? WHERE id = ?", (kind, cid))
+        db.audit(conn, who, "customer_kind", cid, kind or "normal")
+        conn.commit()
+        label = {"admin": "an admin account", "test": "a test account", None: "a normal customer"}[kind]
+        return back(request, f"/customers/{cid}", f"{c['name']} is now {label}.")
 
     @app.post("/customers/{cid}/edit")
     def edit_customer(request: Request, cid: int, name: str = Form(...), square_customer_id: str = Form(""),

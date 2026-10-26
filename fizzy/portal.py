@@ -349,7 +349,7 @@ def leaderboard(conn, since=None, limit=10, me=None):
     rows = conn.execute(
         "SELECT c.id, c.name, SUM(p.delta) AS pts FROM points_ledger p JOIN customers c ON c.id = p.customer_id "
         "WHERE p.reason NOT IN ('redeem', 'redeem_undo') AND c.archived_at IS NULL AND c.merged_into IS NULL "
-        "AND c.passcode_enc IS NOT NULL "
+        "AND c.passcode_enc IS NOT NULL AND c.kind IS NOT 'test' "
         "AND p.created_at >= ? GROUP BY c.id HAVING pts > 0 ORDER BY pts DESC, MIN(p.created_at)",
         (since or "",)).fetchall()
     board, my_rank, rank, prev = [], None, 0, None

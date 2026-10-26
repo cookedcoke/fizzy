@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}{{ c.name }}{% endblock %}
 {% block body %}
+<script type="application/json" id="lock-customer">{{ {"id": c.id, "kind": c.kind or "", "levels": kind_levels}|tojson }}</script>
 {% macro repay_form(boxed) %}
   <form class="{{ 'panel' ~ (' attn bad' if led.has_overdue else '') if boxed else '' }}" method="post" action="/customers/{{ c.id }}/repay">{% if boxed %}<h2>Repayment <kbd>R</kbd></h2>{% endif %}
     <p class="small" style="margin:0">{% if led.owing_cents %}<b>In Square:</b> attach {{ c.name.split(' ')[0] }}'s profile, add <b>Tab repayment</b>, type in
@@ -35,7 +36,7 @@
 {% set st = s.status %}{% set led = s.ledger %}
 <div class="pagehead">
   <div>
-    <h1>{{ c.name }} <span class="tag {{ st.status }}">{{ st.label }}</span>{% if c.archived_at %} <span class="tag">Archived</span>{% endif %}</h1>
+    <h1>{{ c.name }} <span class="tag {{ st.status }}">{{ st.label }}</span>{% if c.archived_at %} <span class="tag">Archived</span>{% endif %}{% if c.kind == 'admin' %} <span class="tag kind-admin" title="One of us. Changes to this account need the level set under Who can do what.">Admin</span>{% elif c.kind == 'test' %} <span class="tag kind-test" title="Test account: left out of leaderboards, reports and exports.">Test</span>{% endif %}</h1>
     <div class="meta"><span class="mono">{{ c.email.split('@')[0] }}</span> · {{ 'Linked to Square' if c.square_customer_id else 'Not in Square yet' }}</div>
   </div>
   <a class="btn primary" href="/customers/{{ c.id }}/claim" data-key="k" data-key-label="Claim the sale just rung up in Square"
@@ -193,6 +194,15 @@
       <label for="ed-sq">Square customer ID</label><input id="ed-sq" type="text" name="square_customer_id" value="{{ c.square_customer_id or '' }}" class="mono">
       <label class="check"><input type="checkbox" name="archived" value="1" {{ 'checked' if c.archived_at }}> Archived - hidden from search</label>
       <div class="actions"><button>Save</button></div>
+    </form>
+    <form method="post" action="/customers/{{ c.id }}/kind" style="max-width:420px">
+      <label for="ed-kind">Account type</label>
+      <select id="ed-kind" name="kind">
+        <option value="" {{ 'selected' if not c.kind }}>Normal customer</option>
+        <option value="admin" {{ 'selected' if c.kind == 'admin' }}>Admin (one of us)</option>
+        <option value="test" {{ 'selected' if c.kind == 'test' }}>Test account</option></select>
+      <div class="actions"><button>Change type</button></div>
+      <p class="hint">Admin accounts are protected: by default only the owner can change their points, tab or details. Test accounts are for trying things out, and stay out of leaderboards and reports. Owner only.</p>
     </form>
   </details>
 </div>

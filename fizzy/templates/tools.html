@@ -1,5 +1,5 @@
 {% extends "base.html" %}{% block title %}Tools{% endblock %}
-{% set DANGER = ['reset_points', 'revoke_all', 'write_off', 'merge', 'sign_out_all', 'bulk_archive'] %}
+{% set DANGER = ['reset_points', 'revoke_all', 'write_off', 'merge', 'sign_out_all', 'bulk_archive', 'delete_test_accounts'] %}
 
 {% macro who(name='customer', label='Customer', list='people') -%}
 <label>{{ label }}<input type="text" name="{{ name }}" list="{{ list }}" placeholder="Type a name…" autocomplete="off" required></label>
@@ -55,6 +55,10 @@
 {% elif id == 'add_customer' %}
   <label>Name<input type="text" name="name" required></label>
   <label>Email<input type="text" name="email" inputmode="email" required></label>
+{% elif id == 'test_accounts' %}
+  <label>How many<input type="number" name="n" min="1" max="20" value="1" required></label>
+{% elif id == 'delete_test_accounts' %}
+  {{ confirm('DELETE') }}
 {% elif id == 'merge' %}
   {{ who('keep', 'Keep this one') }}{{ who('dup', 'Merge this duplicate into it') }}
 {% elif id == 'bulk_archive' %}

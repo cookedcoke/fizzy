@@ -420,3 +420,5 @@ form.panel.attn:has(.red), .panel.attn.bad { box-shadow: inset 4px 0 0 var(--red
   table.lines td:nth-child(2) input { width: 52px }
   table.lines td:nth-child(3) input { width: 76px }
 }
+.tag.kind-admin { color: #6D3FC0; border-color: #D5C6F2; background: #F3EEFC } .tag.kind-admin::before { background: #6D3FC0 }
+.tag.kind-test { color: #8A5A00; border-color: #EBD49A; background: #FDF6E3 } .tag.kind-test::before { background: #C08A00 }

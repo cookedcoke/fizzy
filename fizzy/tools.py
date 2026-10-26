@@ -42,6 +42,8 @@ TOOLS = [
         ("merge", "Merge duplicates", "Same person twice? Join them into one."),
         ("bulk_archive", "Archive many", "Hide people who've left school. Nothing is deleted."),
         ("restore", "Restore archived", "Bring hidden people back."),
+        ("test_accounts", "Make test accounts", "Fake customers to try things on. They stay out of leaderboards, reports and exports."),
+        ("delete_test_accounts", "Delete test accounts", "Remove every test account and everything done to them. Real customers aren't touched."),
     ]),
     ("Reports", [
         ("takings", "Takings summary", "What came in over some dates, by cash, card and tab. Handy for counting the till."),
@@ -387,6 +389,40 @@ def h_extend_due(request, conn, who, form):
     return done(request, "extend_due", f"Gave {c['name']} {days} more day(s) on {len(open_ids)} charge(s).")
 
 
+def h_test_accounts(request, conn, who, form):
+    n = _int(form, "n", 1)
+    if n > 20:
+        raise ToolError("20 at a time is plenty.")
+    start = conn.execute("SELECT COUNT(*) FROM customers WHERE kind = 'test'").fetchone()[0]
+    made = []
+    for i in range(start + 1, start + n + 1):
+        while conn.execute("SELECT 1 FROM customers WHERE email = ?", (f"test{i}@test.invalid",)).fetchone():
+            i += 100
+        cur = conn.execute("INSERT INTO customers(name, email, created_at, kind) VALUES (?, ?, ?, 'test')",
+                           (f"Test Account {i}", f"test{i}@test.invalid", db.now_iso()))
+        made.append(cur.lastrowid)
+    db.audit(conn, who, "test_accounts", None, f"made {n}")
+    if n == 1:
+        return back(request, f"/customers/{made[0]}", "Made a test account. Do whatever you like with it.")
+    return done(request, "test_accounts", f"Made {n} test accounts. Search \"Test Account\" to find them.")
+
+
+def h_delete_test_accounts(request, conn, who, form):
+    _confirm(form, "DELETE")
+    ids = [r[0] for r in conn.execute("SELECT id FROM customers WHERE kind = 'test'")]
+    if not ids:
+        raise ToolError("There aren't any test accounts.")
+    marks = ",".join("?" * len(ids))
+    # Square sales put on a test account go back to "no customer" rather than vanishing.
+    conn.execute(f"UPDATE square_payments SET customer_id = NULL WHERE customer_id IN ({marks})", ids)
+    for table in ("redemptions", "points_ledger", "tab_repayments", "tab_charges", "tab_decisions", "square_aliases"):
+        conn.execute(f"DELETE FROM {table} WHERE customer_id IN ({marks})", ids)
+    conn.execute(f"UPDATE customers SET merged_into = NULL WHERE merged_into IN ({marks})", ids)
+    conn.execute(f"DELETE FROM customers WHERE id IN ({marks})", ids)
+    db.audit(conn, who, "test_accounts_deleted", None, f"{len(ids)} deleted")
+    return done(request, "delete_test_accounts", f"Deleted {len(ids)} test account(s).")
+
+
 def h_add_customer(request, conn, who, form):
     name = " ".join(form.get("name", "").split())
     email = form.get("email", "").strip().lower()
@@ -506,7 +542,7 @@ def _balances(conn):
 
 
 def h_chase(request, conn, who, form):
-    rows = [b for b in _balances(conn) if b[1]["owing_cents"] > 0]
+    rows = [b for b in _balances(conn) if b[1]["owing_cents"] > 0 and b[0]["kind"] != "test"]
     rows.sort(key=lambda b: b[2] or "")
     from .web import local
     table = [[cust_link(c), c["email"], money(led["owing_cents"]),
@@ -531,7 +567,7 @@ def h_leaderboard(request, conn, who, form):
     n = _int(form, "n", 1)
     rows = conn.execute(
         "SELECT c.id, c.name, SUM(p.delta) AS pts FROM customers c JOIN points_ledger p ON p.customer_id = c.id "
-        "WHERE c.archived_at IS NULL GROUP BY c.id HAVING pts > 0 ORDER BY pts DESC LIMIT ?", (n,)
+        "WHERE c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id HAVING pts > 0 ORDER BY pts DESC LIMIT ?", (n,)
     ).fetchall()
     return report(request, f"Top {n} by points", ["#", "Customer", "Points"],
                   [[i + 1, cust_link(r), r["pts"]] for i, r in enumerate(rows)])
@@ -544,14 +580,14 @@ def h_raffle(request, conn, who, form):
         start, end = day_start(form.get("start")), day_start(form.get("end"), end=True)
         pool = conn.execute(
             "SELECT c.id, c.name, (SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = c.id) AS pts "
-            "FROM customers c WHERE c.archived_at IS NULL AND (EXISTS (SELECT 1 FROM points_ledger p WHERE p.customer_id = c.id "
+            "FROM customers c WHERE c.archived_at IS NULL AND c.kind IS NOT 'test' AND (EXISTS (SELECT 1 FROM points_ledger p WHERE p.customer_id = c.id "
             "AND p.reason = 'purchase' AND p.created_at >= ? AND p.created_at < ?) OR EXISTS (SELECT 1 FROM tab_charges t "
             "WHERE t.customer_id = c.id AND t.charged_at >= ? AND t.charged_at < ?))", (start, end, start, end)
         ).fetchall()
     else:
         pool = conn.execute(
             "SELECT c.id, c.name, COALESCE(SUM(p.delta), 0) AS pts FROM customers c LEFT JOIN points_ledger p "
-            "ON p.customer_id = c.id WHERE c.archived_at IS NULL GROUP BY c.id"
+            "ON p.customer_id = c.id WHERE c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id"
         ).fetchall()
         if pool_kind == "points":
             pool = [p for p in pool if p["pts"] > 0]

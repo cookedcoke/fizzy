@@ -367,7 +367,15 @@
     }
     return level;
   }
-  function needsPin(method, url, data) { var n = need(method, url, data); return n > have() ? n : 0; }
+  // On a customer's page: admin and test accounts change the level (the server works this out for names typed into tools).
+  var lockCust = $("#lock-customer") ? JSON.parse($("#lock-customer").textContent) : null;
+  function needFor(method, url, data) {
+    var n = need(method, url, data), path = new URL(url, location.href).pathname;
+    if (n === undefined || !lockCust || !lockCust.kind || path.indexOf("/customers/" + lockCust.id + "/") !== 0 || /\/(claim|kind)$/.test(path)) return n;
+    if (lockCust.kind === "test") return lockCust.levels[0];
+    return Math.max(n, lockCust.levels[n]);
+  }
+  function needsPin(method, url, data) { var n = needFor(method, url, data); return n > have() ? n : 0; }
   var pinBox = document.createElement("dialog"), pinThen = null, pinNeed = 1;
   pinBox.className = "ask";
   pinBox.innerHTML = '<form method="dialog"><p><b>Enter passcode</b></p>' +

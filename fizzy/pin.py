@@ -34,7 +34,7 @@ _fails = {}
 # Never asked, whatever the settings say: signing in and out, the student site, devices joining.
 FREE = [r"^/(login|logout|switch)$", r"^/me(/|$)", r"^/enrol/", r"^/square/webhook$", r"^/settings/pin/unlock$"]
 # Always the owner: the locks themselves.
-LOCKED = [r"^/settings/(pin|permissions)$"]
+LOCKED = [r"^/settings/(pin|permissions)$", r"^/customers/\d+/kind$"]
 
 # (id, label, [(method, path)], default level). First match wins, so specific ones go first.
 ACTIONS = [
@@ -59,12 +59,16 @@ ACTIONS = [
     ("school_tools", "Whole-school tools: reset points, revoke all, approve all, pause tabs, bonus for a period, "
                      "archive/restore many, merge, re-sync, sign everyone out",
      [("POST", r"^/tools/(reset_points|revoke_all|approve_eligible|pause_tabs|bonus_points|bulk_archive|restore|merge"
-               r"|resync|sign_out_all)$")], "owner"),
+               r"|resync|sign_out_all|delete_test_accounts)$")], "owner"),
     ("downloads", "Download exports and backups",
      [("GET", r"^/tools/(export/|backup\.db)"), ("POST", r"^/tools/download_backup$")], "owner"),
     ("other_tools", "Other tools: reports, raffle, noticeboard, find a payment", [("POST", r"^/tools/")], "pin"),
     ("import", "Import the school list", [("POST", r"^/import$")], "owner"),
     ("settings", "Settings: tab rules and devices", [("POST", r"^/settings")], "owner"),
+    # Not paths: these apply to whoever an action is aimed at (see _targets).
+    ("admin_accounts", "Anything aimed at an admin account (points, tab, passcode, details). Claiming their "
+                       "Square sales isn't included", [], "owner"),
+    ("test_accounts", "Anything aimed at test accounts only (no big-change limit either)", [], "open"),
 ]
 OTHER = "pin"  # anything not listed (new pages) until it's given its own row
 # A points or money change by hand bigger than these needs the "big" level, whatever its row says.
@@ -165,6 +169,12 @@ def required(conn, method, path, form=None):
         if method != "POST":
             return OPEN
         level = LEVELS[OTHER]
+    if form is not None and not re.search(r"^/customers/\d+/claim$", path):
+        kinds = _targets(conn, path, form)
+        if "admin" in kinds:
+            level = max(level, LEVELS[perms["admin_accounts"]])
+        elif kinds and all(k == "test" for k in kinds) and not form.get("everyone"):
+            return _eff(conn, LEVELS[perms["test_accounts"]])
     if form is not None and re.search(BIG_PATHS, path):
         people = max(1, len([x for x in re.split(r"[\n;]+", form.get("people") or "") if x.strip()]))
         big = (form.get("everyone") or _number(form.get("delta")) * people > perms["big_points"]
@@ -172,6 +182,46 @@ def required(conn, method, path, form=None):
         if big:
             level = max(level, LEVELS[perms["big"]])
     return _eff(conn, level)
+
+
+def _targets(conn, path, form):
+    """The customers an action is aimed at: from the page address, or the names typed into a tool."""
+    ids = set()
+    m = re.match(r"^/customers/(\d+)/", path)
+    if m:
+        ids.add(int(m.group(1)))
+    m = re.match(r"^/redemptions/(\d+)/", path)
+    if m:
+        r = conn.execute("SELECT customer_id FROM redemptions WHERE id = ?", (int(m.group(1)),)).fetchone()
+        if r:
+            ids.add(r[0])
+    if form is not None and path.startswith("/tools/"):
+        from . import tools
+        for k in ("customer", "from", "to", "keep", "dup"):
+            if form.get(k):
+                try:
+                    ids.add(tools.resolve(conn, form[k], True)["id"])
+                except Exception:  # not found / ambiguous: the tool itself says so
+                    pass
+        if form.get("people"):
+            try:
+                ids |= {c["id"] for c in tools.resolve_many(conn, form["people"], True)[0]}
+            except Exception:
+                pass
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    return [r[0] for r in conn.execute(f"SELECT kind FROM customers WHERE id IN ({marks})", tuple(ids))]
+
+
+def customer_level(conn, kind, base):
+    """The level for an action at `base` aimed at a customer of this kind (for the customer page)."""
+    perms = permissions(conn)
+    if kind == "admin":
+        return _eff(conn, max(base, LEVELS[perms["admin_accounts"]]))
+    if kind == "test":
+        return _eff(conn, LEVELS[perms["test_accounts"]])
+    return _eff(conn, base)
 
 
 def unlocked(request, conn):

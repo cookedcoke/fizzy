@@ -75,7 +75,7 @@ def square_import_csv(conn, only_new=False):
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow(["First Name", "Last Name", "Email Address", "Reference ID"])
-    new = " AND square_customer_id IS NULL" if only_new else ""
+    new = (" AND square_customer_id IS NULL" if only_new else "") + " AND kind IS NOT 'test'"
     for c in conn.execute(f"SELECT * FROM customers WHERE archived_at IS NULL{new} ORDER BY name"):
         parts = c["name"].split(" ", 1)
         w.writerow([parts[0], parts[1] if len(parts) > 1 else "", c["email"], f"fizzy-{c['id']}"])

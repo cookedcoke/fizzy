@@ -855,6 +855,22 @@ Most customers are under 18, so Fizzy keeps the minimum:
 
 ---
 
+### Admin and test accounts
+
+On a customer's page, **Edit customer → Account type** (owner only):
+
+- **Admin (one of us)**: for your and your partners' own accounts. By default only the owner
+  password can change an admin account's points, tab, passcode or details, including through
+  tools like "Give points to many". Claiming their own Square sales still works as normal.
+- **Test account**: fake customers for trying things out. By default anyone signed in can do
+  anything to them, with no passcode and no big-change limit (as long as no real customer is
+  in the same action). They're left out of leaderboards, top customers, raffles, "Who to chase"
+  and the Square import file.
+
+**Tools → Make test accounts** makes up to 20 at a time, and **Delete test accounts** (owner)
+removes them and everything done to them; Square sales put on them go back to "no customer".
+Both rules are rows in **Who can do what**, so the owner can change them.
+
 ### When the server's down
 
 There's one "Back soon" page (`fizzy/static/down.html`) shown three ways:
