@@ -17,6 +17,16 @@
     {% if pin_on %}<button name="remove" value="1" class="danger" data-confirm="Remove the PIN?">Remove PIN</button>{% endif %}</div>
   <p class="hint">Stays unlocked for 10 minutes, or until someone else is put on the counter. Forgot it? The owner can reset it on the home PC (see the README).</p>
 </form>
+<form class="panel" id="updates" method="post" action="/settings/update"><h2>Updates</h2>
+  <table>
+    <tr><td style="width:110px" class="muted">Running</td><td class="mono">{{ update.version }}</td></tr>
+    {% if update.at %}<tr><td class="muted">Last update</td><td>{{ update.at }} · {{ {'ok': 'worked', 'failed': 'failed, rolled back', 'running': 'running now', 'current': 'already up to date'}.get(update.state, update.state) }}{% if update.message %}<br><span class="muted small">{{ update.message }}</span>{% endif %}</td></tr>{% endif %}
+    {% if update.watching %}<tr><td class="muted">New</td><td>{% if update.behind %}<b>{{ update.behind }} new change{{ '' if update.behind == 1 else 's' }}</b> ready{% else %}Nothing new{% endif %}</td></tr>{% endif %}
+  </table>
+  {% if not update.watching %}<p class="notice small">The updater isn't running on the home PC, so updating has to be done there (see the README, "Updating").</p>
+  {% elif update.requested %}<p class="hint">Update requested. The home PC will pick it up within a minute or two.</p>
+  {% else %}<div class="actions"><button class="{{ 'primary' if update.behind else '' }}" data-confirm="Update Fizzy now? It restarts, so it's down for about a minute. If the new version doesn't start, it goes back to this one by itself.">Update now</button></div>{% endif %}
+</form>
 <form class="panel" id="maintenance" method="post" action="/settings/maintenance"><h2>Maintenance mode</h2>
   <p>Everyone, staff and students, gets a "Back soon" page until you turn it off on that page with the owner password. Square sales still come in.</p>
   {% if admin_on %}<label for="mt-msg">Message <span class="muted">(optional)</span></label>

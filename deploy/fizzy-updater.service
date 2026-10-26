@@ -1,0 +1,21 @@
+# Runs deploy/update.sh --watch at start-up on a Linux home PC, so the Update button in
+# Fizzy's Settings works. Edit the two paths and the user, then:
+#   sudo cp deploy/fizzy-updater.service /etc/systemd/system/
+#   sudo systemctl enable --now fizzy-updater
+#   journalctl -u fizzy-updater -f          (to watch it)
+[Unit]
+Description=Fizzy updater
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+# Your own user: it needs git access to the repo and to be in the docker group.
+User=will
+WorkingDirectory=/home/will/fizzy
+# Drop --auto to only update when someone presses Update in Settings.
+ExecStart=/home/will/fizzy/deploy/update.sh --watch --auto
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

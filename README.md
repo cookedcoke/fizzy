@@ -668,9 +668,33 @@ On Linux, the `data` and `backups` folders on the PC can be owned by root or you
 The container fixes their ownership when it starts, then runs Fizzy as an unprivileged
 `fizzy` user (uid 10001).
 
-**Updating:** `git pull && docker compose up -d --build`. The database lives in `./data` and
-survives rebuilds. New tables and columns are added automatically on start, so updating
-never needs a manual database step.
+**Updating.** The database lives in `./data` and survives rebuilds, and new tables and columns
+are added automatically on start, so updating never needs a database step. The updater script
+does it all: pulls, backs up, rebuilds, checks Fizzy came back, and goes back to the old version
+by itself if the new one doesn't start.
+
+```sh
+deploy/update.sh              # Linux / macOS (or Git Bash on Windows)
+.\deploy\update.ps1           # Windows PowerShell
+```
+
+(The very first time, to get the updater itself: `git pull && docker compose up -d --build`.)
+
+**The Update button.** Settings → Updates (owner only) shows what's running, whether there's
+anything new, and how the last update went, with an **Update now** button. Fizzy never updates
+itself: the button leaves a note in `./updates`, and the updater, left running on the PC,
+picks it up within a minute. Start it with the PC:
+
+- **Windows:** Task Scheduler → Create Task. Trigger: *At log on*. Action: start `powershell`
+  with arguments `-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\path\to\fizzy\deploy\update.ps1 -Watch -Auto`.
+  Docker Desktop needs to be set to start on log on too.
+- **Linux:** edit and install `deploy/fizzy-updater.service` (instructions at its top).
+- **macOS:** leave `deploy/update.sh --watch --auto` running in a Terminal tab.
+
+`-Auto` / `--auto` also updates by itself overnight (2am to 5am) when there's something new.
+Leave it off to only update when someone presses the button. A version that failed to start
+isn't retried overnight; pressing Update still tries it. If files in the Fizzy folder were
+edited by hand, it won't pull and says so.
 
 ### Cloudflare Tunnel
 

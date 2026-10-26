@@ -9,3 +9,4 @@ backups/
 !tests/fixtures/*.csv
 .venv/
 .pytest_cache/
+updates/

@@ -36,6 +36,7 @@ def local(ts, fmt="%a %d %b %H:%M"):
 
 
 ACTION_LABELS = {
+    "update_requested": "Asked for an update", "maintenance": "Maintenance mode",
     "admin_pin": "Changed the PIN", "archive": "Archived", "assign_customer": "Said whose sale it was",
     "breach_ack": "Dismissed a warning", "customer_add": "Added a customer", "customer_edit": "Edited a customer",
     "customer_kind": "Changed account type", "device_link": "Made a device link", "device_revoked": "Removed a device",

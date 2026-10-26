@@ -24,7 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import pwa
+from . import pwa, updater
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
 log = logging.getLogger("fizzy")
@@ -220,6 +220,7 @@ def create_app(background=True):
     app.include_router(events.router)
     app.include_router(pin.router)
     app.include_router(pwa.router)
+    app.include_router(updater.router)
     app.include_router(money_pages.router)
     return app
 
@@ -898,7 +899,7 @@ def register(app):
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
-        return render(request, "settings.html", cfg=logic.settings(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), perms=pin.permissions(conn),
+        return render(request, "settings.html", cfg=logic.settings(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
                       actions=pin.ACTIONS, level_labels=pin.LEVEL_LABELS,
                       devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
                       device_list=conn.execute("SELECT * FROM devices ORDER BY revoked_at IS NOT NULL, created_at DESC").fetchall(),

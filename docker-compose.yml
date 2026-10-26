@@ -1,13 +1,19 @@
 # Fizzy + Cloudflare Tunnel. No ports are published on the host.
 services:
   fizzy:
-    build: .
+    build:
+      context: .
+      args:
+        FIZZY_VERSION: ${FIZZY_VERSION:-dev}
     restart: unless-stopped
     env_file: .env
     environment:
       FIZZY_BACKUP_DIR: /backups
+      FIZZY_UPDATES_DIR: /updates
     volumes:
       - ./data:/data
+      # Notes between Fizzy and deploy/update.sh (the Update button and how it went).
+      - ./updates:/updates
       # Change the left side to your external SSD later, e.g. /mnt/ssd/fizzy-backups or E:/fizzy-backups
       - ./backups:/backups
 
