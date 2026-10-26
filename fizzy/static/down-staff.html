@@ -29,7 +29,8 @@
   .msg { color: var(--muted); margin: 0 0 18px }
   ul { margin: 0 0 18px; padding: 0; list-style: none; border-top: 1px solid var(--line) }
   li { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; gap: 10px }
-  li span:first-child { width: 20px; flex: none; text-align: center }
+  li span:first-child { width: 20px; height: 20px; flex: none; border-radius: 50%; background: var(--hover); border: 1px solid var(--line);
+                        font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; color: var(--muted); margin-top: 1px }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
   button { border: 1px solid var(--ink); border-radius: 4px; padding: 9px 16px; font: 600 14px system-ui, sans-serif; cursor: pointer;
            background: var(--ink); color: #fff }
@@ -52,8 +53,8 @@
     <h1>Fizzy is down for now</h1>
     <p class="msg"><!--MSG-->We're working on the server. Back soon.<!--/MSG--></p>
     <ul>
-      <li><span>🥤</span><span><b>Keep selling.</b> Ring everything up in Square as normal, with the customer attached if you can.</span></li>
-      <li><span>⏳</span><span><b>Nothing's lost.</b> Sales wait in Square, and points and tabs catch up as soon as Fizzy's back. Claim any without a customer then.</span></li>
+      <li><span>1</span><span><b>Keep selling.</b> Ring everything up in Square as normal, with the customer attached if you can.</span></li>
+      <li><span>2</span><span><b>Nothing's lost.</b> Sales wait in Square, and points and tabs catch up as soon as Fizzy's back. Claim any without a customer then.</span></li>
     </ul>
     <div class="row"><button onclick="again()">Try again</button><span class="muted">Checks again by itself every 30 seconds.</span></div>
     <!--OWNER--><!--/OWNER-->

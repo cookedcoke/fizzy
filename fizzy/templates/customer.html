@@ -44,11 +44,11 @@
 </div>
 
 {% if st.can_charge %}
-<div class="verdict yes"><div class="mark">✓</div><div><b>Can use tab - up to {{ st.available_cents|money }}</b>
+<div class="verdict yes"><div class="mark"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg></div><div><b>Can use tab - up to {{ st.available_cents|money }}</b>
   <span>In Square: attach {{ c.name.split(' ')[0] }}'s profile, apply the <strong>Fizzy Tab</strong> discount to what goes on the tab, then charge the rest - if it's all on the tab, charge $0 as cash.</span></div></div>
 {% else %}
 {% set waiting = st.status in ('locked', 'eligible', 'paused') %}
-<div class="verdict {{ 'wait' if waiting else 'no' }}"><div class="mark">{{ '–' if waiting else '✕' }}</div><div><b>{{ 'No tab yet' if waiting else 'No tab' }}</b><span>
+<div class="verdict {{ 'wait' if waiting else 'no' }}"><div class="mark">{% if waiting %}<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 8h8"/></svg>{% else %}<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>{% endif %}</div><div><b>{{ 'No tab yet' if waiting else 'No tab' }}</b><span>
   {% if st.status == 'approved' %}Owes {{ led.owing_cents|money }}, at or over the {{ st.limit_cents|money }} limit - needs to pay some off first.
   {% elif st.status == 'paused' %}All tabs are paused right now.
   {% elif st.status == 'blocked_overdue' %}Has an overdue charge. Clears as soon as it's paid.
