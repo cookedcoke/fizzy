@@ -24,6 +24,14 @@
   @keyframes pulse { 50% { opacity: .3 } }
   button { margin-top: 18px; border: 0; border-radius: 999px; padding: 12px 30px; font: 600 16px system-ui, sans-serif; color: #fff;
            background: var(--red); cursor: pointer }
+  .owner { margin-top: 28px; font-size: 14px; color: var(--muted) }
+  .owner summary { cursor: pointer; list-style: none }
+  .owner summary::-webkit-details-marker { display: none }
+  .owner form { display: flex; gap: 8px; margin-top: 10px }
+  .owner input { flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--card);
+                 color: var(--ink); font: 15px system-ui, sans-serif }
+  .owner button { margin: 0; padding: 10px 18px; font-size: 15px; background: var(--ink); color: var(--bg) }
+  .owner .err { color: var(--red); margin: 8px 0 0 }
 </style>
 </head>
 <body>
@@ -32,8 +40,13 @@
   <h1>Back soon</h1>
   <p class="msg"><!--MSG-->We're doing some maintenance on our end. Your points and tab are safe, nothing's lost.<!--/MSG--></p>
   <div class="card"><span class="dot"></span><b>Down for now.</b> This page checks again by itself every 30 seconds.</div>
-  <button onclick="location.reload()">Try again</button>
+  <button onclick="again()">Try again</button>
+  <!--OWNER--><!--/OWNER-->
 </main>
-<script>setTimeout(function () { location.reload(); }, 30000);</script>
+<script>
+  // Check again every 30 seconds (a fresh GET, never re-sending a form), but not while the owner is typing.
+  function again() { location.replace(location.pathname === "/maintenance/off" ? "/" : location.href); }
+  setInterval(function () { if (!document.querySelector(".owner[open]")) again(); }, 30000);
+</script>
 </body>
 </html>

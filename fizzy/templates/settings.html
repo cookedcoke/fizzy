@@ -17,6 +17,13 @@
     {% if pin_on %}<button name="remove" value="1" class="danger" data-confirm="Remove the PIN?">Remove PIN</button>{% endif %}</div>
   <p class="hint">Stays unlocked for 10 minutes, or until someone else is put on the counter. Forgot it? The owner can reset it on the home PC (see the README).</p>
 </form>
+<form class="panel" id="maintenance" method="post" action="/settings/maintenance"><h2>Maintenance mode</h2>
+  <p>Everyone, staff and students, gets a "Back soon" page until you turn it off on that page with the owner password. Square sales still come in.</p>
+  {% if admin_on %}<label for="mt-msg">Message <span class="muted">(optional)</span></label>
+  <input id="mt-msg" type="text" name="message" maxlength="200" placeholder="e.g. Upgrading the server, back by lunch.">
+  <div class="actions"><button class="danger" data-confirm="Turn on maintenance mode? Fizzy stops working for everyone until the owner turns it off.">Turn on maintenance mode</button></div>
+  {% else %}<p class="notice small">Needs the owner password, and there isn't one yet (<code>FIZZY_ADMIN_PASSWORD</code> in <code>.env</code>).</p>{% endif %}
+</form>
 <form class="panel wide" id="permissions" method="post" action="/settings/permissions"><h2>Who can do what</h2>
   {% if not admin_on %}<p class="hint" style="margin-top:0">"Owner only" means the PIN until there's an owner password.{% if not pin_on %} With no PIN either, everything's open to anyone signed in.{% endif %}</p>{% endif %}
   <table class="perms">

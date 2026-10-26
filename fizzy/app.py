@@ -184,8 +184,14 @@ def create_app(background=True):
         path = request.url.path
         if msg is None or path.startswith("/static/") or path in ("/healthz", "/square/webhook"):
             return await call_next(request)
-        return HTMLResponse(down_page(msg), status_code=503, headers={"Retry-After": "60", "Cache-Control": "no-store",
-                                                                      "X-Fizzy": "maintenance"})
+        error = None
+        if request.method == "POST" and path.endswith("/maintenance/off"):  # the owner box on the page itself
+            password = (await request.form()).get("password", "")
+            error = await run_in_threadpool(turn_off_maintenance, request, password)
+            if error is None:
+                return RedirectResponse("/", status_code=303)
+        return HTMLResponse(down_page(msg, owner_box=True, error=error), status_code=503,
+                            headers={"Retry-After": "60", "Cache-Control": "no-store", "X-Fizzy": "maintenance"})
 
     @app.middleware("http")
     async def public_host(request, call_next):
@@ -232,11 +238,44 @@ def maintenance_message():
     return _maint["msg"]
 
 
-def down_page(msg=""):
+def down_page(msg="", owner_box=False, error=None):
     page = (HERE / "static" / "down.html").read_text()
     if msg:
         page = re.sub(r"<!--MSG-->.*?<!--/MSG-->", lambda _: escape(msg), page, flags=re.S)
+    if owner_box and pin.admin_on():
+        box = ('<details class="owner"' + (" open" if error else "") + '><summary>Owner? Turn maintenance off</summary>'
+               '<form method="post" action="/maintenance/off"><input type="password" name="password" placeholder="Owner password" '
+               'aria-label="Owner password" autocomplete="current-password" required><button>Turn off</button></form>'
+               + (f'<p class="err" role="alert">{escape(error)}</p>' if error else "") + "</details>")
+        page = page.replace("<!--OWNER--><!--/OWNER-->", box)
     return page
+
+
+def set_maintenance(msg, who):
+    """msg None turns it off; "" is on with the default message."""
+    conn = db.connect()
+    try:
+        if msg is None:
+            conn.execute("DELETE FROM settings WHERE key = 'maintenance'")
+        else:
+            db.set_setting(conn, "maintenance", msg)
+        db.audit(conn, who, "maintenance", None, "off" if msg is None else f"on {msg}".strip())
+        conn.commit()
+    finally:
+        conn.close()
+    _maint["at"] = 0  # take effect straight away
+
+
+def turn_off_maintenance(request, password):
+    """The owner box on the maintenance page. Returns an error, or None once it's off."""
+    now, me = time.time(), pin._browser(request)
+    if pin._recent(me, now) >= pin.FAIL_LIMIT:
+        return "Too many wrong tries. Wait 10 minutes."
+    if not pin.is_owner(password):
+        pin._fails[me].append(now)
+        return "Wrong password."
+    set_maintenance(None, "owner")  # runs before sign-in cookies are read; the password is what counts
+    return None
 
 
 def backup_health(conn):
@@ -879,6 +918,13 @@ def register(app):
         db.audit(conn, who, "settings", None, json.dumps(new))
         conn.commit()
         return back(request, "/settings", "Saved.")
+
+    @app.post("/settings/maintenance")
+    def maintenance_on(request: Request, message: str = Form(""), who=Depends(staff)):
+        if not pin.admin_on():  # only the owner can turn it off again, so there has to be one
+            return back(request, "/settings#maintenance", "Set an owner password first (FIZZY_ADMIN_PASSWORD in .env).")
+        set_maintenance(" ".join(message.split())[:200], who)
+        return RedirectResponse("/", status_code=303)
 
     @app.post("/settings/backup")
     def backup_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):

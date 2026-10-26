@@ -876,7 +876,9 @@ Both rules are rows in **Who can do what**, so the owner can change them.
 There's one "Back soon" page (`fizzy/static/down.html`) shown three ways:
 
 1. **Maintenance mode**, while Fizzy is running but you're working on it. Everyone, staff and
-   students, gets the page; Square sales still come in through the webhook.
+   students, gets the page; Square sales still come in through the webhook. Turn it on under
+   **Settings → Maintenance mode** (owner password, with an optional message), and off from the
+   page itself: **Owner? Turn maintenance off**, then the owner password. Or on the home PC:
    ```
    docker compose exec -u fizzy fizzy python -m fizzy maintenance on "Upgrading the server, back by lunch."
    docker compose exec -u fizzy fizzy python -m fizzy maintenance off

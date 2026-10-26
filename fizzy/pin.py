@@ -36,7 +36,7 @@ _fails = {}
 # Never asked, whatever the settings say: signing in and out, the student site, devices joining.
 FREE = [r"^/(login|logout|switch)$", r"^/me(/|$)", r"^/enrol/", r"^/square/webhook$", r"^/settings/pin/unlock$"]
 # Always the owner: the locks themselves.
-LOCKED = [r"^/settings/(pin|permissions)$", r"^/customers/\d+/kind$"]
+LOCKED = [r"^/settings/(pin|permissions|maintenance)$", r"^/customers/\d+/kind$"]
 
 # (id, label, [(method, path)], default level). First match wins, so specific ones go first.
 ACTIONS = [

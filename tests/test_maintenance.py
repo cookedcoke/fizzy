@@ -44,3 +44,31 @@ def test_worker_has_the_current_page():
     page = (ROOT / "fizzy" / "static" / "down.html").read_text()
     worker = (ROOT / "cloudflare" / "worker.js").read_text()
     assert json.dumps(page) in worker, "run: python cloudflare/make_worker.py"
+
+
+def test_owner_turns_it_on_in_settings_and_off_on_the_page(client, monkeypatch):
+    from fizzy import config, pin
+    from tests.test_pin import _unlock
+    monkeypatch.setattr(config, "ADMIN_PASSWORD", "owner-pw")
+    monkeypatch.setattr(pin, "_fails", {})
+    login(client)
+    ref = {"referer": "http://testserver/settings"}
+    assert "Enter the passcode first" in client.post("/settings/maintenance", data={"message": "x"}, headers=ref).text
+    _unlock(client, "owner-pw", 2)
+    r = client.post("/settings/maintenance", data={"message": "Back by lunch"})
+    assert r.status_code == 503 and "Back by lunch" in r.text and "Turn maintenance off" in r.text
+    # Students see it too, and a wrong password does nothing.
+    r = client.post("/maintenance/off", data={"password": "nope"})
+    assert r.status_code == 503 and "Wrong password" in r.text
+    r = client.post("/maintenance/off", data={"password": "owner-pw"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert client.get("/").status_code == 200
+
+
+def test_needs_an_owner_password_to_exist(client):
+    login(client)
+    r = client.post("/settings/maintenance", data={"message": "x"})
+    assert "Set an owner password first" in r.text
+    _fresh()
+    assert client.get("/").status_code == 200
+    assert "Turn maintenance off" not in client.get("/static/down.html").text
