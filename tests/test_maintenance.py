@@ -18,9 +18,10 @@ def test_maintenance_mode(client):
     assert main(["maintenance", "on", "Upgrading the server, back by lunch."]) == 0
     _fresh()
     r = client.get("/")
-    assert r.status_code == 503 and "Back soon" in r.text and "Upgrading the server, back by lunch." in r.text
+    assert r.status_code == 503 and "Fizzy is down for now" in r.text and "Upgrading the server, back by lunch." in r.text
     assert r.headers["x-fizzy"] == "maintenance"
-    assert client.get("/me").status_code == 503
+    me = client.get("/me")
+    assert me.status_code == 503 and "<h1>Back soon</h1>" in me.text and "Fizzy is down" not in me.text
     assert client.get("/static/down.html").status_code == 200
     assert client.get("/healthz").status_code == 200
     assert client.post("/square/webhook", content=b"{}").status_code != 503   # sales still come in
@@ -32,7 +33,7 @@ def test_maintenance_mode(client):
 def test_default_message_and_escaping(client):
     main(["maintenance", "on"])
     _fresh()
-    assert "doing some maintenance" in client.get("/").text
+    assert "working on the server" in client.get("/").text and "doing some maintenance" in client.get("/me").text
     main(["maintenance", "on", "<script>x</script>"])
     _fresh()
     assert "<script>x</script>" not in client.get("/").text
@@ -41,9 +42,10 @@ def test_default_message_and_escaping(client):
 
 
 def test_worker_has_the_current_page():
-    page = (ROOT / "fizzy" / "static" / "down.html").read_text()
     worker = (ROOT / "cloudflare" / "worker.js").read_text()
-    assert json.dumps(page) in worker, "run: python cloudflare/make_worker.py"
+    for name in ("down.html", "down-staff.html"):
+        page = (ROOT / "fizzy" / "static" / name).read_text()
+        assert json.dumps(page) in worker, "run: python cloudflare/make_worker.py"
 
 
 def test_owner_turns_it_on_in_settings_and_off_on_the_page(client, monkeypatch):
@@ -56,7 +58,7 @@ def test_owner_turns_it_on_in_settings_and_off_on_the_page(client, monkeypatch):
     assert "Enter the passcode first" in client.post("/settings/maintenance", data={"message": "x"}, headers=ref).text
     _unlock(client, "owner-pw", 2)
     r = client.post("/settings/maintenance", data={"message": "Back by lunch"})
-    assert r.status_code == 503 and "Back by lunch" in r.text and "Turn maintenance off" in r.text
+    assert r.status_code == 503 and "Back by lunch" in r.text and "Turn maintenance off" in r.text and "Keep selling" in r.text
     # Students see it too, and a wrong password does nothing.
     r = client.post("/maintenance/off", data={"password": "nope"})
     assert r.status_code == 503 and "Wrong password" in r.text

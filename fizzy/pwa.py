@@ -9,16 +9,18 @@ import json
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
+from . import config
 from .web import templates
 
 router = APIRouter()
 
 SW = """// Fizzy service worker (version %(v)s)
 const CACHE = "fizzy-%(v)s";
-const OFFLINE = "/static/offline.html?v=%(v)s", DOWN = "/static/down.html?v=%(v)s";
+const OFFLINE = "/static/offline.html?v=%(v)s", DOWN = "/static/down.html?v=%(v)s", DOWN_STAFF = "/static/down-staff.html?v=%(v)s";
+const PUBLIC_HOST = %(public)s;  // the student site's address, if it has its own
 const DOWN_CODES = [502, 503, 504, 520, 521, 522, 523, 524, 530];  // Cloudflare can't reach the home PC
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll([OFFLINE, DOWN, "/static/icon-192.png"])).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll([OFFLINE, DOWN, DOWN_STAFF, "/static/icon-192.png"])).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
@@ -30,7 +32,8 @@ self.addEventListener("fetch", e => {
   if (url.pathname === "/static/icon-192.png") { e.respondWith(caches.match(req).then(hit => hit || fetch(req))); return; }
   if (req.mode === "navigate") {  // pages: always fresh from Fizzy; offline page if it can't be reached
     e.respondWith(fetch(req).then(res => DOWN_CODES.includes(res.status) && !res.headers.get("X-Fizzy")
-      ? caches.match(DOWN).then(page => page || res) : res).catch(() => caches.match(OFFLINE)));
+      ? caches.match(location.hostname === PUBLIC_HOST || url.pathname.startsWith("/me") ? DOWN : DOWN_STAFF).then(page => page || res)
+      : res).catch(() => caches.match(OFFLINE)));
   } else if (url.pathname.startsWith("/static/") && url.searchParams.get("v")) {  // versioned, never changes
     e.respondWith(caches.open(CACHE).then(c => c.match(req).then(hit => hit || fetch(req).then(res => {
       if (res.ok) c.put(req, res.clone());
@@ -77,5 +80,5 @@ def student_manifest(request: Request):
 @router.get("/sw.js")
 @router.get("/me/sw.js")  # the student host maps /sw.js here
 def service_worker():
-    return Response(SW % {"v": templates.env.globals["V"]}, media_type="text/javascript",
+    return Response(SW % {"v": templates.env.globals["V"], "public": json.dumps(config.PUBLIC_HOST or "")}, media_type="text/javascript",
                     headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})

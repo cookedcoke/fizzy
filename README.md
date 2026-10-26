@@ -873,7 +873,9 @@ Both rules are rows in **Who can do what**, so the owner can change them.
 
 ### When the server's down
 
-There's one "Back soon" page (`fizzy/static/down.html`) shown three ways:
+There are two "back soon" pages: a friendly one for the student site (`fizzy/static/down.html`)
+and a staff one for Fizzy (`fizzy/static/down-staff.html`, which reminds staff to keep selling in
+Square). Each address gets its own, shown three ways:
 
 1. **Maintenance mode**, while Fizzy is running but you're working on it. Everyone, staff and
    students, gets the page; Square sales still come in through the webhook. Turn it on under
@@ -895,7 +897,7 @@ There's one "Back soon" page (`fizzy/static/down.html`) shown three ways:
 
    It passes everything straight through, and only steps in when Cloudflare can't reach the PC.
    The free plan covers 100,000 requests a day, far more than the stall needs. If you change
-   `down.html`, run `python cloudflare/make_worker.py` and paste the new `worker.js` in again.
+   either page, run `python cloudflare/make_worker.py` and paste the new `worker.js` in again.
 
 ## 14. Troubleshooting
 

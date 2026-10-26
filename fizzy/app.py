@@ -190,7 +190,8 @@ def create_app(background=True):
             error = await run_in_threadpool(turn_off_maintenance, request, password)
             if error is None:
                 return RedirectResponse("/", status_code=303)
-        return HTMLResponse(down_page(msg, owner_box=True, error=error), status_code=503,
+        student = getattr(request.state, "public", False) or path == "/me" or path.startswith("/me/")
+        return HTMLResponse(down_page(msg, owner_box=True, error=error, student=student), status_code=503,
                             headers={"Retry-After": "60", "Cache-Control": "no-store", "X-Fizzy": "maintenance"})
 
     @app.middleware("http")
@@ -238,8 +239,9 @@ def maintenance_message():
     return _maint["msg"]
 
 
-def down_page(msg="", owner_box=False, error=None):
-    page = (HERE / "static" / "down.html").read_text()
+def down_page(msg="", owner_box=False, error=None, student=True):
+    """The "back soon" page: the friendly one for the student site, the staff one for Fizzy."""
+    page = (HERE / "static" / ("down.html" if student else "down-staff.html")).read_text()
     if msg:
         page = re.sub(r"<!--MSG-->.*?<!--/MSG-->", lambda _: escape(msg), page, flags=re.S)
     if owner_box and pin.admin_on():
