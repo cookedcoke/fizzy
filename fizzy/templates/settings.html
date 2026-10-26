@@ -15,23 +15,25 @@
   <label>{{ 'New PIN' if pin_on else 'PIN' }}<input type="password" name="new" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="new-password" placeholder="4 to 8 digits" {{ '' if pin_on else 'required' }}></label>
   <div class="actions"><button class="primary">{{ 'Change PIN' if pin_on else 'Set PIN' }}</button>
     {% if pin_on %}<button name="remove" value="1" class="danger" data-confirm="Remove the PIN?">Remove PIN</button>{% endif %}</div>
-  <p class="hint">Stays unlocked for 10 minutes (owner password: 5), or until someone else is put on the counter. Forgot the PIN? On the home PC: <code>docker compose exec fizzy python -m fizzy clear-pin</code></p>
+  <p class="hint">Stays unlocked for 10 minutes, or until someone else is put on the counter. Forgot it? The owner can reset it on the home PC (see the README).</p>
 </form>
 <form class="panel wide" id="permissions" method="post" action="/settings/permissions"><h2>Who can do what</h2>
   {% if not admin_on %}<p class="hint" style="margin-top:0">"Owner only" means the PIN until there's an owner password.{% if not pin_on %} With no PIN either, everything's open to anyone signed in.{% endif %}</p>{% endif %}
   <table class="perms">
-    {% for aid, label, _, _ in actions %}<tr><td>{{ label }}</td><td class="n"><select name="{{ aid }}" aria-label="{{ label }}">
+    {% set groups = {'claim': 'Everyday', 'points': 'Points and rewards', 'tab_decisions': 'Tabs', 'customers': 'Customers',
+                     'money': 'Money', 'school_tools': 'Big stuff', 'admin_accounts': 'Special accounts'} %}
+    {% for aid, label, _, _ in actions %}{% if aid in groups %}<tr class="group"><th colspan="2">{{ groups[aid] }}</th></tr>{% endif %}<tr><td>{{ label }}</td><td class="n"><select name="{{ aid }}" aria-label="{{ label }}">
       {% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms[aid] == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>{% endfor %}
     <tr><td><b>Big changes by hand</b>: more than <input type="text" name="big_points" inputmode="numeric" value="{{ perms.big_points }}" style="width:90px" aria-label="Points limit"> points,
       or more than $<input type="text" name="big_dollars" inputmode="numeric" value="{{ perms.big_dollars }}" style="width:70px" aria-label="Dollar limit">, or for everyone at once</td>
       <td class="n"><select name="big" aria-label="Big changes">{% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms.big == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>
   </table>
   <div class="actions"><button class="primary">Save</button></div>
-  <p class="hint">Signing in, the student site, the PIN and this table itself aren't on the list: this table and the PIN are always owner only.</p>
+  <p class="hint">Only the owner can change this table, the PIN and account types.</p>
 </form>
 <form class="panel" method="post" action="/settings/backup"><h2>Backups</h2>
   <table>
-    <tr><td style="width:90px" class="muted">Folder</td><td class="mono">{{ backup_dir or 'Not set (FIZZY_BACKUP_DIR)' }}</td></tr>
+    <tr><td style="width:90px" class="muted">Folder</td><td class="mono">{{ backup_dir or 'Not set up yet' }}</td></tr>
     <tr><td class="muted">Last</td><td>{{ last_backup|local or 'Never' }}</td></tr>
   </table>
   <div class="actions"><button>Back up now</button><a class="btn" href="/tools/backup.db">Download a copy</a></div>

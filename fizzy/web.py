@@ -35,6 +35,26 @@ def local(ts, fmt="%a %d %b %H:%M"):
     return logic.parse_ts(ts).astimezone(config.TZ).strftime(fmt)
 
 
+ACTION_LABELS = {
+    "admin_pin": "Changed the PIN", "archive": "Archived", "assign_customer": "Said whose sale it was",
+    "breach_ack": "Dismissed a warning", "customer_add": "Added a customer", "customer_edit": "Edited a customer",
+    "customer_kind": "Changed account type", "device_link": "Made a device link", "device_revoked": "Removed a device",
+    "download_backup": "Downloaded a backup", "export": "Exported", "export_square_csv": "Exported for Square",
+    "extend_due": "Gave more time to pay", "import": "Imported the school list", "item_costs": "Changed item costs",
+    "login": "Signed in", "merge": "Merged customers", "notice": "Changed the noticeboard", "owner_unlock": "Owner unlocked",
+    "passcode_removed": "Removed a passcode", "passcode_set": "Set a passcode", "passcode_viewed": "Read a passcode",
+    "passcode_wrong": "Wrong passcode", "pin_wrong": "Wrong passcode", "admin_wrong": "Wrong passcode",
+    "payout": "Recorded a payout", "payout_delete": "Deleted a payout",
+    "permissions": "Changed who can do what", "points_adjust": "Changed points", "points_event": "Scheduled double points",
+    "points_event_delete": "Deleted double points", "points_event_end": "Ended double points", "points_reset_all": "Reset all points",
+    "points_rule": "Set up weekly double points", "points_rule_stop": "Stopped weekly double points", "raffle": "Ran a raffle",
+    "reclassify": "Changed how a payment counts", "redeem": "Redeemed a reward", "redeem_undo": "Undid a redemption",
+    "restock": "Added a restock", "restock_delete": "Deleted a restock", "restore": "Restored customers",
+    "reward_end": "Ended a reward", "reward_start": "Started a reward", "settings": "Changed settings",
+    "sign_out_all": "Signed everyone out", "square_resync": "Re-synced Square", "tab_charge_refund": "Refunded a tab charge",
+    "tabs_paused": "Paused or unpaused tabs", "test_accounts": "Made test accounts", "test_accounts_deleted": "Deleted test accounts",
+}
+templates.env.filters["action"] = lambda a: ACTION_LABELS.get(a) or (a or "").replace("_", " ").capitalize()
 templates.env.filters["money"] = money
 templates.env.filters["local"] = local
 templates.env.filters["ymd"] = lambda d, fmt="%a %d %b": datetime.strptime(d, "%Y-%m-%d").strftime(fmt) if d else ""

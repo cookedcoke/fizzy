@@ -145,7 +145,7 @@ def test_square_csv_new_only_leaves_out_people_already_in_square(client):
     assert "rns1@" in everyone and "rns2@" in everyone
     assert "rns2@" in new.text and "rns1@" not in new.text and "fizzy-2" in new.text
     assert "new-customers" in new.headers["content-disposition"]
-    assert "new only (1)" in client.get("/customers").text
+    assert "Export new people for Square (1)" in client.get("/customers").text
 
 
 def test_customer_page_shows_only_what_needs_doing(client):

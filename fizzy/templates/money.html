@@ -48,7 +48,7 @@
       <tr><th>Item</th><th class="n">Qty</th><th class="n">Cost ($)</th><th></th></tr>
       <tr><td><input type="text" name="item" list="known-items" placeholder="As named in Square" aria-label="Item"></td>
         <td><input type="number" name="qty" min="1" step="1" value="1" aria-label="Quantity"></td>
-        <td><input type="text" name="cost" inputmode="decimal" placeholder="for all" aria-label="Cost for the whole line"></td>
+        <td><input type="text" name="cost" inputmode="decimal" placeholder="total" aria-label="Cost for the whole line"></td>
         <td><button type="button" class="rm" title="Remove this item" aria-label="Remove this item">×</button></td></tr>
     </table>
     <datalist id="known-items">{% for n in known %}<option value="{{ n }}">{% endfor %}</datalist>

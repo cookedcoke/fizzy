@@ -345,7 +345,11 @@
   // Passcodes: anything above "anyone signed in" asks in a box first, then carries on. The rules
   // come from the owner's "Who can do what" settings; the server checks them again either way.
   var lockRules = $("#lock-rules") ? JSON.parse($("#lock-rules").textContent) : null;
-  function num(v) { var n = parseFloat(String(v || "").replace(/[$,\s]/g, "")); return isNaN(n) ? 0 : Math.abs(n); }
+  function num(v) {  // same as the server: blank is 0, anything that isn't plainly a number is huge
+    v = String(v || "").replace(/[$,\s]/g, "");
+    if (!v) return 0;
+    var n = Number(v); return isNaN(n) ? Infinity : Math.abs(n);
+  }
   function have() {
     var d = document.body.dataset;
     return Number(d.unlockedUntil || 0) > Date.now() / 1000 + 5 ? Number(d.unlocked || 0) : 0;
@@ -364,6 +368,12 @@
     if (data && test(R.big.paths) && (data.get("everyone") || num(data.get("delta")) * people > R.big.points ||
         num(data.get("points")) > R.big.points || num(data.get("amount")) > R.big.dollars)) {
       level = Math.max(level, R.big.level);
+    }
+    if (data && path === "/tools/write_off" && !String(data.get("amount") || "").trim()) level = Math.max(level, R.big.level);
+    if (data && path === "/events") {
+      var s0 = data.get("start"), e0 = data.get("end") || s0, days = (Date.parse(e0) - Date.parse(s0)) / 864e5;
+      var big = !!data.get("weekly") || num(data.get("multiplier") || 2) > 2 || !(days <= 6);
+      level = big ? Math.max(level, R.big.level) : level;
     }
     return level;
   }

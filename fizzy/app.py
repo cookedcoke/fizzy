@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, URLSafeSerializer
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -82,14 +83,27 @@ def _poller():
         _stop.wait(55)
 
 
+_sync_thread = None
+_sync_again = threading.Event()
+
+
 def trigger_sync():
+    """A webhook arrived: sync now. One thread at a time; a webhook during a sync means one more
+    pass straight after it, so nothing waits for the next poll."""
+    global _sync_thread
+    _sync_again.set()
+    if _sync_thread is not None and _sync_thread.is_alive():
+        return
     def run():
         conn = db.connect()
         try:
-            square.sync(conn)
+            while _sync_again.is_set():
+                _sync_again.clear()
+                square.sync(conn)
         finally:
             conn.close()
-    threading.Thread(target=run, daemon=True).start()
+    _sync_thread = threading.Thread(target=run, daemon=True)
+    _sync_thread.start()
 
 
 @asynccontextmanager
@@ -124,7 +138,7 @@ def create_app(background=True):
             return await call_next(request)
         host = (request.headers.get("host") or "").split(":")[0].lower()
         if host == config.ACCESS_HOST.lower():
-            claims = devices.verify_access(request.headers.get("cf-access-jwt-assertion"))
+            claims = await run_in_threadpool(devices.verify_access, request.headers.get("cf-access-jwt-assertion"))
             if not claims:
                 return HTMLResponse(GATE_PAGE.format(
                     title="Cloudflare Access required",
@@ -133,11 +147,13 @@ def create_app(background=True):
                          "<code>CF_ACCESS_AUD</code>."), status_code=403)
             request.state.access_email = claims.get("email")
             return await call_next(request)
-        conn = db.connect()
-        try:
-            device, refreshed = devices.check(conn, request.cookies.get(devices.DEVICE_COOKIE))
-        finally:
-            conn.close()
+        def check():
+            conn = db.connect()
+            try:
+                return devices.check(conn, request.cookies.get(devices.DEVICE_COOKIE))
+            finally:
+                conn.close()
+        device, refreshed = await run_in_threadpool(check)
         if device is None:
             if request.method == "GET":
                 target = f"https://{config.ACCESS_HOST}{request.url.path}"
@@ -164,7 +180,7 @@ def create_app(background=True):
     async def maintenance(request, call_next):
         """Maintenance mode (python -m fizzy maintenance on): everyone gets the "back soon" page.
         Square's webhook still gets through, so no sales are missed. Runs before the device gate."""
-        msg = maintenance_message()
+        msg = await run_in_threadpool(maintenance_message)
         path = request.url.path
         if msg is None or path.startswith("/static/") or path in ("/healthz", "/square/webhook"):
             return await call_next(request)
@@ -226,7 +242,7 @@ def down_page(msg=""):
 def backup_health(conn):
     """For the dashboard: is the daily backup actually happening? Returns (ok, text)."""
     if not config.BACKUP_DIR:
-        return False, "Backups are off - set FIZZY_BACKUP_DIR (Docker sets it for you)."
+        return False, "Backups aren't set up. (Owner: see the README.)"
     last, path, err = (db.get_setting(conn, k) for k in ("last_backup", "last_backup_path", "backup_error"))
     if err:
         return False, f"Last backup failed: {err.split(': ', 1)[-1]}. Check the backup drive."
@@ -294,7 +310,7 @@ def _record_fail(buckets, now):
 ERRORS = {
     400: ("That didn't work", "Something in that request wasn't right. Go back and try again."),
     403: ("Not allowed", "This device or account can't open that."),
-    404: ("Page not found", "That page doesn't exist, or whatever was on it has been deleted."),
+    404: ("Page not found", "That page doesn't exist or has been deleted."),
     405: ("Page not found", "That page doesn't exist."),
     500: ("Something broke", "Fizzy hit an error. Nothing was saved from that last step. Try again, and if it keeps "
                              "happening, check the logs on the home PC."),
@@ -408,7 +424,7 @@ def register(app):
         now = datetime.now(timezone.utc)
         soon = now + timedelta(days=2)
         with_tab = conn.execute(
-            "SELECT DISTINCT c.* FROM customers c JOIN tab_charges t ON t.customer_id = c.id"
+            "SELECT DISTINCT c.* FROM customers c JOIN tab_charges t ON t.customer_id = c.id WHERE c.kind IS NOT 'test'"
         ).fetchall()
         total_owed = total_overdue = 0
         overdue, due_soon = [], []
@@ -429,7 +445,7 @@ def register(app):
 
         eligible = conn.execute(
             "SELECT c.*, SUM(p.spend_cents) AS spent FROM customers c JOIN points_ledger p ON p.customer_id = c.id "
-            "WHERE c.tab_decision IS NULL AND c.archived_at IS NULL GROUP BY c.id HAVING spent >= ? ORDER BY spent DESC",
+            "WHERE c.tab_decision IS NULL AND c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id HAVING spent >= ? ORDER BY spent DESC",
             (cfg["unlock_spend_cents"],),
         ).fetchall()
         top = conn.execute(
@@ -558,8 +574,11 @@ def register(app):
             rows = customers.search(conn, q, 50)
             if len(rows) == 1:
                 return RedirectResponse(f"/customers/{rows[0]['id']}", status_code=303)
-        else:
-            rows = []
+        else:  # recently active people, so the page isn't empty
+            rows = conn.execute(
+                "SELECT c.* FROM customers c JOIN (SELECT customer_id, MAX(created_at) AS last FROM points_ledger "
+                "GROUP BY customer_id) p ON p.customer_id = c.id WHERE c.archived_at IS NULL ORDER BY p.last DESC LIMIT 25"
+            ).fetchall()
         results = [logic.customer_summary(conn, c, cfg) for c in rows]
         count = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL").fetchone()[0]
         not_in_square = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL "

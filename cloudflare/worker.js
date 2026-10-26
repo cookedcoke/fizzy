@@ -12,16 +12,16 @@ function down() {
 
 export default {
   async fetch(request) {
+    // Only swap pages people open, so the Square webhook and data requests get a real status.
+    const wantsPage = (request.headers.get("Accept") || "").includes("text/html");
     let res;
     try {
       res = await fetch(request);
     } catch (e) {
-      return down();
+      return wantsPage ? down() : new Response("", { status: 502 });
     }
     // Fizzy's own pages (including its maintenance mode) say X-Fizzy; anything else in the
-    // 5xx list came from Cloudflare failing to reach the PC. Only swap pages people open,
-    // so the Square webhook and data requests still get the real status.
-    const wantsPage = (request.headers.get("Accept") || "").includes("text/html");
+    // 5xx list came from Cloudflare failing to reach the PC.
     if (DOWN.includes(res.status) && !res.headers.get("X-Fizzy") && wantsPage) return down();
     return res;
   },

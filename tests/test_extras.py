@@ -144,7 +144,7 @@ def test_badges_on_the_student_site(client):
 
 def test_backup_health(conn, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "BACKUP_DIR", "")
-    assert appmod.backup_health(conn) == (False, "Backups are off - set FIZZY_BACKUP_DIR (Docker sets it for you).")
+    assert appmod.backup_health(conn) == (False, "Backups aren't set up. (Owner: see the README.)")
     monkeypatch.setattr(config, "BACKUP_DIR", str(tmp_path))
     assert "No backup yet" in appmod.backup_health(conn)[1]
     path = db.backup(conn, str(tmp_path))

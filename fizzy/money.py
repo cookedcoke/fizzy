@@ -212,7 +212,7 @@ async def restock_add(request: Request, who=Depends(staff), conn=Depends(get_con
             raise MoneyError("Every quantity must be at least 1.")
         upload = form.get("receipt")
         if upload is not None and getattr(upload, "filename", ""):
-            receipt = save_receipt(await upload.read(), upload.content_type)  # only once the rest is valid
+            receipt = save_receipt(await upload.read(RECEIPT_MAX + 1), upload.content_type)  # only once the rest is valid
         try:
             add_restock(conn, day, form.get("shop"), form.get("note"), lines, who, receipt)
         except Exception:

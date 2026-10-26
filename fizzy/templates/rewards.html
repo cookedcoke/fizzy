@@ -7,12 +7,12 @@
 <div class="col" style="flex-grow:2">
   <div class="panel"><h2>Live <span class="count">{{ live|length }}</span></h2>
     {% if live %}<div class="scroll"><table>
-      <tr><th>Reward</th><th class="n">Points</th><th>In Square</th><th class="n">Redeemed</th><th></th></tr>
+      <tr><th>Reward</th><th class="n">Points</th><th class="hide-sm">In Square</th><th class="n">Redeemed</th><th></th></tr>
       {% for r in live %}<tr>
         <td><b>{{ r.name }}</b>{% if r.per_customer_limit %}<br><span class="muted small">{{ r.per_customer_limit }} per customer</span>{% endif %}
           <br><span class="muted small">Since {{ r.created_at|local('%a %d %b') }} · {{ r.created_by }}</span></td>
         <td class="n">{{ '{:,}'.format(r.points_cost) }}</td>
-        <td class="small">{{ r.square_note or '' }}</td>
+        <td class="small hide-sm">{{ r.square_note or '' }}</td>
         <td class="n">{{ r.used }}{% if r.used %}<br><span class="muted small">{{ r.people }} {{ 'person' if r.people == 1 else 'people' }}</span>{% endif %}</td>
         <td class="n"><form class="inline" method="post" action="/rewards/{{ r.id }}/end">
           <button class="sm danger" data-confirm="End “{{ r.name }}”? It stops showing on customer pages.">End</button></form></td></tr>{% endfor %}

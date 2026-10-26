@@ -499,7 +499,7 @@ ask. The owner can change all of this under Who can do what (below). Five wrong
 tries locks it for 10 minutes. Forgot it? On the home PC:
 
 ```
-docker compose exec fizzy python -m fizzy clear-pin
+docker compose exec -u fizzy fizzy python -m fizzy clear-pin
 ```
 
 ## 9. Search and keyboard shortcuts
@@ -878,8 +878,8 @@ There's one "Back soon" page (`fizzy/static/down.html`) shown three ways:
 1. **Maintenance mode**, while Fizzy is running but you're working on it. Everyone, staff and
    students, gets the page; Square sales still come in through the webhook.
    ```
-   docker compose exec fizzy python -m fizzy maintenance on "Upgrading the server, back by lunch."
-   docker compose exec fizzy python -m fizzy maintenance off
+   docker compose exec -u fizzy fizzy python -m fizzy maintenance on "Upgrading the server, back by lunch."
+   docker compose exec -u fizzy fizzy python -m fizzy maintenance off
    ```
    Leave the message out for the default ("We're doing some maintenance on our end...").
 2. **Phones and browsers that have opened Fizzy before** show it by themselves when Cloudflare

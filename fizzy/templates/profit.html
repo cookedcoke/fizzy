@@ -18,9 +18,9 @@
 {% if catalog_error %}<div class="err">Square's item list: {{ catalog_error }} Until then, items show up here once they've sold.</div>{% endif %}
 <form class="panel" method="post" action="/profit"><h2>Items <span class="count">{{ pr['items']|length + idle|length }}</span></h2>
   {% if pr['items'] or idle %}<div class="scroll"><table>
-    <tr><th>Item</th><th class="n">Sold</th><th class="n">Revenue</th><th class="n" style="width:130px">Cost each ($)</th><th class="n">Profit</th><th class="n">Margin</th></tr>
+    <tr><th>Item</th><th class="n">Sold</th><th class="n hide-sm">Revenue</th><th class="n" style="width:130px">Cost each ($)</th><th class="n">Profit</th><th class="n">Margin</th></tr>
     {% for r in pr['items'] %}<tr>
-      <td>{{ r.name }}<input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="base" value="{{ r.base }}"></td><td class="n">{{ r.qty }}</td><td class="n">{{ r.revenue|money }}</td>
+      <td>{{ r.name }}<input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="base" value="{{ r.base }}"></td><td class="n">{{ r.qty }}</td><td class="n hide-sm">{{ r.revenue|money }}</td>
       <td class="n"><input class="cost {{ 'missing' if r.cost_each is none }}" type="text" name="cost" inputmode="decimal" placeholder="e.g. 1.20"
         value="{{ '%.2f'|format(r.cost_each / 100) if r.cost_each is not none else '' }}" aria-label="Cost of one {{ r.name }}"></td>
       <td class="n">{{ r.profit|money if r.profit is not none else '' }}</td>

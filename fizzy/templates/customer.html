@@ -74,7 +74,7 @@
   {% if not c.passcode_set_at or (c.passcode_enc and not passcode_readable) %}{% set _ = todos.append(1) %}
   <form class="todo" method="post" action="/customers/{{ c.id }}/passcode" autocomplete="off">
     <b>{{ 'No student site passcode yet.' if not c.passcode_set_at else 'Passcode needs setting again.' }}</b>
-    <span class="inline-set"><input type="text" name="passcode" placeholder="What {{ first }} wants (4+)" aria-label="New passcode for {{ first }}"
+    <span class="inline-set"><input type="text" name="passcode" placeholder="New passcode (4+ characters)" aria-label="New passcode for {{ first }}"
       autocomplete="off" autocapitalize="off" spellcheck="false" minlength="4" maxlength="64" required><button class="sm">Set</button></span></form>{% endif %}
   {% if not c.square_customer_id and c.kind != 'test' %}{% set _ = todos.append(1) %}<div class="todo"><b>Not in Square yet.</b>
     <span>Their sales won't link by themselves - <a href="/export/square-customers.csv?only=new">get the import file</a>, or claim their sales with <kbd>K</kbd>.</span></div>{% endif %}

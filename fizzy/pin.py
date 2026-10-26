@@ -7,7 +7,7 @@
   plus how big a points or money change has to be before it needs a higher level.
 
 Pop-ups only ever say "Enter passcode", and a passcode that isn't high enough is just wrong.
-Forgot the PIN? On the home PC: docker compose exec fizzy python -m fizzy clear-pin
+Forgot the PIN? On the home PC: docker compose exec -u fizzy fizzy python -m fizzy clear-pin
 """
 import hashlib
 import hmac
@@ -15,8 +15,10 @@ import json
 import re
 import secrets
 import time
+from datetime import date
 
 from fastapi import APIRouter, Depends, Form, Request
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from . import config, db
@@ -66,9 +68,8 @@ ACTIONS = [
     ("import", "Import the school list", [("POST", r"^/import$")], "owner"),
     ("settings", "Settings: tab rules and devices", [("POST", r"^/settings")], "owner"),
     # Not paths: these apply to whoever an action is aimed at (see _targets).
-    ("admin_accounts", "Anything aimed at an admin account (points, tab, passcode, details). Claiming their "
-                       "Square sales isn't included", [], "owner"),
-    ("test_accounts", "Anything aimed at test accounts only (no big-change limit either)", [], "open"),
+    ("admin_accounts", "Changes to admin accounts (claiming their sales is fine)", [], "owner"),
+    ("test_accounts", "Changes to test accounts (redeeming rewards still needs its usual level)", [], "open"),
 ]
 OTHER = "pin"  # anything not listed (new pages) until it's given its own row
 # A points or money change by hand bigger than these needs the "big" level, whatever its row says.
@@ -147,10 +148,16 @@ def _eff(conn, level):
 
 
 def _number(v):
-    try:
-        return abs(float(str(v).replace(",", "").replace("$", "").strip()))
-    except ValueError:
+    """How big a typed amount is, read the way the handlers read it. Anything that isn't plainly a
+    number counts as huge, so an odd format can't sneak past the big-change rule."""
+    v = re.sub(r"[\s,$]", "", str(v or ""))
+    if not v:
         return 0
+    try:
+        n = abs(float(v))
+    except ValueError:
+        return float("inf")
+    return n if n == n else float("inf")
 
 
 def required(conn, method, path, form=None):
@@ -169,22 +176,45 @@ def required(conn, method, path, form=None):
         if method != "POST":
             return OPEN
         level = LEVELS[OTHER]
+    payment = None
+    m = re.match(r"^/square/payments/([^/]+)/(assign|kind)$", path)
+    if m:
+        base = m.group(1).removesuffix(":sale")
+        payment = conn.execute("SELECT COALESCE(MAX(customer_id), 0) AS owner, COALESCE(SUM(amount_cents), 0) AS cents, "
+                               "MAX(kind != 'sale') AS tab FROM square_payments WHERE square_payment_id IN (?, ?)",
+                               (base, base + ":sale")).fetchone()
+        if m.group(2) == "assign" and payment["owner"]:
+            # Moving a sale that already belongs to someone isn't claiming: it takes from them.
+            level = max(level, LEVELS[perms["square_kind"]])
     if form is not None and not re.search(r"^/customers/\d+/claim$", path):
         kinds, complete = _targets(conn, path, form)
         if "admin" in kinds:
             level = max(level, LEVELS[perms["admin_accounts"]])
-        elif complete and kinds and all(k == "test" for k in kinds):
+        elif complete and kinds and all(k == "test" for k in kinds) and not NOT_PLAY.search(path) \
+                and not (path.endswith("/edit") and (form.get("square_customer_id") or "").strip()):
             return _eff(conn, LEVELS[perms["test_accounts"]])
-    if form is not None and re.search(BIG_PATHS, path):
+    if form is not None and (re.search(BIG_PATHS, path) or payment or path == "/events"):
         people = max(1, len([x for x in re.split(r"[\n;]+", form.get("people") or "") if x.strip()]))
         big = (form.get("everyone") or _number(form.get("delta")) * people > perms["big_points"]
                or _number(form.get("points")) > perms["big_points"] or _number(form.get("amount")) > perms["big_dollars"])
+        if path == "/tools/write_off" and not (form.get("amount") or "").strip():
+            big = True  # blank means "everything they owe", whatever that is
+        if payment and (payment["tab"] or payment["cents"] > perms["big_dollars"] * 100):
+            big = True  # re-labelling or moving tab money changes what someone owes
+        if path == "/events":  # bonus points for everyone: big unless it's a plain one-off double points day
+            try:
+                days = (date.fromisoformat(form.get("end") or form.get("start")) - date.fromisoformat(form.get("start"))).days
+            except (TypeError, ValueError):
+                days = 99
+            big = bool(form.get("weekly")) or _number(form.get("multiplier") or 2) > 2 or days > 6
         if big:
             level = max(level, LEVELS[perms["big"]])
     return _eff(conn, level)
 
 
 # Tools whose customers all come from the name fields below, so "all test accounts" can be trusted.
+# Real-world value: never "anything goes", even on test accounts (free Cokes are real Cokes).
+NOT_PLAY = re.compile(r"^/(customers/\d+/redeem/|redemptions/)")
 PRECISE_TOOLS = r"^/tools/(bulk_points|transfer_points|manual_charge|write_off|extend_due|merge|bulk_archive|restore)$"
 
 
@@ -196,6 +226,18 @@ def _targets(conn, path, form):
     m = re.match(r"^/customers/(\d+)/", path)
     if m:
         ids.add(int(m.group(1)))
+    m = re.match(r"^/square/payments/([^/]+)/(assign|kind)$", path)
+    if m:
+        base = m.group(1).removesuffix(":sale")
+        for r in conn.execute("SELECT customer_id FROM square_payments WHERE square_payment_id IN (?, ?) "
+                              "AND customer_id IS NOT NULL", (base, base + ":sale")):
+            ids.add(r[0])
+        if m.group(2) == "assign" and form is not None and form.get("customer"):
+            from . import tools
+            try:
+                ids.add(tools.resolve(conn, form["customer"], True)["id"])
+            except Exception:
+                complete = False
     m = re.match(r"^/redemptions/(\d+)/", path)
     if m:
         r = conn.execute("SELECT customer_id FROM redemptions WHERE id = ?", (int(m.group(1)),)).fetchone()
@@ -263,12 +305,15 @@ async def guard(request: Request):
     if any(re.search(p, path) for p in FREE):
         return
     form = await request.form() if request.method == "POST" else None
-    conn = db.connect()
-    try:
-        if required(conn, request.method, path, form) > unlocked(request, conn):
-            raise PinRequired()
-    finally:
-        conn.close()
+
+    def check():  # in a worker thread: the database can wait on a write, and that mustn't stall every request
+        conn = db.connect()
+        try:
+            return required(conn, request.method, path, form) > unlocked(request, conn)
+        finally:
+            conn.close()
+    if await run_in_threadpool(check):
+        raise PinRequired()
 
 
 # ---- pages -----------------------------------------------------------------------------------
@@ -287,7 +332,9 @@ def _recent(key, now):
 @router.post("/settings/pin/unlock")
 def unlock(request: Request, pin: str = Form(""), need: int = Form(PIN), who=Depends(staff), conn=Depends(get_conn)):
     now, me = time.time(), _browser(request)
-    if _recent(me, now) >= FAIL_LIMIT or _recent("*", now) >= FAIL_LIMIT_ALL:
+    # The overall cap stops PIN guessing; the owner password still works through it, so nobody
+    # can keep the owner locked out by typing wrong codes from lots of browsers.
+    if _recent(me, now) >= FAIL_LIMIT or (_recent("*", now) >= FAIL_LIMIT_ALL and not is_owner(pin)):
         return JSONResponse({"ok": False, "error": "Too many wrong tries. Wait 10 minutes."})
     rank = OWNER if is_owner(pin) else PIN if check(conn, pin) else OPEN
     if rank < max(need, PIN):  # a PIN where the owner's is needed is just a wrong passcode

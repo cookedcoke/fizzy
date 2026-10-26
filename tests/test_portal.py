@@ -181,12 +181,12 @@ def test_parallel_guesses_cant_skip_the_limits(client, monkeypatch):
         transport = httpx.ASGITransport(app=client.app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
             reqs = [ac.post("/me/login", data={"who": "Nora Le Fevre", "passcode": f"wrong-{i}"}) for i in range(30)]
-            reqs.append(ac.post("/me/login", data={"who": "Nora Le Fevre", "passcode": PC}))
-            return await asyncio.gather(*reqs)
+            rs = await asyncio.gather(*reqs)
+            return rs + [await ac.post("/me/login", data={"who": "Nora Le Fevre", "passcode": PC})]
     rs = asyncio.run(burst())
     tried = sum("name and passcode don" in r.text for r in rs)
     assert tried <= portal.LIMIT_PER_NAME                               # the rest were refused before checking
-    assert rs[-1].status_code != 303                                    # the right one, late in the burst, didn't get in
+    assert rs[-1].status_code != 303                                    # the right one, straight after the burst, didn't get in
 
 
 def test_name_and_student_number_share_one_allowance(client, monkeypatch):

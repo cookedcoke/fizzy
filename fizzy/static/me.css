@@ -114,7 +114,7 @@ main { max-width: 560px; margin: 0 auto; padding: 8px 18px 48px }
 .signin label { display: block; font-weight: 600; font-size: 14px; margin: 0 0 6px }
 .signin label + input { margin-bottom: 14px }
 .signin input { width: 100%; font: inherit; font-size: 16px; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--cream); color: var(--ink) }
-.signin input:focus { outline: none; border-color: var(--red); background: #fff; box-shadow: 0 0 0 4px var(--red-wash) }
+.signin input:focus { outline: none; border-color: var(--ink); background: #fff; box-shadow: 0 0 0 4px rgba(0, 0, 0, .06) }
 .go { width: 100%; margin-top: 6px; border: 0; border-radius: 999px; padding: 13px; font-family: var(--display); font-weight: 800; font-size: 17px; color: #fff;
   background: linear-gradient(135deg, var(--red), var(--red-deep)); box-shadow: 0 10px 20px -10px rgba(179, 0, 0, .7) }
 .go:active { transform: translateY(1px) }

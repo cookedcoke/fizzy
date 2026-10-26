@@ -310,6 +310,8 @@ def add_repayment(conn, customer_id, amount_cents, method, note, staff, square_p
     if amount_cents <= 0:
         raise ValueError("Repayment must be more than $0.")
     owing = tab_ledger(conn, customer_id)["owing_cents"]
+    if method == "writeoff" and amount_cents > owing:
+        raise ValueError(f"They only owe ${owing / 100:.2f}, so there's nothing more to write off.")
     ts = created_at or now_iso()
     cur = conn.execute(
         "INSERT INTO tab_repayments(customer_id, amount_cents, method, note, staff, square_payment_id, created_at) "

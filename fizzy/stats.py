@@ -125,7 +125,7 @@ def refunds_cents(conn, start, end):
 
 def hand_repayments_cents(conn, start, end):
     return conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM tab_repayments WHERE created_at >= ? AND created_at < ? "
-                        "AND square_payment_id IS NULL AND method != 'writeoff'", (start, end)).fetchone()[0]
+                        "AND square_payment_id IS NULL AND method != 'writeoff'"" AND customer_id NOT IN (SELECT id FROM customers WHERE kind = 'test')", (start, end)).fetchone()[0]
 
 
 def summary(conn, day):

@@ -195,7 +195,11 @@ async def run_tool(tool: str, request: Request, who=Depends(staff), conn=Depends
     try:
         # In a worker thread: some tools wait on Square (Sync now waits for a running sync), and
         # that mustn't freeze the whole app for everyone else.
-        result = await run_in_threadpool(handler, request, conn, who, form)
+        def go():
+            if tool in LOCKED_TOOLS:  # read balances and write under the write lock, so a double-click can't do it twice
+                conn.execute("BEGIN IMMEDIATE")
+            return handler(request, conn, who, form)
+        result = await run_in_threadpool(go)
         conn.commit()
         return result
     except (ToolError, ValueError) as e:  # ValueError: rule checks in logic.py (e.g. a 0-point change)
@@ -261,7 +265,7 @@ def h_bulk_points(request, conn, who, form):
     if not note:
         raise ToolError("A reason is required.")
     if form.get("everyone"):
-        targets, missing = conn.execute("SELECT * FROM customers WHERE archived_at IS NULL").fetchall(), []
+        targets, missing = conn.execute("SELECT * FROM customers WHERE archived_at IS NULL AND kind IS NULL").fetchall(), []
     else:
         targets, missing = resolve_many(conn, form.get("people", ""))
     if not targets:
@@ -331,7 +335,7 @@ def h_approve_eligible(request, conn, who, form):
     cfg = logic.settings(conn)
     rows = conn.execute(
         "SELECT c.id FROM customers c JOIN points_ledger p ON p.customer_id = c.id WHERE c.tab_decision IS NULL "
-        "AND c.archived_at IS NULL GROUP BY c.id HAVING SUM(p.spend_cents) >= ?", (cfg["unlock_spend_cents"],)
+        "AND c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id HAVING SUM(p.spend_cents) >= ?", (cfg["unlock_spend_cents"],)
     ).fetchall()
     note = form.get("note", "").strip() or "Bulk approved"
     for r in rows:
@@ -525,7 +529,7 @@ def h_takings(request, conn, who, form):
             rows.append(["Returned from tabs (not money)", "", r["n"], money(-r["total"])])
     for r in conn.execute(
         "SELECT method, COUNT(*) AS n, SUM(amount_cents) AS total FROM tab_repayments WHERE created_at >= ? AND created_at < ? "
-        "AND square_payment_id IS NULL GROUP BY method", (start, end)
+        "AND square_payment_id IS NULL AND customer_id NOT IN (SELECT id FROM customers WHERE kind = 'test') GROUP BY method", (start, end)
     ):
         label = "Fizzy: debts written off" if r["method"] == "writeoff" else "Fizzy: repayments recorded without Square"
         rows.append([label, r["method"], r["n"], money(r["total"])])
@@ -586,8 +590,10 @@ def h_raffle(request, conn, who, form):
         pool = conn.execute(
             "SELECT c.id, c.name, (SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = c.id) AS pts "
             "FROM customers c WHERE c.archived_at IS NULL AND c.kind IS NOT 'test' AND (EXISTS (SELECT 1 FROM points_ledger p WHERE p.customer_id = c.id "
-            "AND p.reason = 'purchase' AND p.created_at >= ? AND p.created_at < ?) OR EXISTS (SELECT 1 FROM tab_charges t "
-            "WHERE t.customer_id = c.id AND t.charged_at >= ? AND t.charged_at < ?))", (start, end, start, end)
+            "AND p.reason = 'purchase' AND p.created_at >= ? AND p.created_at < ? AND (SELECT SUM(q.delta) FROM points_ledger q "
+            "WHERE q.square_payment_id = p.square_payment_id AND q.reason IN ('purchase', 'refund')) > 0) "  # not refunded
+            "OR EXISTS (SELECT 1 FROM tab_charges t WHERE t.customer_id = c.id AND t.charged_at >= ? AND t.charged_at < ? "
+            "AND t.amount_cents > t.refunded_cents))", (start, end, start, end)
         ).fetchall()
     else:
         pool = conn.execute(
@@ -681,5 +687,7 @@ def h_sign_out_all(request, conn, who, form):
     return RedirectResponse("/login", status_code=303)
 
 
+LOCKED_TOOLS = {"bulk_points", "transfer_points", "manual_charge", "write_off", "extend_due", "merge", "reset_points",
+                "test_accounts", "delete_test_accounts"}
 HANDLERS = {name[2:]: fn for name, fn in globals().items() if name.startswith("h_")}
 assert set(HANDLERS) == {t for t in tool_names() if t not in ("export", "download_backup")}, "TOOLS and handlers out of sync"

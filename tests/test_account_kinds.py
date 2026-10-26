@@ -71,7 +71,7 @@ def test_test_accounts_are_a_playground(client, owner):
 def test_test_accounts_dont_count_as_missing_from_square(client):
     login(client)
     client.post("/tools/test_accounts", data={"n": "2"})
-    assert "new only (0)" in client.get("/customers").text
+    assert "Export new people for Square (0)" in client.get("/customers").text
     page = client.get("/customers/1").text
     assert "Not in Square yet" not in page and "Test account" in page
     sq = client.get("/square").text
