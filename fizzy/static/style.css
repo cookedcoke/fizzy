@@ -429,3 +429,15 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 @media (max-width: 720px) { .perms tr.group { display: block; padding: 14px var(--s4) 2px; border-top: 1px solid var(--line) } .perms tr.group th { display: block; padding: 0 !important } }
 @media (min-width: 640px) and (max-width: 1100px) { .stats:has(> :nth-child(6):last-child) { grid-template-columns: repeat(3, 1fr) } }
 @media (max-width: 720px) { button.sm, .btn.sm, header .who button, header .who select { min-height: 40px } }
+.update-progress { max-width: 560px; margin: 24px auto }
+.update-progress h1 { margin-bottom: 4px }
+.steps { list-style: none; padding: 0; margin: var(--s4) 0; counter-reset: s }
+.steps li { position: relative; padding: 9px 0 9px 36px; color: var(--faint); border-top: 1px solid var(--line); counter-increment: s }
+.steps li::before { content: counter(s); position: absolute; left: 0; top: 8px; width: 24px; height: 24px; border-radius: 50%;
+                    border: 1px solid var(--line-strong); display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--surface) }
+.steps li.now { color: var(--fg); font-weight: 600 }
+.steps li.now::before { border-color: var(--ink); border-top-color: transparent; animation: spin .9s linear infinite; content: "" }
+.steps li.done { color: var(--fg) }
+.steps li.done::before { content: ""; background: var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/14px no-repeat; border-color: var(--ok) }
+@keyframes spin { to { transform: rotate(360deg) } }
+@media (prefers-reduced-motion: reduce) { .steps li.now::before { animation: none; border-top-color: var(--ink) } }

@@ -1,0 +1,62 @@
+{% extends "base.html" %}{% block title %}Updating{% endblock %}
+{% block body %}
+<div class="panel update-progress" id="up" data-since="{{ since }}" data-version="{{ version }}">
+  <h1 id="up-title">Updating Fizzy</h1>
+  <p class="muted" id="up-sub">Keep this page open. Fizzy is down for about a minute while it restarts; ring sales up in Square as normal.</p>
+  <ol class="steps">
+    <li data-step="wait">Waiting for the home PC</li>
+    <li data-step="backup">Backing up</li>
+    <li data-step="pull">Getting the new version</li>
+    <li data-step="build">Building it <span class="muted">(Fizzy still works)</span></li>
+    <li data-step="restart">Restarting</li>
+    <li data-step="verify">Checking it started</li>
+  </ol>
+  <div class="err" id="up-err" hidden></div>
+  <div class="actions" id="up-done" hidden><a class="btn primary" href="/">Back to the dashboard</a><a class="btn" href="/settings#updates">Settings</a></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var box = document.getElementById("up"), since = Number(box.dataset.since), began = Date.now();
+  var order = ["wait", "backup", "pull", "build", "restart", "verify"], at = "wait", downSeen = false;
+  var title = document.getElementById("up-title"), sub = document.getElementById("up-sub");
+  function mark(step) {
+    var i = order.indexOf(step); if (i < 0) return; at = step;
+    document.querySelectorAll(".steps li").forEach(function (li, j) {
+      li.className = j < i ? "done" : j === i ? "now" : "";
+    });
+  }
+  function finish(ok, head, text) {
+    clearInterval(timer);
+    document.querySelectorAll(".steps li").forEach(function (li) { if (ok || li.className === "done") li.className = "done"; else li.className = ""; });
+    title.textContent = head; sub.textContent = text;
+    if (!ok) { var e = document.getElementById("up-err"); e.hidden = false; e.textContent = text; sub.textContent = ""; }
+    document.getElementById("up-done").hidden = false;
+  }
+  function tick() {
+    fetch("/settings/update/status", { credentials: "same-origin", cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw r; return r.json(); })
+      .then(function (s) {
+        if (s.requested || !s.started || s.started < since - 5) { mark("wait"); return; }  // not picked up yet
+        if (s.step === "rollback") { mark("verify"); title.textContent = "That didn't work, going back"; sub.textContent = "The new version didn't start, so the home PC is putting the old one back."; return; }
+        if (s.step !== "done") { mark(s.step); return; }
+        if (s.state === "ok") finish(true, "Updated", "Fizzy is now on " + s.to + ". Everything's back to normal.");
+        else if (s.state === "current") finish(true, "Already up to date", "There was nothing new, so nothing changed.");
+        else finish(false, "Update didn't go through", s.message || "Something went wrong. Fizzy is still on the old version.");
+      })
+      .catch(function () {  // no answer: Fizzy is restarting
+        downSeen = true;
+        if (order.indexOf(at) < order.indexOf("restart")) mark("restart");
+        sub.textContent = "Fizzy is restarting. This page carries on by itself when it's back.";
+      })
+      .then(function () {
+        if (Date.now() - began > 10 * 60 * 1000 && document.getElementById("up-done").hidden) {
+          finish(false, "This is taking a while", "It's been 10 minutes. Check the home PC: docker compose logs fizzy");
+        }
+      });
+  }
+  mark("wait"); var timer = setInterval(tick, 2000); tick();
+})();
+</script>
+{% endblock %}

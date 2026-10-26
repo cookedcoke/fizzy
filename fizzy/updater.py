@@ -10,9 +10,10 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from . import config, db
-from .web import back, staff
+from .web import back, render, staff
 
 router = APIRouter()
 
@@ -50,4 +51,17 @@ def request_update(request: Request, who=Depends(staff)):
         conn.commit()
     finally:
         conn.close()
-    return back(request, "/settings#updates", "Update requested. The home PC will pull and restart Fizzy within a minute or two.")
+    return RedirectResponse(f"/settings/update/progress?since={int(time.time())}", status_code=303)
+
+
+@router.get("/settings/update/progress", response_class=HTMLResponse)
+def progress(request: Request, since: int = 0, who=Depends(staff)):
+    return render(request, "update_progress.html", since=since or int(time.time()), version=VERSION)
+
+
+@router.get("/settings/update/status")
+def progress_status(who=Depends(staff)):
+    """Polled by the progress page. While Fizzy restarts this doesn't answer, and the page knows that."""
+    s = status()
+    return JSONResponse({k: s.get(k) for k in ("state", "step", "message", "from", "to", "started", "requested", "watching", "version")},
+                        headers={"Cache-Control": "no-store"})

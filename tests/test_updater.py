@@ -21,8 +21,12 @@ def test_update_button(client, tmp_path, monkeypatch):
         {"state": "ok", "at": "Mon 26 Oct 09:00", "message": "abc to def", "behind": 3, "seen": time.time()}))
     page = client.get("/settings").text
     assert "3 new changes" in page and "Update now" in page and "worked" in page
-    assert "Update requested" in client.post("/settings/update").text
+    r = client.post("/settings/update", follow_redirects=False)
+    assert r.headers["location"].startswith("/settings/update/progress?since=")
     assert (tmp_path / "update-requested").exists()
+    assert "Waiting for the home PC" in client.get(r.headers["location"]).text
+    s = client.get("/settings/update/status").json()
+    assert s["requested"] is True and s["watching"] is True
 
 
 def test_update_is_owner_only(client, monkeypatch):
