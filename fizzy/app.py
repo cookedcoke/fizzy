@@ -563,7 +563,7 @@ def register(app):
         results = [logic.customer_summary(conn, c, cfg) for c in rows]
         count = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL").fetchone()[0]
         not_in_square = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL "
-                                     "AND square_customer_id IS NULL").fetchone()[0]
+                                     "AND square_customer_id IS NULL AND kind IS NOT 'test'").fetchone()[0]
         return render(request, "customers.html", q=q, results=results, count=count, not_in_square=not_in_square,
                       can_reward=rewards.can_redeem_any(conn) if results else set())
 
@@ -782,7 +782,7 @@ def register(app):
         ).fetchall()
         people = conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
         unlinked_customers = conn.execute(
-            "SELECT COUNT(*) FROM customers WHERE square_customer_id IS NULL AND archived_at IS NULL"
+            "SELECT COUNT(*) FROM customers WHERE square_customer_id IS NULL AND archived_at IS NULL AND kind IS NOT 'test'"
         ).fetchone()[0]
         return render(
             request, "square.html", rows=rows, show=show, square_on=bool(config.SQUARE_TOKEN),

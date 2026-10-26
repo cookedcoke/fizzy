@@ -652,7 +652,7 @@ def h_integrity(request, conn, who, form):
     count("Unreviewed rule-breaking tab charges", "SELECT COUNT(*) FROM tab_charges WHERE breach IS NOT NULL AND breach_ack_by IS NULL",
           link("Review on the dashboard", "/"))
     count("Active customers not linked to Square",
-          "SELECT COUNT(*) FROM customers WHERE square_customer_id IS NULL AND archived_at IS NULL",
+          "SELECT COUNT(*) FROM customers WHERE square_customer_id IS NULL AND archived_at IS NULL AND kind IS NOT 'test'",
           link("Import this CSV into Square, then sync", "/export/square-customers.csv"))
     count("Approved tabs on archived customers",
           "SELECT COUNT(*) FROM customers WHERE archived_at IS NOT NULL AND tab_decision = 'approved'",

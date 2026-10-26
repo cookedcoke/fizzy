@@ -37,7 +37,7 @@
 <div class="pagehead">
   <div>
     <h1>{{ c.name }} <span class="tag {{ st.status }}">{{ st.label }}</span>{% if c.archived_at %} <span class="tag">Archived</span>{% endif %}{% if c.kind == 'admin' %} <span class="tag kind-admin" title="One of us. Changes to this account need the level set under Who can do what.">Admin</span>{% elif c.kind == 'test' %} <span class="tag kind-test" title="Test account: left out of leaderboards, reports and exports.">Test</span>{% endif %}</h1>
-    <div class="meta"><span class="mono">{{ c.email.split('@')[0] }}</span> · {{ 'Linked to Square' if c.square_customer_id else 'Not in Square yet' }}</div>
+    <div class="meta"><span class="mono">{{ c.email.split('@')[0] }}</span> · {{ 'Linked to Square' if c.square_customer_id else 'Test account' if c.kind == 'test' else 'Not in Square yet' }}</div>
   </div>
   <a class="btn primary" href="/customers/{{ c.id }}/claim" data-key="k" data-key-label="Claim the sale just rung up in Square"
      title="Give {{ c.name.split(' ')[0] }} the sale you just rang up">Claim sale <kbd>K</kbd></a>
@@ -76,7 +76,7 @@
     <b>{{ 'No student site passcode yet.' if not c.passcode_set_at else 'Passcode needs setting again.' }}</b>
     <span class="inline-set"><input type="text" name="passcode" placeholder="What {{ first }} wants (4+)" aria-label="New passcode for {{ first }}"
       autocomplete="off" autocapitalize="off" spellcheck="false" minlength="4" maxlength="64" required><button class="sm">Set</button></span></form>{% endif %}
-  {% if not c.square_customer_id %}{% set _ = todos.append(1) %}<div class="todo"><b>Not in Square yet.</b>
+  {% if not c.square_customer_id and c.kind != 'test' %}{% set _ = todos.append(1) %}<div class="todo"><b>Not in Square yet.</b>
     <span>Their sales won't link by themselves - <a href="/export/square-customers.csv?only=new">get the import file</a>, or claim their sales with <kbd>K</kbd>.</span></div>{% endif %}
 </div>
 {% endif %}
