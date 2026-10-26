@@ -393,11 +393,11 @@ def h_test_accounts(request, conn, who, form):
     n = _int(form, "n", 1)
     if n > 20:
         raise ToolError("20 at a time is plenty.")
-    start = conn.execute("SELECT COUNT(*) FROM customers WHERE kind = 'test'").fetchone()[0]
-    made = []
-    for i in range(start + 1, start + n + 1):
-        while conn.execute("SELECT 1 FROM customers WHERE email = ?", (f"test{i}@test.invalid",)).fetchone():
-            i += 100
+    made, i = [], 0
+    while len(made) < n:
+        i += 1
+        if conn.execute("SELECT 1 FROM customers WHERE email = ?", (f"test{i}@test.invalid",)).fetchone():
+            continue
         cur = conn.execute("INSERT INTO customers(name, email, created_at, kind) VALUES (?, ?, ?, 'test')",
                            (f"Test Account {i}", f"test{i}@test.invalid", db.now_iso()))
         made.append(cur.lastrowid)
@@ -413,11 +413,14 @@ def h_delete_test_accounts(request, conn, who, form):
     if not ids:
         raise ToolError("There aren't any test accounts.")
     marks = ",".join("?" * len(ids))
+    real = conn.execute(f"SELECT name FROM customers WHERE merged_into IN ({marks}) AND kind IS NOT 'test'", ids).fetchall()
+    if real:  # their history lives on the test account now; deleting it would lose it
+        raise ToolError("Real customers were merged into a test account (" + ", ".join(r[0] for r in real[:5]) +
+                        "), so nothing was deleted. Turn that account into a normal one instead.")
     # Square sales put on a test account go back to "no customer" rather than vanishing.
     conn.execute(f"UPDATE square_payments SET customer_id = NULL WHERE customer_id IN ({marks})", ids)
     for table in ("redemptions", "points_ledger", "tab_repayments", "tab_charges", "tab_decisions", "square_aliases"):
         conn.execute(f"DELETE FROM {table} WHERE customer_id IN ({marks})", ids)
-    conn.execute(f"UPDATE customers SET merged_into = NULL WHERE merged_into IN ({marks})", ids)
     conn.execute(f"DELETE FROM customers WHERE id IN ({marks})", ids)
     db.audit(conn, who, "test_accounts_deleted", None, f"{len(ids)} deleted")
     return done(request, "delete_test_accounts", f"Deleted {len(ids)} test account(s).")
@@ -440,6 +443,8 @@ def h_merge(request, conn, who, form):
     keep, dup = resolve(conn, form.get("keep")), resolve(conn, form.get("dup"))
     if keep["id"] == dup["id"]:
         raise ToolError("Pick two different customers.")
+    if (keep["kind"] == "test") != (dup["kind"] == "test"):
+        raise ToolError("Can't merge a test account with a real customer.")
     for table in ("points_ledger", "tab_charges", "tab_repayments", "square_payments", "tab_decisions", "audit_log",
                   "square_aliases", "redemptions"):
         conn.execute(f"UPDATE {table} SET customer_id = ? WHERE customer_id = ?", (keep["id"], dup["id"]))

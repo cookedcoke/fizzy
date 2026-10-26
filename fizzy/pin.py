@@ -170,10 +170,10 @@ def required(conn, method, path, form=None):
             return OPEN
         level = LEVELS[OTHER]
     if form is not None and not re.search(r"^/customers/\d+/claim$", path):
-        kinds = _targets(conn, path, form)
+        kinds, complete = _targets(conn, path, form)
         if "admin" in kinds:
             level = max(level, LEVELS[perms["admin_accounts"]])
-        elif kinds and all(k == "test" for k in kinds) and not form.get("everyone"):
+        elif complete and kinds and all(k == "test" for k in kinds):
             return _eff(conn, LEVELS[perms["test_accounts"]])
     if form is not None and re.search(BIG_PATHS, path):
         people = max(1, len([x for x in re.split(r"[\n;]+", form.get("people") or "") if x.strip()]))
@@ -184,9 +184,15 @@ def required(conn, method, path, form=None):
     return _eff(conn, level)
 
 
+# Tools whose customers all come from the name fields below, so "all test accounts" can be trusted.
+PRECISE_TOOLS = r"^/tools/(bulk_points|transfer_points|manual_charge|write_off|extend_due|merge|bulk_archive|restore)$"
+
+
 def _targets(conn, path, form):
-    """The customers an action is aimed at: from the page address, or the names typed into a tool."""
-    ids = set()
+    """(kinds of the customers an action is aimed at, whether that list is surely complete).
+    From the page address, or the names typed into a tool. Any name that can't be looked up makes
+    it incomplete, so the test-account level is never used on a guess."""
+    ids, complete = set(), True
     m = re.match(r"^/customers/(\d+)/", path)
     if m:
         ids.add(int(m.group(1)))
@@ -195,23 +201,29 @@ def _targets(conn, path, form):
         r = conn.execute("SELECT customer_id FROM redemptions WHERE id = ?", (int(m.group(1)),)).fetchone()
         if r:
             ids.add(r[0])
+        else:
+            complete = False
     if form is not None and path.startswith("/tools/"):
         from . import tools
+        complete = complete and bool(re.search(PRECISE_TOOLS, path)) and not form.get("everyone") and not form.get("all")
         for k in ("customer", "from", "to", "keep", "dup"):
             if form.get(k):
                 try:
                     ids.add(tools.resolve(conn, form[k], True)["id"])
                 except Exception:  # not found / ambiguous: the tool itself says so
-                    pass
+                    complete = False
         if form.get("people"):
             try:
-                ids |= {c["id"] for c in tools.resolve_many(conn, form["people"], True)[0]}
+                found, missing = tools.resolve_many(conn, form["people"], True)
+                ids |= {c["id"] for c in found}
+                complete = complete and not missing
             except Exception:
-                pass
+                complete = False
     if not ids:
-        return []
+        return [], False
     marks = ",".join("?" * len(ids))
-    return [r[0] for r in conn.execute(f"SELECT kind FROM customers WHERE id IN ({marks})", tuple(ids))]
+    kinds = [r[0] for r in conn.execute(f"SELECT kind FROM customers WHERE id IN ({marks})", tuple(ids))]
+    return kinds, complete and len(kinds) == len(ids)  # an id that doesn't exist isn't "all test accounts"
 
 
 def customer_level(conn, kind, base):

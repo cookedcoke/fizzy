@@ -76,3 +76,38 @@ def test_test_accounts_dont_count_as_missing_from_square(client):
     assert "Not in Square yet" not in page and "Test account" in page
     sq = client.get("/square").text
     assert "Not in Square" not in sq or ">0<" in sq
+
+
+def test_test_level_fails_closed(client):
+    from fizzy import config
+    login(client)
+    client.post("/tools/test_accounts", data={"n": "1"})
+    client.post("/settings/pin", data={"new": "4821"})
+    conn = db.connect()
+    try:
+        r = lambda path, form: pin.required(conn, "POST", path, form)
+        assert r("/tools/bulk_points", {"delta": "5", "people": "Test Account 1"}) == pin.OPEN
+        # A name that can't be found, or a tool that picks people another way: normal level.
+        assert r("/tools/bulk_points", {"delta": "5", "people": "Test Account 1\nNobody Here"}) == pin.PIN
+        assert r("/tools/manual_charge", {"customer": "Test Account 1", "people": "garbage;;"}) >= pin.OPEN
+        assert r("/tools/raffle", {"customer": "Test Account 1"}) == pin.PIN
+        assert r("/tools/restore", {"people": "Test Account 1", "all": "1"}) == pin.PIN
+    finally:
+        conn.close()
+
+
+def test_no_merging_real_into_test_and_numbering(client):
+    login(client)
+    real = _customer()
+    client.post("/tools/test_accounts", data={"n": "2"})
+    r = client.post("/tools/merge", data={"keep": "Test Account 1", "dup": "Test Kid"})
+    assert "Can&#39;t merge a test account with a real customer" in r.text
+    client.post("/tools/delete_test_accounts", data={"confirm": "DELETE"})
+    client.post("/tools/test_accounts", data={"n": "3"})
+    conn = db.connect()
+    try:
+        names = [x[0] for x in conn.execute("SELECT name FROM customers WHERE kind = 'test' ORDER BY id")]
+        assert len(set(names)) == 3
+        assert conn.execute("SELECT merged_into FROM customers WHERE id = ?", (real,)).fetchone()[0] is None
+    finally:
+        conn.close()
