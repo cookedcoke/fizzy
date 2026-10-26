@@ -1,4 +1,4 @@
-"""CLI: python -m fizzy import FILE.csv | backup DIR | sync | device-link NAME | clear-pin"""
+"""CLI: python -m fizzy import FILE.csv | backup DIR | sync | device-link NAME | clear-pin | maintenance on [MESSAGE] | maintenance off"""
 import sys
 
 from . import config, customers, db, devices, pin, square
@@ -24,6 +24,15 @@ def main(argv):
         pin.set_pin(conn, "", "cli")
         conn.commit()
         print("Admin PIN removed.")
+    elif argv[:2] == ["maintenance", "on"]:
+        db.set_setting(conn, "maintenance", " ".join(argv[2:]))
+        conn.commit()
+        print("Maintenance mode on: everyone sees the 'back soon' page (Square sales still come in).")
+        print("Turn it off with: python -m fizzy maintenance off")
+    elif argv == ["maintenance", "off"]:
+        conn.execute("DELETE FROM settings WHERE key = 'maintenance'")
+        conn.commit()
+        print("Maintenance mode off.")
     elif argv == ["sync"]:
         print(square.sync(conn))
     else:

@@ -108,7 +108,7 @@ def test_owner_tunes_who_can_do_what(client, owner):
         conn.close()
 
 
-def test_rules():
+def test_rules(client):  # client: gives this test its own throwaway database
     conn = db.connect()
     old = config.ADMIN_PASSWORD
     try:

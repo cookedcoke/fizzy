@@ -855,6 +855,30 @@ Most customers are under 18, so Fizzy keeps the minimum:
 
 ---
 
+### When the server's down
+
+There's one "Back soon" page (`fizzy/static/down.html`) shown three ways:
+
+1. **Maintenance mode**, while Fizzy is running but you're working on it. Everyone, staff and
+   students, gets the page; Square sales still come in through the webhook.
+   ```
+   docker compose exec fizzy python -m fizzy maintenance on "Upgrading the server, back by lunch."
+   docker compose exec fizzy python -m fizzy maintenance off
+   ```
+   Leave the message out for the default ("We're doing some maintenance on our end...").
+2. **Phones and browsers that have opened Fizzy before** show it by themselves when Cloudflare
+   can't reach the home PC (and a "You're offline" page when their own internet's out).
+3. **Everyone else, even with the PC off**: a free Cloudflare Worker. Once:
+   - Cloudflare dashboard → **Workers & Pages → Create → Create Worker**, name it
+     `fizzy-down`, **Deploy**, then **Edit code**: paste in all of `cloudflare/worker.js`,
+     **Deploy**.
+   - In the worker's **Settings → Domains & Routes → Add → Route**: `fizzy.cookedcoke.co/*`
+     (zone cookedcoke.co). Add `my.cookedcoke.co/*` too, and the Access host if you use one.
+
+   It passes everything straight through, and only steps in when Cloudflare can't reach the PC.
+   The free plan covers 100,000 requests a day, far more than the stall needs. If you change
+   `down.html`, run `python cloudflare/make_worker.py` and paste the new `worker.js` in again.
+
 ## 14. Troubleshooting
 
 | Problem | Check |

@@ -161,6 +161,17 @@ def create_app(background=True):
         return response
 
     @app.middleware("http")
+    async def maintenance(request, call_next):
+        """Maintenance mode (python -m fizzy maintenance on): everyone gets the "back soon" page.
+        Square's webhook still gets through, so no sales are missed. Runs before the device gate."""
+        msg = maintenance_message()
+        path = request.url.path
+        if msg is None or path.startswith("/static/") or path in ("/healthz", "/square/webhook"):
+            return await call_next(request)
+        return HTMLResponse(down_page(msg), status_code=503, headers={"Retry-After": "60", "Cache-Control": "no-store",
+                                                                      "X-Fizzy": "maintenance"})
+
+    @app.middleware("http")
     async def public_host(request, call_next):
         """The student site's host serves only the student pages (and static files): its paths
         map onto /me, so no staff page is reachable there. With a student host set, /me isn't
@@ -188,6 +199,28 @@ def create_app(background=True):
     app.include_router(pwa.router)
     app.include_router(money_pages.router)
     return app
+
+
+_maint = {"at": 0.0, "msg": None}
+
+
+def maintenance_message():
+    """None when off, else the message to show (blank for the default). Checked every few seconds."""
+    if time.time() - _maint["at"] > 3:
+        conn = db.connect()
+        try:
+            v = db.get_setting(conn, "maintenance")
+        finally:
+            conn.close()
+        _maint.update(at=time.time(), msg=v)
+    return _maint["msg"]
+
+
+def down_page(msg=""):
+    page = (HERE / "static" / "down.html").read_text()
+    if msg:
+        page = re.sub(r"<!--MSG-->.*?<!--/MSG-->", lambda _: escape(msg), page, flags=re.S)
+    return page
 
 
 def backup_health(conn):
