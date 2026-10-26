@@ -9,7 +9,9 @@
 #
 # Run it from anywhere; it finds the repo it lives in. Needs git and docker compose.
 set -u
+ARGS=("$@")
 cd "$(dirname "$0")/.." || exit 1
+SELF="deploy/update.sh"
 DIR=updates
 mkdir -p "$DIR" && chmod 777 "$DIR" 2>/dev/null   # Fizzy (another user, in the container) leaves its note here
 STATUS="$DIR/update-status.json"
@@ -90,7 +92,10 @@ case "${1:-}" in
         auto=""; [ "${2:-}" = "--auto" ] && auto=1
         say "Watching for updates${auto:+ (and updating by itself overnight)}. Ctrl+C to stop."
         n=0
+        me=$(git hash-object "$SELF")
         while true; do
+            # An update can bring a new version of this script: restart into it, so it's never stale.
+            if [ "$(git hash-object "$SELF")" != "$me" ]; then say "The updater itself was updated; restarting it."; exec "$SELF" "${ARGS[@]}"; fi
             # Every few seconds: the Update button. Every 10 minutes: ask GitHub what's new.
             if [ -f "$FLAG" ]; then rm -f "$FLAG"; say "Update requested in Fizzy."; update
             elif [ $((n % 120)) = 0 ]; then

@@ -18,36 +18,51 @@
 {% block scripts %}
 <script>
 (function () {
-  var box = document.getElementById("up"), since = Number(box.dataset.since), began = Date.now();
-  var order = ["wait", "backup", "pull", "build", "restart", "verify"], at = "wait", downSeen = false;
+  // Follows the update. Doesn't trust any one signal: the steps the home PC reports, Fizzy going
+  // quiet while it restarts, and the version Fizzy answers with afterwards all count.
+  var box = document.getElementById("up"), since = Number(box.dataset.since), was = box.dataset.version, began = Date.now();
+  var order = ["wait", "backup", "pull", "build", "restart", "verify"], at = 0, downSeen = false, backSince = 0, timer;
   var title = document.getElementById("up-title"), sub = document.getElementById("up-sub");
-  function mark(step) {
-    var i = order.indexOf(step); if (i < 0) return; at = step;
-    document.querySelectorAll(".steps li").forEach(function (li, j) {
-      li.className = j < i ? "done" : j === i ? "now" : "";
-    });
+  function mark(step) {  // only ever forwards
+    var i = order.indexOf(step); if (i < at) return; at = i;
+    document.querySelectorAll(".steps li").forEach(function (li, j) { li.className = j < i ? "done" : j === i ? "now" : ""; });
   }
   function finish(ok, head, text) {
     clearInterval(timer);
-    document.querySelectorAll(".steps li").forEach(function (li) { if (ok || li.className === "done") li.className = "done"; else li.className = ""; });
+    document.querySelectorAll(".steps li").forEach(function (li) { li.className = ok || li.className === "done" ? "done" : ""; });
     title.textContent = head; sub.textContent = text;
     if (!ok) { var e = document.getElementById("up-err"); e.hidden = false; e.textContent = text; sub.textContent = ""; }
     document.getElementById("up-done").hidden = false;
   }
+  function ours(s) { return s.started && s.started >= since - 5; }  // the PC's report is about this update
   function tick() {
     fetch("/settings/update/status", { credentials: "same-origin", cache: "no-store" })
       .then(function (r) { if (!r.ok) throw r; return r.json(); })
       .then(function (s) {
-        if (s.requested || !s.started || s.started < since - 5) { mark("wait"); return; }  // not picked up yet
-        if (s.step === "rollback") { mark("verify"); title.textContent = "That didn't work, going back"; sub.textContent = "The new version didn't start, so the home PC is putting the old one back."; return; }
-        if (s.step !== "done") { mark(s.step); return; }
-        if (s.state === "ok") finish(true, "Updated", "Fizzy is now on " + s.to + ". Everything's back to normal.");
-        else if (s.state === "current") finish(true, "Already up to date", "There was nothing new, so nothing changed.");
-        else finish(false, "Update didn't go through", s.message || "Something went wrong. Fizzy is still on the old version.");
+        if (ours(s) && s.step === "done") {
+          if (s.state === "ok") return finish(true, "Updated", "Fizzy is now on " + (s.to || s.version) + ". Everything's back to normal.");
+          if (s.state === "current") return finish(true, "Already up to date", "There was nothing new, so nothing changed.");
+          return finish(false, "Update didn't go through", s.message || "Something went wrong. Fizzy is still on the old version.");
+        }
+        if (s.version && s.version !== "dev" && s.version !== was) {  // the new Fizzy is answering
+          return finish(true, "Updated", "Fizzy is now on " + s.version + ". Everything's back to normal.");
+        }
+        if (ours(s) && s.step === "rollback") {
+          mark("verify"); title.textContent = "That didn't work, going back";
+          sub.textContent = "The new version didn't start, so the home PC is putting the old one back."; return;
+        }
+        if (ours(s) && s.step) { mark(s.step); return; }
+        if (downSeen) {  // it restarted but nothing says how it went (an older updater on the PC)
+          backSince = backSince || Date.now();
+          sub.textContent = "Fizzy's back. Just checking how it went...";
+          if (Date.now() - backSince > 15000) finish(true, "Fizzy's back", "It restarted and is running version " + (s.version || "?") +
+            ". Check Settings, Updates to see how the update went.");
+          return;
+        }
+        if (!s.requested) mark("backup");  // the PC took the request but hasn't said more yet
       })
       .catch(function () {  // no answer: Fizzy is restarting
-        downSeen = true;
-        if (order.indexOf(at) < order.indexOf("restart")) mark("restart");
+        downSeen = true; backSince = 0; mark("restart");
         sub.textContent = "Fizzy is restarting. This page carries on by itself when it's back.";
       })
       .then(function () {
@@ -56,7 +71,7 @@
         }
       });
   }
-  mark("wait"); var timer = setInterval(tick, 2000); tick();
+  mark("wait"); timer = setInterval(tick, 2000); tick();
 })();
 </script>
 {% endblock %}

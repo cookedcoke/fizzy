@@ -69,7 +69,10 @@ if ($Check) { if (Fetch) { Say "$($S.behind) new change(s)." }; Write-Status }
 elseif ($Watch) {
     Say ("Watching for updates" + ($(if ($Auto) { " (and updating by itself overnight)" } else { "" })) + ". Ctrl+C to stop.")
     $n = 0
+    $me = (git hash-object $PSCommandPath)
     while ($true) {
+        # An update can bring a new version of this script: restart into it, so it's never stale.
+        if ((git hash-object $PSCommandPath) -ne $me) { Say "The updater itself was updated; restarting it."; & $PSCommandPath @PSBoundParameters; exit }
         # Every few seconds: the Update button. Every 10 minutes: ask GitHub what's new.
         if (Test-Path $Flag) { Remove-Item -Force $Flag; Say "Update requested in Fizzy."; Update }
         elseif ($n % 120 -eq 0) {
