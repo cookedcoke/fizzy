@@ -53,6 +53,7 @@
   {% elif st.status == 'paused' %}All tabs are paused right now.
   {% elif st.status == 'blocked_overdue' %}Has an overdue charge. Clears as soon as it's paid.
   {% elif st.status == 'eligible' %}Eligible - waiting for staff approval below.
+  {% elif st.status == 'locked' and st.spent_enough %}Tab score is {{ st.score.score }}; it needs {{ st.score_needed }} for a tab.
   {% elif st.status == 'locked' %}Needs {{ (st.unlock_spend_cents - st.spend_cents)|money }} more spent before becoming eligible.
   {% else %}{{ st.label }}{% if c.tab_decision_note %}: “{{ c.tab_decision_note }}”{% endif %}.{% endif %}
 </span></div></div>
@@ -118,6 +119,14 @@
 <div class="grid">
   {% if owing_panel %}{{ repay_form(true) }}{% endif %}
   {% if tab_panel %}{{ tab_form(true) }}{% endif %}
+  {% set sc = st.score %}
+  <div class="panel score-panel" id="score"><h2>Tab score</h2>
+    <div class="score-head"><div class="score-num {{ 'good' if sc.score >= 80 else 'ok' if sc.score >= st.score_needed else 'low' }}">{{ sc.score }}</div>
+      <div><b>{{ sc.limit_cents|money }} limit</b> if their tab is on <span class="muted">({{ (sc.share * 100)|int }}% of the {{ st.max_limit_cents|money }} max)</span>
+        <div class="muted small">{% if sc.next %}{{ sc.next.score }}+ gets {{ sc.next.limit_cents|money }}.{% else %}Top band.{% endif %}
+          {% if not c.tab_decision %}{{ 'Ready for a tab.' if sc.ready else 'Needs ' ~ st.score_needed ~ ' for a tab.' }}{% endif %}</div></div></div>
+    <table class="score-factors">{% for label, pts in sc.factors %}<tr><td>{{ label }}</td><td class="n {{ 'red' if pts < 0 }}">{{ '%+d'|format(pts) if loop.index > 1 else pts }}</td></tr>{% endfor %}</table>
+  </div>
   <form class="panel" method="post" action="/customers/{{ c.id }}/points"><h2>Adjust points <kbd>P</kbd></h2>
     <div class="row"><div style="flex:0 1 130px"><label for="pt-delta">Points</label><input id="pt-delta" type="number" name="delta" step="1" placeholder="+100 or -50" required data-key="p" data-key-label="Adjust points"></div>
       <div style="flex:2 1 180px"><label for="pt-note">Reason</label><input id="pt-note" type="text" name="note" placeholder="Required" required></div></div>

@@ -174,3 +174,12 @@ details.more > summary::-webkit-details-marker { display: none }
 details.more[open] > summary { margin-bottom: 8px }
 .section small.red { color: var(--red-deep); font-weight: 700 }
 a.go { display: block; box-sizing: border-box; text-align: center; text-decoration: none }
+.score { margin-top: 14px; border-top: 1px dashed var(--line, rgba(0,0,0,.12)); padding-top: 12px }
+.score summary { display: flex; gap: 12px; align-items: center; cursor: pointer; list-style: none }
+.score summary::-webkit-details-marker { display: none }
+.score .score-num { flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center;
+                    font-family: var(--display); font-weight: 800; font-size: 19px; border: 3px solid currentColor }
+.score .score-num.good { color: var(--ok) } .score .score-num.ok { color: #C08A00 } .score .score-num.low { color: var(--red-deep) }
+.score ul { list-style: none; margin: 12px 0 8px; padding: 0; font-size: 14px }
+.score li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid rgba(0,0,0,.06) }
+.score li b.neg { color: var(--red-deep) }

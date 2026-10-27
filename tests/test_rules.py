@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fizzy import logic, square
+from fizzy import db, logic, square
 from fizzy.customers import parse_directory_csv, search, import_rows
 
 
@@ -58,6 +58,7 @@ def test_import_dry_run_and_search(conn):
 
 
 def test_sale_awards_points_and_unlock_at_30(conn, cust):
+    db.set_setting(conn, "tab_score_needed", 0)  # just the spend rule here; the score has its own tests
     c = cust()
     assert square.process_payment(conn, pay("p1", 2500), order("Coke")) == "sale"
     assert logic.points_balance(conn, c["id"]) == 2500
@@ -87,18 +88,20 @@ def test_tab_charge_repay_points_and_overdue(conn, cust):
     assert led["balance_cents"] == -100 and not led["has_overdue"]
     assert led["late_count"] == 1  # permanent record of paying late
     st = logic.tab_status(conn, c)
-    assert st["status"] == "approved" and st["available_cents"] == 1000
+    assert st["status"] == "approved" and st["available_cents"] == st["limit_cents"]
+    assert st["limit_cents"] < 1000  # paying late brought their limit down
 
 
 def test_limit_breach_is_flagged_but_still_owed(conn, cust):
     c = cust()
     logic.set_tab_decision(conn, c["id"], "approved", "", "Will")
     c = reload(conn, c)
-    logic.add_tab_charge(conn, c, 800, "x", iso())
+    assert logic.tab_status(conn, c)["limit_cents"] == 250  # brand new: the lowest band of the $10 max
+    logic.add_tab_charge(conn, c, 200, "x", iso())
     logic.add_tab_charge(conn, c, 400, "y", iso())
     charges = conn.execute("SELECT breach FROM tab_charges ORDER BY id").fetchall()
     assert charges[0]["breach"] is None and "Over limit" in charges[1]["breach"]
-    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 1200
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 600
 
 
 def test_fifo_partial_repayment(conn, cust):

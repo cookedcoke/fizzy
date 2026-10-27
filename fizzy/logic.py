@@ -29,6 +29,7 @@ def settings(conn):
         "tab_limit_cents": int(get_setting(conn, "tab_limit_cents", 1000)),
         "tab_due_days": int(get_setting(conn, "tab_due_days", 7)),
         "unlock_spend_cents": int(get_setting(conn, "unlock_spend_cents", 3000)),
+        "tab_score_needed": int(get_setting(conn, "tab_score_needed", 60)),
         "tabs_paused": get_setting(conn, "tabs_paused", "0") == "1",
     }
 
@@ -106,24 +107,86 @@ def spend_cents(conn, customer_id):
     ).fetchone()[0]
 
 
-def status_for(decision, has_overdue, spent, cfg):
-    """The tab status rules in one place."""
+# ---- tab score -----------------------------------------------------------------------------------
+# A 0-100 score from someone's own history at the stall. It decides who's ready for a tab (staff
+# still approve the first time) and how much an approved person can owe. Every point is
+# explained, for staff and for the student.
+
+SCORE_BANDS = [(80, 1.0), (65, 0.75), (50, 0.5), (0, 0.25)]  # score at least -> share of the max limit
+
+
+def _days_ago(ts, at):
+    return (at - parse_ts(ts)).days
+
+
+def tab_score(conn, customer_id, ledger=None, spent=None, cfg=None, at=None):
+    at = at or datetime.now(timezone.utc)
+    cfg = cfg or settings(conn)
+    ledger = ledger or tab_ledger(conn, customer_id, at)
+    spent = spend_cents(conn, customer_id) if spent is None else spent
+    days, first = conn.execute(
+        "SELECT COUNT(DISTINCT substr(created_at, 1, 10)), MIN(created_at) FROM ("
+        "SELECT created_at FROM points_ledger WHERE customer_id = ? AND reason = 'purchase' AND delta > 0 "
+        "UNION ALL SELECT charged_at FROM tab_charges WHERE customer_id = ?)", (customer_id, customer_id)).fetchone()
+    charges = [c for c in ledger["charges"] if c["net_cents"] > 0]
+    on_time = sum(1 for c in charges if c["unpaid_cents"] == 0 and not c["paid_late"])
+    late_recent = sum(1 for c in charges if (c["paid_late"] and _days_ago(c["settled_at"], at) <= 60) or c["overdue"])
+    late_old = sum(1 for c in charges if c["paid_late"] and _days_ago(c["settled_at"], at) > 60)
+    writeoffs = sum(1 for r in ledger["repayments"] if r["method"] == "writeoff")
+
+    f = [("Everyone starts at", 40)]
+    if spent:
+        f.append((f"Spent ${spent / 100:,.2f} at the stall", min(20, spent // 250)))
+    if days:
+        f.append((f"Bought something on {days} different day{'' if days == 1 else 's'}", min(15, days)))
+    if on_time:
+        f.append((f"Paid off {on_time} tab{'' if on_time == 1 else 's'} on time", min(25, 5 * on_time)))
+    if late_recent:
+        f.append((f"Paid late {late_recent} time{'' if late_recent == 1 else 's'} in the last 2 months", -12 * late_recent))
+    if late_old:
+        f.append((f"Paid late {late_old} time{'' if late_old == 1 else 's'} before that", -5 * late_old))
+    if ledger["has_overdue"]:
+        f.append(("Has money overdue right now", -25))
+    if writeoffs:
+        f.append((f"Had a debt written off{'' if writeoffs == 1 else f' {writeoffs} times'}", -15 * writeoffs))
+    if first is None or _days_ago(first, at) < 14:
+        f.append(("New here (under 2 weeks)", -10))
+    score = max(0, min(100, sum(p for _, p in f)))
+    share = next(sh for floor, sh in SCORE_BANDS if score >= floor)
+    limit = int(cfg["tab_limit_cents"] * share) // 50 * 50
+    next_band = next(((floor, sh) for floor, sh in reversed(SCORE_BANDS) if floor > score), None)
+    tips = []
+    if ledger["has_overdue"]:
+        tips.append("Pay what's overdue - it's the biggest thing holding the score back.")
+    if on_time < 5:
+        tips.append("Pay tabs off before they're due.")
+    if days < 15:
+        tips.append("Keep coming back - every different day counts.")
+    return {"score": score, "factors": f, "limit_cents": limit, "share": share, "tips": tips[:2],
+            "next": {"score": next_band[0], "limit_cents": int(cfg["tab_limit_cents"] * next_band[1]) // 50 * 50} if next_band else None,
+            "ready": score >= cfg["tab_score_needed"]}
+
+
+def status_for(decision, has_overdue, spent, cfg, score=None):
+    """The tab status rules in one place. score: from tab_score (None means only spend counts)."""
     if decision == "approved":
         if has_overdue:
             return "blocked_overdue"
         return "paused" if cfg["tabs_paused"] else "approved"
     if decision in ("rejected", "revoked"):
         return decision
-    return "eligible" if spent >= cfg["unlock_spend_cents"] else "locked"
+    ready = score is None or score >= cfg["tab_score_needed"]
+    return "eligible" if spent >= cfg["unlock_spend_cents"] and ready else "locked"
 
 
 def tab_status(conn, customer, ledger=None, cfg=None):
     cfg = cfg or settings(conn)
     ledger = ledger or tab_ledger(conn, customer["id"])
     spent = spend_cents(conn, customer["id"])
-    status = status_for(customer["tab_decision"], ledger["has_overdue"], spent, cfg)
+    sc = tab_score(conn, customer["id"], ledger, spent, cfg)
+    status = status_for(customer["tab_decision"], ledger["has_overdue"], spent, cfg, sc["score"])
     can_charge = status == "approved"
-    available = max(0, cfg["tab_limit_cents"] - ledger["owing_cents"]) if can_charge else 0
+    available = max(0, sc["limit_cents"] - ledger["owing_cents"]) if can_charge else 0
     return {
         "status": status,
         "label": STATUS_LABELS[status],
@@ -131,7 +194,11 @@ def tab_status(conn, customer, ledger=None, cfg=None):
         "available_cents": available,
         "spend_cents": spent,
         "unlock_spend_cents": cfg["unlock_spend_cents"],
-        "limit_cents": cfg["tab_limit_cents"],
+        "limit_cents": sc["limit_cents"],          # this person's limit, from their score
+        "max_limit_cents": cfg["tab_limit_cents"],
+        "score": sc,
+        "score_needed": cfg["tab_score_needed"],
+        "spent_enough": spent >= cfg["unlock_spend_cents"],
     }
 
 
@@ -378,7 +445,10 @@ def search_index(conn):
     for c in conn.execute("SELECT * FROM customers WHERE archived_at IS NULL ORDER BY name"):
         points, spent = pts.get(c["id"], (0, 0))
         ledger = tab_ledger(conn, c["id"]) if c["id"] in with_tab else {"owing_cents": 0, "has_overdue": False}
-        status = status_for(c["tab_decision"], ledger["has_overdue"], spent, cfg)
+        score = None
+        if c["tab_decision"] is None and spent >= cfg["unlock_spend_cents"]:  # only these can turn on the score
+            score = tab_score(conn, c["id"], ledger if "charges" in ledger else None, spent, cfg)["score"]
+        status = status_for(c["tab_decision"], ledger["has_overdue"], spent, cfg, score)
         out.append({
             "id": c["id"], "name": c["name"], "sid": c["email"].split("@")[0],
             "points": points, "owing": ledger["owing_cents"], "status": status, "label": STATUS_LABELS[status],

@@ -490,6 +490,7 @@ def register(app):
             "WHERE c.tab_decision IS NULL AND c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id HAVING spent >= ? ORDER BY spent DESC",
             (cfg["unlock_spend_cents"],),
         ).fetchall()
+        eligible = [c for c in eligible if logic.tab_score(conn, c["id"], spent=c["spent"], cfg=cfg)["ready"]]  # spend and score
         top = conn.execute(
             "SELECT c.id, c.name, SUM(p.delta) AS points, SUM(p.spend_cents) AS spent FROM customers c "
             "JOIN points_ledger p ON p.customer_id = c.id WHERE c.archived_at IS NULL AND c.kind IS NOT 'test' "
@@ -912,10 +913,17 @@ def register(app):
 
     @app.post("/settings")
     def save_settings(request: Request, tab_limit: str = Form(...), due_days: int = Form(...),
-                      unlock_spend: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
+                      unlock_spend: str = Form(...), score_needed: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         if not 1 <= due_days <= 365:
             return back(request, "/settings", "Days to pay must be between 1 and 365.")
-        new = {"tab_limit_cents": cents(tab_limit), "tab_due_days": due_days, "unlock_spend_cents": cents(unlock_spend)}
+        try:
+            needed = int(score_needed) if score_needed.strip() else logic.settings(conn)["tab_score_needed"]
+        except ValueError:
+            needed = -1
+        if not 0 <= needed <= 100:
+            return back(request, "/settings", "The score needed must be a whole number from 0 to 100.")
+        new = {"tab_limit_cents": cents(tab_limit), "tab_due_days": due_days, "unlock_spend_cents": cents(unlock_spend),
+               "tab_score_needed": needed}
         for k, v in new.items():
             db.set_setting(conn, k, v)
         db.audit(conn, who, "settings", None, json.dumps(new))

@@ -441,3 +441,10 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 .steps li.done::before { content: ""; background: var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/14px no-repeat; border-color: var(--ok) }
 @keyframes spin { to { transform: rotate(360deg) } }
 @media (prefers-reduced-motion: reduce) { .steps li.now::before { animation: none; border-top-color: var(--ink) } }
+.score-head { display: flex; gap: var(--s3); align-items: center; margin-bottom: var(--s3) }
+.score-num { flex: none; width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; font-weight: 700;
+             border: 3px solid var(--line-strong) }
+.score-num.good { border-color: var(--ok); color: var(--ok) } .score-num.ok { border-color: var(--warn); color: var(--warn) }
+.score-num.low { border-color: var(--red); color: var(--red-ink) }
+.panel > table.score-factors { margin: 0 calc(-1 * var(--s4)) calc(-1 * var(--s4)) }
+.score-factors td { padding-top: 6px; padding-bottom: 6px; font-size: 13px }

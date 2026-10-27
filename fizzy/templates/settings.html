@@ -3,11 +3,12 @@
 <div class="pagehead"><div><h1>Settings</h1><div class="meta">Fizzy version <span class="mono">{{ update.version }}</span></div></div></div>
 <div class="grid">
 <form class="panel" method="post" action="/settings"><h2>Tab rules</h2>
-  <label>Max owing per customer ($)<input type="text" name="tab_limit" inputmode="decimal" value="{{ '%.2f'|format(cfg.tab_limit_cents/100) }}"></label>
+  <label>Highest tab limit ($)<input type="text" name="tab_limit" inputmode="decimal" value="{{ '%.2f'|format(cfg.tab_limit_cents/100) }}"></label>
   <label>Days to pay<input type="number" name="due_days" min="1" value="{{ cfg.tab_due_days }}"></label>
   <label>Spend before eligible ($)<input type="text" name="unlock_spend" inputmode="decimal" value="{{ '%.2f'|format(cfg.unlock_spend_cents/100) }}"></label>
+  <label>Tab score needed (0 to 100)<input type="number" name="score_needed" min="0" max="100" step="1" value="{{ cfg.tab_score_needed }}"></label>
   <div class="actions"><button class="primary">Save</button></div>
-  <p class="hint">1 point per cent. Tab buys earn points once they're paid off. Changing days to pay only affects new charges.</p>
+  <p class="hint">Each person's limit comes from their tab score: 80+ gets the highest limit, 65+ three quarters, 50+ half, below that a quarter. Paying on time raises it; paying late lowers it. 1 point per cent; tab buys earn points once paid off.</p>
 </form>
 <form class="panel" id="pin" method="post" action="/settings/pin"><h2>PIN</h2>
   {% if not admin_on %}<p class="notice small">No owner password yet. Put <code>FIZZY_ADMIN_PASSWORD</code> in <code>.env</code> on the home PC, then you can lock the dangerous stuff (like giving someone -9 million points) behind it.</p>{% endif %}

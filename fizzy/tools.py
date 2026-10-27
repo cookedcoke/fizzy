@@ -337,6 +337,7 @@ def h_approve_eligible(request, conn, who, form):
         "SELECT c.id FROM customers c JOIN points_ledger p ON p.customer_id = c.id WHERE c.tab_decision IS NULL "
         "AND c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id HAVING SUM(p.spend_cents) >= ?", (cfg["unlock_spend_cents"],)
     ).fetchall()
+    rows = [r for r in rows if logic.tab_score(conn, r["id"], cfg=cfg)["ready"]]  # spent enough and a good enough score
     note = form.get("note", "").strip() or "Bulk approved"
     for r in rows:
         logic.set_tab_decision(conn, r["id"], "approved", note, who)

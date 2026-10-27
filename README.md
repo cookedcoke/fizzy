@@ -159,6 +159,31 @@ search box, Enter still opens the student).
 
 ---
 
+### Tab score
+
+Every customer has a **tab score** from 0 to 100, worked out from their own history at the stall
+and shown, with every point explained, on their customer page and on the student site:
+
+| | |
+|---|---|
+| Everyone starts at | 40 |
+| Spending | +1 per $2.50, up to +20 |
+| Buying on different days | +1 a day, up to +15 |
+| Each tab paid off on time | +5, up to +25 |
+| Each late payment in the last 2 months / before that | −12 / −5 |
+| Money overdue right now | −25 |
+| Each debt written off | −15 |
+| First purchase under 2 weeks ago | −10 |
+
+It does two things:
+
+- **Who's ready for a tab:** someone becomes *eligible* once they've spent the minimum *and* their
+  score reaches the **Tab score needed** (60 by default, in Settings). Staff still approve them.
+- **How much they can owe:** an approved customer's limit comes from their score. 80+ gets the
+  **Highest tab limit** from Settings, 65+ three quarters of it, 50+ half, below that a quarter
+  (rounded down to 50c). Paying on time raises it; paying late, or owing overdue money, lowers it
+  straight away.
+
 ## 3. How Square and Fizzy fit together
 
 ```
