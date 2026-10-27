@@ -75,6 +75,7 @@ h2 { font-size: 13px; margin: 0; font-weight: 650; text-transform: uppercase; le
 /* ---- tables ---- */
 .scroll { overflow-x: auto }
 .panel > .scroll, .panel > table { margin: 0 calc(-1 * var(--s4)) calc(-1 * var(--s4)); width: auto }
+.panel > table { width: calc(100% + 2 * var(--s4)) }  /* edge to edge, like tables in a .scroll */
 .panel > .scroll > table { min-width: 100% }
 table { border-collapse: collapse; width: 100% }
 th, td { text-align: left; padding: 8px var(--s3); border-top: 1px solid var(--line); vertical-align: top }
@@ -455,9 +456,20 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 .perms { width: 100% }
 .perms td.n { text-align: right }
 .perms .big-row td:first-child { line-height: 2.4 }
-.settings-side .panel > table { width: calc(100% + 2 * var(--s4)) }
 .settings-side .panel > table:not(:last-child) { margin-bottom: var(--s3) }
 @media (min-width: 721px) and (max-width: 1099px) {  /* tablet: the small cards in two balanced columns, no gaps */
   .settings-side { display: block; columns: 2; column-gap: var(--s4) }
   .settings-side > .panel { break-inside: avoid; margin-bottom: var(--s4); display: inline-block; width: 100% }
 }
+/* Customer page: history on the left, the things you do (repay, approve, score, points) on the right. */
+.cust-main { flex: 2 1 520px }
+.cust-side { flex: 1 1 300px }
+.cust-main > *, .cust-side > * { margin: 0 }
+.stack { display: flex; flex-direction: column; gap: var(--s4) }
+.stack > .panel { margin: 0 }
+@media (min-width: 721px) and (max-width: 1099px) {  /* tablet: the action cards in two balanced columns */
+  .cust-side { display: block; columns: 2; column-gap: var(--s4); flex-basis: 100%; order: -1 }
+  .cust-side > * { break-inside: avoid; display: inline-block; width: 100%; margin-bottom: var(--s4) }
+}
+.dash-tabs > .section-h:first-child { margin-top: var(--s2) }
+.dash-tabs .cols { margin: 0 }

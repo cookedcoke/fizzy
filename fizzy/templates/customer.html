@@ -116,23 +116,8 @@
     <div class="sub">{{ st.unlock_spend_cents|money }} to unlock tab</div>{% endif %}</div>
 </div>
 
-<div class="grid">
-  {% if owing_panel %}{{ repay_form(true) }}{% endif %}
-  {% if tab_panel %}{{ tab_form(true) }}{% endif %}
-  {% set sc = st.score %}
-  <div class="panel score-panel" id="score"><h2>Tab score</h2>
-    <div class="score-head"><div class="score-num {{ 'good' if sc.score >= 80 else 'ok' if sc.score >= st.score_needed else 'low' }}">{{ sc.score }}</div>
-      <div><b>{{ sc.limit_cents|money }} limit</b> if their tab is on <span class="muted">({{ (sc.share * 100)|int }}% of the {{ st.max_limit_cents|money }} max)</span>
-        <div class="muted small">{% if sc.next %}{{ sc.next.score }}+ gets {{ sc.next.limit_cents|money }}.{% else %}Top band.{% endif %}
-          {% if not c.tab_decision %}{{ 'Ready for a tab.' if sc.ready else 'Needs ' ~ st.score_needed ~ ' for a tab.' }}{% endif %}</div></div></div>
-    <table class="score-factors">{% for label, pts in sc.factors %}<tr><td>{{ label }}</td><td class="n {{ 'red' if pts < 0 }}">{{ '%+d'|format(pts) if loop.index > 1 else pts }}</td></tr>{% endfor %}</table>
-  </div>
-  <form class="panel" method="post" action="/customers/{{ c.id }}/points"><h2>Adjust points <kbd>P</kbd></h2>
-    <div class="row"><div style="flex:0 1 130px"><label for="pt-delta">Points</label><input id="pt-delta" type="number" name="delta" step="1" placeholder="+100 or -50" required data-key="p" data-key-label="Adjust points"></div>
-      <div style="flex:2 1 180px"><label for="pt-note">Reason</label><input id="pt-note" type="text" name="note" placeholder="Required" required></div></div>
-    <div class="actions"><button title="Enter in either box also applies">Apply <kbd>Enter</kbd></button></div>
-  </form>
-</div>
+<div class="cols forms-first cust-cols">
+<div class="col cust-main">
 
 {% if led.charges %}<div class="panel"><h2>Tab charges <span class="count">{{ led.charges|length }}</span></h2>
   {% if led.charges %}<div class="scroll"><table>
@@ -148,7 +133,7 @@
   </table></div>{% endif %}
 </div>{% endif %}
 
-<div class="{{ 'grid' if led.repayments }}">
+<div class="stack">
   {% if led.repayments %}<div class="panel"><h2>Repayments <span class="count">{{ led.repayments|length }}</span></h2>
     {% if led.repayments %}<div class="scroll"><table>
       <tr><th>When</th><th class="n">Amount</th><th>Method</th><th>By</th></tr>
@@ -214,6 +199,25 @@
       <p class="hint">Admin accounts are protected: by default only the owner can change their points, tab or details. Test accounts are for trying things out, and stay out of leaderboards and reports. Owner only.</p>
     </form>
   </details>
+</div>
+</div>
+<div class="col cust-side">
+  {% if owing_panel %}{{ repay_form(true) }}{% endif %}
+  {% if tab_panel %}{{ tab_form(true) }}{% endif %}
+  {% set sc = st.score %}
+  <div class="panel score-panel" id="score"><h2>Tab score</h2>
+    <div class="score-head"><div class="score-num {{ 'good' if sc.score >= 80 else 'ok' if sc.score >= st.score_needed else 'low' }}">{{ sc.score }}</div>
+      <div><b>{{ sc.limit_cents|money }} limit</b> if their tab is on <span class="muted">({{ (sc.share * 100)|int }}% of the {{ st.max_limit_cents|money }} max)</span>
+        <div class="muted small">{% if sc.next %}{{ sc.next.score }}+ gets {{ sc.next.limit_cents|money }}.{% else %}Top band.{% endif %}
+          {% if not c.tab_decision %}{{ 'Ready for a tab.' if sc.ready else 'Needs ' ~ st.score_needed ~ ' for a tab.' }}{% endif %}</div></div></div>
+    <table class="score-factors">{% for label, pts in sc.factors %}<tr><td>{{ label }}</td><td class="n {{ 'red' if pts < 0 }}">{{ '%+d'|format(pts) if loop.index > 1 else pts }}</td></tr>{% endfor %}</table>
+  </div>
+  <form class="panel" method="post" action="/customers/{{ c.id }}/points"><h2>Adjust points <kbd>P</kbd></h2>
+    <div class="row"><div style="flex:0 1 130px"><label for="pt-delta">Points</label><input id="pt-delta" type="number" name="delta" step="1" placeholder="+100 or -50" required data-key="p" data-key-label="Adjust points"></div>
+      <div style="flex:2 1 180px"><label for="pt-note">Reason</label><input id="pt-note" type="text" name="note" placeholder="Required" required></div></div>
+    <div class="actions"><button title="Enter in either box also applies">Apply <kbd>Enter</kbd></button></div>
+  </form>
+</div>
 </div>
 {% if not c.archived_at %}
 {# Pops up when a sale with no customer comes in while this page is open (see app.js). #}

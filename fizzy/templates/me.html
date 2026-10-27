@@ -57,6 +57,7 @@
   </div>
 
 {% endset %}
+<div class="me-cols"><div class="me-main">
   {% if urgent %}{{ tab_block }}{% endif %}
   {% include "_me_events.html" %}
   <div class="points">
@@ -90,6 +91,18 @@
 
   {% if not urgent and (led.charges or st.status != 'rejected' and st.status != 'revoked') %}{{ tab_block }}{% endif %}
 
+  <h2 class="section">Recent activity</h2>
+  <div class="card">
+    {% if activity %}<ul class="feed">
+      {% for a in activity[:5] %}<li><span class="when">{{ a.at|local('%d %b') }}</span><span class="what">{{ a.what }}</span>
+        <span class="amt {{ 'up' if a.points is not none and a.points > 0 }}">{% if a.points is not none %}{{ '{:+,}'.format(a.points) }} pts{% else %}{{ a.money|money }}{% endif %}</span></li>{% endfor %}
+    </ul>
+    {% if activity[5:] %}<details class="more"><summary>Show more</summary><ul class="feed">
+      {% for a in activity[5:] %}<li><span class="when">{{ a.at|local('%d %b') }}</span><span class="what">{{ a.what }}</span>
+        <span class="amt {{ 'up' if a.points is not none and a.points > 0 }}">{% if a.points is not none %}{{ '{:+,}'.format(a.points) }} pts{% else %}{{ a.money|money }}{% endif %}</span></li>{% endfor %}
+    </ul></details>{% endif %}{% else %}<p class="empty">Nothing yet - grab something at the stall to start earning points.</p>{% endif %}
+  </div>
+</div><div class="me-side">
   <h2 class="section">Leaderboard <small>points earned</small></h2>
   <div class="boards">
     {% for title, board, mine in boards %}
@@ -112,17 +125,7 @@
   {% if todo[2:] %}<details class="more"><summary>See all {{ me.badges|length }} badges</summary>
     <div class="badges">{% for b in todo[2:] %}{{ badge(b) }}{% endfor %}</div></details>{% endif %}
 
-  <h2 class="section">Recent activity</h2>
-  <div class="card">
-    {% if activity %}<ul class="feed">
-      {% for a in activity[:5] %}<li><span class="when">{{ a.at|local('%d %b') }}</span><span class="what">{{ a.what }}</span>
-        <span class="amt {{ 'up' if a.points is not none and a.points > 0 }}">{% if a.points is not none %}{{ '{:+,}'.format(a.points) }} pts{% else %}{{ a.money|money }}{% endif %}</span></li>{% endfor %}
-    </ul>
-    {% if activity[5:] %}<details class="more"><summary>Show more</summary><ul class="feed">
-      {% for a in activity[5:] %}<li><span class="when">{{ a.at|local('%d %b') }}</span><span class="what">{{ a.what }}</span>
-        <span class="amt {{ 'up' if a.points is not none and a.points > 0 }}">{% if a.points is not none %}{{ '{:+,}'.format(a.points) }} pts{% else %}{{ a.money|money }}{% endif %}</span></li>{% endfor %}
-    </ul></details>{% endif %}{% else %}<p class="empty">Nothing yet - grab something at the stall to start earning points.</p>{% endif %}
-  </div>
+</div></div>
   <p class="note">Something look off? Ask us at the stall.</p>
 </main>
 {% endblock %}

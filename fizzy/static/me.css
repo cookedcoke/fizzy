@@ -183,3 +183,10 @@ a.go { display: block; box-sizing: border-box; text-align: center; text-decorati
 .score ul { list-style: none; margin: 12px 0 8px; padding: 0; font-size: 14px }
 .score li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid rgba(0,0,0,.06) }
 .score li b.neg { color: var(--red-deep) }
+/* Bigger screens: two columns - your points, rewards and tab; then how you're going. */
+@media (min-width: 860px) {
+  main, .top { max-width: 1000px }
+  .me-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 32px; align-items: start }
+  .me-side > .section:first-child, .me-main > :first-child { margin-top: 18px }
+}
+@media (min-width: 600px) and (max-width: 859px) { main, .top { max-width: 640px } }

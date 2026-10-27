@@ -52,27 +52,7 @@
         <span class="lbl">{{ 'Today' if loop.last else w.day.strftime('%a %-d') }}</span></div>{% endfor %}
     </div>
   </div>
-</div>
-<div class="col">
-  <div class="panel"><h2>Top items</h2>
-    <div class="scroll"><table>
-      <tr><th>Today</th><th class="n">Sold</th></tr>
-      {% for it in sales.top_today %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet today.</td></tr>{% endfor %}
-      <tr><th>Last 7 school days</th><th class="n">Sold</th></tr>
-      {% for it in sales.top_week %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet.</td></tr>{% endfor %}
-    </table></div>
-  </div>
-  <div class="panel"><h2>Latest sales</h2>
-    {% if sales.recent %}<div class="scroll"><table>
-      {% for c in sales.recent %}<tr><td class="muted">{{ c.at|local('%H:%M') }}</td>
-        <td>{% if c.customer_id %}<a href="/customers/{{ c.customer_id }}">{{ c.customer }}</a>{% else %}<span class="muted">No customer</span>{% endif %}
-          <br><span class="small muted">{% for it in c['items'] %}{{ it.qty }}× {{ it.name }}{{ ', ' if not loop.last }}{% else %}Tab repayment{% endfor %}</span></td>
-        <td class="n">{{ (c.sold_cents or c.repay_cents)|money }}{% if c.tab_cents %}<br><span class="small" style="color:var(--warn)">tab</span>{% elif not c.sold_cents %}<br><span class="small" style="color:var(--ok)">repaid</span>{% endif %}</td></tr>{% endfor %}
-    </table></div>{% else %}<p class="empty">No sales yet today.</p>{% endif %}
-  </div>
-</div>
-</div>
-
+  <div class="dash-tabs">
 <h2 class="section-h">Tabs</h2>
 <div class="stats">
   <div class="stat"><div class="k">Total owed</div><div class="v">{{ total_owed|money }}</div></div>
@@ -123,6 +103,37 @@
         <td class="n">{{ r.charge.unpaid_cents|money }}</td><td>{{ r.charge.due_at|local }}</td></tr>{% endfor %}
     </table></div>{% endif %}
   </div>{% endif %}
+</div>
+{% if eligible %}<div class="col">
+  <div class="panel" style="box-shadow:inset 4px 0 0 var(--ok)"><h2>Eligible for a tab <span class="count">{{ eligible|length }}</span></h2>
+    {% if eligible %}<div class="scroll"><table>
+      {% for c in eligible[:8] %}<tr><td><a href="/customers/{{ c.id }}">{{ c.name }}</a><br><span class="muted small">{{ c.spent|money }} spent</span></td>
+        <td class="n" style="vertical-align:middle"><form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="approve"><button class="sm">Approve</button></form>
+            <form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="reject"><button class="sm danger">Reject</button></form></td></tr>{% endfor %}
+      {% if eligible|length > 8 %}<tr><td colspan="2" class="small">{{ eligible|length - 8 }} more · <a href="/tools#approve_eligible">Approve all eligible</a></td></tr>{% endif %}
+    </table></div>{% endif %}
+  </div>
+</div>{% endif %}
+</div>
+  </div>
+</div>
+<div class="col">
+  <div class="panel"><h2>Top items</h2>
+    <div class="scroll"><table>
+      <tr><th>Today</th><th class="n">Sold</th></tr>
+      {% for it in sales.top_today %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet today.</td></tr>{% endfor %}
+      <tr><th>Last 7 school days</th><th class="n">Sold</th></tr>
+      {% for it in sales.top_week %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet.</td></tr>{% endfor %}
+    </table></div>
+  </div>
+  <div class="panel"><h2>Latest sales</h2>
+    {% if sales.recent %}<div class="scroll"><table>
+      {% for c in sales.recent %}<tr><td class="muted">{{ c.at|local('%H:%M') }}</td>
+        <td>{% if c.customer_id %}<a href="/customers/{{ c.customer_id }}">{{ c.customer }}</a>{% else %}<span class="muted">No customer</span>{% endif %}
+          <br><span class="small muted">{% for it in c['items'] %}{{ it.qty }}× {{ it.name }}{{ ', ' if not loop.last }}{% else %}Tab repayment{% endfor %}</span></td>
+        <td class="n">{{ (c.sold_cents or c.repay_cents)|money }}{% if c.tab_cents %}<br><span class="small" style="color:var(--warn)">tab</span>{% elif not c.sold_cents %}<br><span class="small" style="color:var(--ok)">repaid</span>{% endif %}</td></tr>{% endfor %}
+    </table></div>{% else %}<p class="empty">No sales yet today.</p>{% endif %}
+  </div>
   <div class="panel"><h2>Top customers</h2>
     {% if top %}<div class="scroll"><table>
       <tr><th class="n" style="width:1%">#</th><th>Customer</th><th class="n">Spent</th><th class="n">Points</th></tr>
@@ -130,15 +141,6 @@
     </table></div>{% else %}<p class="empty">No sales yet.</p>{% endif %}
   </div>
 </div>
-<div class="col">
-  {% if eligible %}<div class="panel" style="box-shadow:inset 4px 0 0 var(--ok)"><h2>Eligible for a tab <span class="count">{{ eligible|length }}</span></h2>
-    {% if eligible %}<div class="scroll"><table>
-      {% for c in eligible[:8] %}<tr><td><a href="/customers/{{ c.id }}">{{ c.name }}</a><br><span class="muted small">{{ c.spent|money }} spent</span></td>
-        <td class="n" style="vertical-align:middle"><form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="approve"><button class="sm">Approve</button></form>
-            <form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="reject"><button class="sm danger">Reject</button></form></td></tr>{% endfor %}
-      {% if eligible|length > 8 %}<tr><td colspan="2" class="small">{{ eligible|length - 8 }} more · <a href="/tools#approve_eligible">Approve all eligible</a></td></tr>{% endif %}
-    </table></div>{% endif %}
-  </div>{% endif %}
 </div>
-</div>
+
 {% endblock %}
