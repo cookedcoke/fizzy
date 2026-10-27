@@ -36,6 +36,12 @@ def status():
     s["watching"] = time.time() - float(s.get("seen", 0) or 0) < WATCHER_STALE
     s["requested"] = (_dir() / "update-requested").exists()
     s["version"] = VERSION
+    s["log"] = ""
+    if s.get("state") == "failed":
+        try:
+            s["log"] = (_dir() / "last-failure.log").read_text(errors="replace")[-4000:]
+        except OSError:
+            pass
     return s
 
 
@@ -63,5 +69,5 @@ def progress(request: Request, since: int = 0, who=Depends(staff)):
 def progress_status(who=Depends(staff)):
     """Polled by the progress page. While Fizzy restarts this doesn't answer, and the page knows that."""
     s = status()
-    return JSONResponse({k: s.get(k) for k in ("state", "step", "message", "from", "to", "started", "requested", "watching", "version")},
+    return JSONResponse({k: s.get(k) for k in ("state", "step", "message", "from", "to", "started", "requested", "watching", "version", "log")},
                         headers={"Cache-Control": "no-store"})

@@ -12,6 +12,7 @@
     <li data-step="verify">Checking it started</li>
   </ol>
   <div class="err" id="up-err" hidden></div>
+  <pre class="logbox" id="up-log" hidden></pre>
   <div class="actions" id="up-done" hidden><a class="btn primary" href="/">Back to the dashboard</a><a class="btn" href="/settings#updates">Settings</a></div>
 </div>
 {% endblock %}
@@ -42,6 +43,7 @@
         if (ours(s) && s.step === "done") {
           if (s.state === "ok") return finish(true, "Updated", "Fizzy is now on " + (s.to || s.version) + ". Everything's back to normal.");
           if (s.state === "current") return finish(true, "Already up to date", "There was nothing new, so nothing changed.");
+          if (s.log) { var lg = document.getElementById("up-log"); lg.hidden = false; lg.textContent = s.log; }
           return finish(false, "Update didn't go through", s.message || "Something went wrong. Fizzy is still on the old version.");
         }
         if (s.version && s.version !== "dev" && s.version !== was) {  // the new Fizzy is answering

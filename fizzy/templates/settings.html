@@ -21,7 +21,8 @@
 <form class="panel" id="updates" method="post" action="/settings/update"><h2>Updates</h2>
   <table>
     <tr><td style="width:110px" class="muted">Running</td><td class="mono">{{ update.version }}</td></tr>
-    {% if update.at %}<tr><td class="muted">Last update</td><td>{{ update.at }} · {{ {'ok': 'worked', 'failed': 'failed, rolled back', 'running': 'running now', 'current': 'already up to date'}.get(update.state, update.state) }}{% if update.message %}<br><span class="muted small">{{ update.message }}</span>{% endif %}</td></tr>{% endif %}
+    {% if update.at %}<tr><td class="muted">Last update</td><td>{{ update.at }} · {{ {'ok': 'worked', 'failed': 'failed, rolled back', 'running': 'running now', 'current': 'already up to date'}.get(update.state, update.state) }}{% if update.message %}<br><span class="muted small">{{ update.message }}</span>{% endif %}
+      {% if update.log %}<details><summary class="small">What went wrong</summary><pre class="logbox">{{ update.log }}</pre></details>{% endif %}</td></tr>{% endif %}
     {% if update.watching %}<tr><td class="muted">New</td><td>{% if update.behind %}<b>{{ update.behind }} new change{{ '' if update.behind == 1 else 's' }}</b> ready{% else %}Nothing new{% endif %}</td></tr>{% endif %}
   </table>
   {% if not update.watching %}<p class="notice small">The updater isn't running on the home PC, so updating has to be done there (see the README, "Updating").</p>

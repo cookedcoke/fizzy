@@ -34,3 +34,13 @@ def test_update_is_owner_only(client, monkeypatch):
     login(client)
     r = client.post("/settings/update", headers={"referer": "http://testserver/settings"})
     assert "Enter the passcode first" in r.text
+
+
+def test_failed_update_shows_the_log(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("FIZZY_UPDATES_DIR", str(tmp_path))
+    login(client)
+    (tmp_path / "update-status.json").write_text(json.dumps(
+        {"state": "failed", "step": "done", "at": "Mon", "message": "went back", "behind": 1, "seen": time.time(), "started": 1}))
+    (tmp_path / "last-failure.log").write_text("fizzy-1  | RuntimeError: boom")
+    assert "RuntimeError: boom" in client.get("/settings").text
+    assert "RuntimeError: boom" in client.get("/settings/update/status").json()["log"]

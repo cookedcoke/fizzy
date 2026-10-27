@@ -24,13 +24,20 @@ function Fetch {
     if ($LASTEXITCODE -ne 0) { Say "Couldn't reach GitHub."; return $false }
     $S.behind = [int](git rev-list --count "HEAD..@{u}"); return $true
 }
-function Healthy {
-    for ($i = 0; $i -lt 45; $i++) {
+function Healthy {  # up to 3 minutes, but give up if the container crashes
+    for ($i = 0; $i -lt 90; $i++) {
         docker compose exec -T fizzy python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)" 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) { return $true }
+        $state = (docker compose ps -a --format "{{.State}}" fizzy 2>$null)
+        if ($state -match "^(exited|dead)") { return $false }
         Start-Sleep 2
     }
     return $false
+}
+function Save-Logs {  # before rolling back throws the failed container (and its logs) away
+    $out = @("Fizzy's last log lines from the failed update ($(Get-Date -Format 'yyyy-MM-dd HH:mm')):")
+    $out += (docker compose logs --no-color --tail 40 fizzy 2>&1 | ForEach-Object { "$_" })
+    $out | Set-Content -Encoding utf8 (Join-Path $Dir "last-failure.log")
 }
 function Step($s) { $S.step = $s; Write-Status }   # what the progress page in Fizzy shows
 function Build {  # build while the old one keeps serving, then swap (the only time Fizzy is down)
@@ -57,11 +64,11 @@ function Update {
     Say "Building $($S.to) ($($S.behind) new change(s))..."
     if ((Build) -and ((Step "verify") -or $true) -and (Healthy)) { $S.state = "ok"; $S.behind = 0; $S.message = "$($S.from) to $($S.to)"; Step "done"; Say "Updated: $($S.message)"; return }
     Say "The new version didn't start. Going back to $($S.from)..."
-    Step "rollback"
+    Save-Logs; Step "rollback"
     git reset --hard --quiet $old; $env:FIZZY_VERSION = (git rev-parse --short HEAD)
     docker compose up -d --build fizzy 2>$null | Out-Null; Healthy | Out-Null
     (git rev-parse "@{u}") | Set-Content (Join-Path $Dir "bad-version")  # overnight updates skip this one
-    $S.state = "failed"; $S.to = $S.from; $S.message = "The new version didn't start, so it went back to $($S.from). Check: docker compose logs fizzy"
+    $S.state = "failed"; $S.to = $S.from; $S.message = "The new version didn't start, so it went back to $($S.from). Its last log lines are below."
     Fetch | Out-Null; Step "done"; Say $S.message
 }
 

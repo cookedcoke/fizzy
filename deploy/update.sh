@@ -35,13 +35,19 @@ fetch() {
     BEHIND=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)
 }
 
-healthy() {  # Fizzy answers /healthz inside its container
-    for _ in $(seq 1 45); do
+healthy() {  # Fizzy answers /healthz inside its container: up to 3 minutes, but give up if it crashes
+    for _ in $(seq 1 90); do
         docker compose exec -T fizzy python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)" \
             >/dev/null 2>&1 && return 0
+        case "$(docker compose ps -a --format '{{.State}}' fizzy 2>/dev/null)" in exited*|dead*) return 1 ;; esac
         sleep 2
     done
     return 1
+}
+
+save_logs() {  # before rolling back throws the failed container (and its logs) away
+    { echo "Fizzy's last log lines from the failed update ($(date '+%Y-%m-%d %H:%M')):"
+      docker compose logs --no-color --tail 40 fizzy 2>&1; } > "$DIR/last-failure.log"
 }
 
 step() { STEP=$1; write_status; }   # what the progress page in Fizzy shows
@@ -77,12 +83,12 @@ update() {
         STATE=ok; BEHIND=0; MSG="$FROM to $TO"; step done; say "Updated: $MSG"; return 0
     fi
     say "The new version didn't start. Going back to $FROM..."
-    step rollback
+    save_logs; step rollback
     git reset --hard --quiet "$old"
     export FIZZY_VERSION; FIZZY_VERSION="$(git rev-parse --short HEAD)"
     docker compose up -d --build fizzy >/dev/null 2>&1 && healthy
     git rev-parse @{u} > "$DIR/bad-version"  # overnight updates skip this one; pressing Update still tries it
-    STATE=failed; TO=$FROM; MSG="The new version didn't start, so it went back to $FROM. Check: docker compose logs fizzy"
+    STATE=failed; TO=$FROM; MSG="The new version didn't start, so it went back to $FROM. Its last log lines are below."
     fetch; step done; say "$MSG"; return 1
 }
 
