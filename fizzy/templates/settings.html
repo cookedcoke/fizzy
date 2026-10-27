@@ -1,7 +1,36 @@
 {% extends "base.html" %}{% block title %}Settings{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Settings</h1><div class="meta">Fizzy version <span class="mono">{{ update.version }}</span></div></div></div>
-<div class="grid">
+<div class="cols forms-first settings-cols">
+<div class="col settings-main">
+<form class="panel" id="permissions" method="post" action="/settings/permissions"><h2>Who can do what</h2>
+  {% if not admin_on %}<p class="hint" style="margin-top:0">"Owner only" means the PIN until there's an owner password.{% if not pin_on %} With no PIN either, everything's open to anyone signed in.{% endif %}</p>{% endif %}
+  <table class="perms">
+    {% set groups = {'claim': 'Everyday', 'points': 'Points and rewards', 'tab_decisions': 'Tabs', 'customers': 'Customers',
+                     'money': 'Money', 'school_tools': 'Big stuff', 'admin_accounts': 'Special accounts'} %}
+    {% for aid, label, _, _ in actions %}{% if aid in groups %}<tr class="group"><th colspan="2">{{ groups[aid] }}</th></tr>{% endif %}<tr><td>{{ label }}</td><td class="n"><select name="{{ aid }}" aria-label="{{ label }}">
+      {% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms[aid] == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>{% endfor %}
+    <tr class="group"><th colspan="2">Limits</th></tr>
+    <tr class="big-row"><td><b>Big changes by hand</b>: more than <input type="text" name="big_points" inputmode="numeric" value="{{ perms.big_points }}" style="width:90px" aria-label="Points limit"> points,
+      or more than $<input type="text" name="big_dollars" inputmode="numeric" value="{{ perms.big_dollars }}" style="width:70px" aria-label="Dollar limit">, or for everyone at once</td>
+      <td class="n"><select name="big" aria-label="Big changes">{% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms.big == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>
+  </table>
+  <div class="actions"><button class="primary">Save</button></div>
+  <p class="hint">Only the owner can change this table, the PIN and account types.</p>
+</form>
+</div>
+<div class="col settings-side">
+<form class="panel" id="updates" method="post" action="/settings/update"><h2>Updates</h2>
+  <table>
+    <tr><td style="width:110px" class="muted">Running</td><td class="mono">{{ update.version }}</td></tr>
+    {% if update.at %}<tr><td class="muted">Last update</td><td>{{ update.at }} · {{ {'ok': 'worked', 'failed': 'failed, rolled back', 'running': 'running now', 'current': 'already up to date'}.get(update.state, update.state) }}{% if update.message %}<br><span class="muted small">{{ update.message }}</span>{% endif %}
+      {% if update.log %}<details><summary class="small">What went wrong</summary><pre class="logbox">{{ update.log }}</pre></details>{% endif %}</td></tr>{% endif %}
+    {% if update.watching %}<tr><td class="muted">New</td><td>{% if update.behind %}<b>{{ update.behind }} new change{{ '' if update.behind == 1 else 's' }}</b> ready{% else %}Nothing new{% endif %}</td></tr>{% endif %}
+  </table>
+  {% if not update.watching %}<p class="notice small">The updater isn't running on the home PC, so updating has to be done there (see the README, "Updating").</p>
+  {% elif update.requested %}<p class="hint">Update requested. The home PC will pick it up within a minute or two.</p>
+  {% else %}<div class="actions"><button class="{{ 'primary' if update.behind else '' }}" data-confirm="Update Fizzy now? It restarts, so it's down for about a minute. If the new version doesn't start, it goes back to this one by itself.">Update now</button></div>{% endif %}
+</form>
 <form class="panel" method="post" action="/settings"><h2>Tab rules</h2>
   <label>Highest tab limit ($)<input type="text" name="tab_limit" inputmode="decimal" value="{{ '%.2f'|format(cfg.tab_limit_cents/100) }}"></label>
   <label>Days to pay<input type="number" name="due_days" min="1" value="{{ cfg.tab_due_days }}"></label>
@@ -18,37 +47,12 @@
     {% if pin_on %}<button name="remove" value="1" class="danger" data-confirm="Remove the PIN?">Remove PIN</button>{% endif %}</div>
   <p class="hint">Stays unlocked for 10 minutes, or until someone else is put on the counter. Forgot it? The owner can reset it on the home PC (see the README).</p>
 </form>
-<form class="panel" id="updates" method="post" action="/settings/update"><h2>Updates</h2>
-  <table>
-    <tr><td style="width:110px" class="muted">Running</td><td class="mono">{{ update.version }}</td></tr>
-    {% if update.at %}<tr><td class="muted">Last update</td><td>{{ update.at }} · {{ {'ok': 'worked', 'failed': 'failed, rolled back', 'running': 'running now', 'current': 'already up to date'}.get(update.state, update.state) }}{% if update.message %}<br><span class="muted small">{{ update.message }}</span>{% endif %}
-      {% if update.log %}<details><summary class="small">What went wrong</summary><pre class="logbox">{{ update.log }}</pre></details>{% endif %}</td></tr>{% endif %}
-    {% if update.watching %}<tr><td class="muted">New</td><td>{% if update.behind %}<b>{{ update.behind }} new change{{ '' if update.behind == 1 else 's' }}</b> ready{% else %}Nothing new{% endif %}</td></tr>{% endif %}
-  </table>
-  {% if not update.watching %}<p class="notice small">The updater isn't running on the home PC, so updating has to be done there (see the README, "Updating").</p>
-  {% elif update.requested %}<p class="hint">Update requested. The home PC will pick it up within a minute or two.</p>
-  {% else %}<div class="actions"><button class="{{ 'primary' if update.behind else '' }}" data-confirm="Update Fizzy now? It restarts, so it's down for about a minute. If the new version doesn't start, it goes back to this one by itself.">Update now</button></div>{% endif %}
-</form>
 <form class="panel" id="maintenance" method="post" action="/settings/maintenance"><h2>Maintenance mode</h2>
   <p>Everyone, staff and students, gets a "Back soon" page until you turn it off on that page with the owner password. Square sales still come in.</p>
   {% if admin_on %}<label for="mt-msg">Message <span class="muted">(optional)</span></label>
   <input id="mt-msg" type="text" name="message" maxlength="200" placeholder="e.g. Upgrading the server, back by lunch.">
   <div class="actions"><button class="danger" data-confirm="Turn on maintenance mode? Fizzy stops working for everyone until the owner turns it off.">Turn on maintenance mode</button></div>
   {% else %}<p class="notice small">Needs the owner password, and there isn't one yet (<code>FIZZY_ADMIN_PASSWORD</code> in <code>.env</code>).</p>{% endif %}
-</form>
-<form class="panel wide" id="permissions" method="post" action="/settings/permissions"><h2>Who can do what</h2>
-  {% if not admin_on %}<p class="hint" style="margin-top:0">"Owner only" means the PIN until there's an owner password.{% if not pin_on %} With no PIN either, everything's open to anyone signed in.{% endif %}</p>{% endif %}
-  <table class="perms">
-    {% set groups = {'claim': 'Everyday', 'points': 'Points and rewards', 'tab_decisions': 'Tabs', 'customers': 'Customers',
-                     'money': 'Money', 'school_tools': 'Big stuff', 'admin_accounts': 'Special accounts'} %}
-    {% for aid, label, _, _ in actions %}{% if aid in groups %}<tr class="group"><th colspan="2">{{ groups[aid] }}</th></tr>{% endif %}<tr><td>{{ label }}</td><td class="n"><select name="{{ aid }}" aria-label="{{ label }}">
-      {% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms[aid] == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>{% endfor %}
-    <tr><td><b>Big changes by hand</b>: more than <input type="text" name="big_points" inputmode="numeric" value="{{ perms.big_points }}" style="width:90px" aria-label="Points limit"> points,
-      or more than $<input type="text" name="big_dollars" inputmode="numeric" value="{{ perms.big_dollars }}" style="width:70px" aria-label="Dollar limit">, or for everyone at once</td>
-      <td class="n"><select name="big" aria-label="Big changes">{% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms.big == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>
-  </table>
-  <div class="actions"><button class="primary">Save</button></div>
-  <p class="hint">Only the owner can change this table, the PIN and account types.</p>
 </form>
 <form class="panel" method="post" action="/settings/backup"><h2>Backups</h2>
   <table>
@@ -57,8 +61,6 @@
   </table>
   <div class="actions"><button>Back up now</button><a class="btn" href="/tools/backup.db">Download a copy</a></div>
 </form>
-</div>
-
 <div class="panel" id="devices"><h2>Devices</h2>
 {% if not devices_on %}
   <p class="small" style="margin:0">Off: any device with the password can sign in. To limit {{ main_host }} to registered
@@ -86,5 +88,7 @@
     </tr>{% endfor %}
   </table></div>{% endif %}
 {% endif %}
+</div>
+</div>
 </div>
 {% endblock %}
