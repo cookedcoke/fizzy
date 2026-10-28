@@ -118,6 +118,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at TEXT NOT NULL
 );
 
+-- Security keys that can sign in instead of the staff password (see passkeys.py).
+CREATE TABLE IF NOT EXISTS passkeys (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    credential_id TEXT NOT NULL UNIQUE,
+    public_key BLOB NOT NULL,
+    sign_count INTEGER NOT NULL DEFAULT 0,
+    rp_id TEXT NOT NULL,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT
+);
+
 -- Devices allowed on the main host without Cloudflare Access (see devices.py).
 CREATE TABLE IF NOT EXISTS devices (
     id INTEGER PRIMARY KEY,

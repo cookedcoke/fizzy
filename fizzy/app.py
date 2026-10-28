@@ -24,7 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import pwa, transactions, updater
+from . import passkeys, pwa, transactions, updater
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
 log = logging.getLogger("fizzy")
@@ -432,23 +432,58 @@ def register(app):
             _record_fail(buckets, now)
             await asyncio.sleep(FAIL_DELAY)
             return render(request, "login.html", next=next, error="Wrong password.")
+        conn = db.connect()
+        try:
+            return _signed_in(request, conn, buckets, who, next)
+        finally:
+            conn.close()
+
+    def _signed_in(request, conn, buckets, who, next, key=None):
         for b in buckets:
             if b[0] != "unknown":
                 _fails.pop(b, None)
-        conn = db.connect()
-        try:
-            request.session.update(auth=True, staff=who, gen=session_gen(conn))
-            via = getattr(request.state, "device", None) or getattr(request.state, "access_email", None)
-            db.audit(conn, who, "login", None, f"via {via}" if via else "")
-            conn.commit()
-        finally:
-            conn.close()
+        request.session.update(auth=True, staff=who, gen=session_gen(conn))
+        via = [v for v in (getattr(request.state, "device", None) or getattr(request.state, "access_email", None),
+                           f"security key {key}" if key else None) if v]
+        db.audit(conn, who, "login", None, f"via {', '.join(via)}" if via else "")
+        conn.commit()
         safe_next = next if next.startswith("/") and not next.startswith("//") and "\\" not in next else "/"
         response = RedirectResponse(safe_next, status_code=303)
         if not request.cookies.get(KNOWN_COOKIE):
             response.set_cookie(KNOWN_COOKIE, _known_serializer().dumps(secrets.token_urlsafe(16)),
                                 max_age=400 * 86400, httponly=True, secure=config.SECURE_COOKIES, samesite="lax")
         return response
+
+    @app.post("/login/passkey/options")
+    def passkey_login_options(request: Request):
+        if _locked(_fail_buckets(request), time.time()):
+            return JSONResponse({"error": "Too many attempts. Wait 15 minutes."}, status_code=429)
+        conn = db.connect()
+        try:
+            return Response(passkeys.login_options(conn, request), media_type="application/json")
+        except passkeys.PasskeyError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        finally:
+            conn.close()
+
+    @app.post("/login/passkey")
+    async def passkey_login(request: Request, credential: str = Form(""), who: str = Form(""), next: str = Form("/")):
+        now, buckets = time.time(), _fail_buckets(request)
+        if _locked(buckets, now):
+            return render(request, "login.html", next=next, error="Too many attempts. Wait 15 minutes.")
+        if who not in config.STAFF_NAMES:
+            return render(request, "login.html", next=next, error="Pick who's on the counter first.")
+        conn = db.connect()
+        try:
+            try:
+                key = passkeys.check_login(conn, request, credential)
+            except (passkeys.PasskeyError, ValueError) as e:
+                _record_fail(buckets, now)
+                return render(request, "login.html", next=next, error=str(e) if isinstance(e, passkeys.PasskeyError)
+                              else "The key's answer didn't check out. Try again.")
+            return _signed_in(request, conn, buckets, who, next, key)
+        finally:
+            conn.close()
 
     @app.post("/switch")
     def switch(request: Request, who: str = Form(...), _=Depends(staff)):
@@ -907,6 +942,7 @@ def register(app):
         return render(request, "settings.html", cfg=logic.settings(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
                       actions=pin.ACTIONS, level_labels=pin.LEVEL_LABELS,
                       devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
+                      passkey_list=passkeys.listed(conn), passkey_options=request.session.pop("pk_add_options", None),
                       device_list=conn.execute("SELECT * FROM devices ORDER BY revoked_at IS NOT NULL, created_at DESC").fetchall(),
                       this_device=getattr(request.state, "device", None),
                       access_email=getattr(request.state, "access_email", None),
@@ -1000,6 +1036,29 @@ def register(app):
         devices.revoke(conn, device_id, who)
         conn.commit()
         return back(request, "/settings#devices", "Device removed. It now has to go through Cloudflare Access.")
+
+    @app.post("/settings/passkeys")
+    def passkey_add_start(request: Request, name: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+        try:
+            request.session["pk_add_options"] = passkeys.register_options(conn, request, name)
+        except passkeys.PasskeyError as e:
+            return back(request, "/settings#passkeys", str(e))
+        return back(request, "/settings#passkeys")
+
+    @app.post("/settings/passkeys/finish")
+    def passkey_add_finish(request: Request, credential: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+        try:
+            name = passkeys.register(conn, request, credential, who)
+        except (passkeys.PasskeyError, ValueError) as e:
+            return back(request, "/settings#passkeys", str(e) if isinstance(e, passkeys.PasskeyError) else "That didn't work. Try again.")
+        conn.commit()
+        return back(request, "/settings#passkeys", f"Added {name}. You can sign in with it now.")
+
+    @app.post("/settings/passkeys/{key_id}/remove")
+    def passkey_remove(request: Request, key_id: int, who=Depends(staff), conn=Depends(get_conn)):
+        passkeys.remove(conn, key_id, who)
+        conn.commit()
+        return back(request, "/settings#passkeys", "Key removed. It can't sign in any more.")
 
     @app.get("/healthz", response_class=PlainTextResponse)
     def healthz():

@@ -209,6 +209,7 @@ details.tool.danger > summary > span:first-child { color: var(--red-ink) }
 .login .mark span { color: var(--muted); font-size: 13px }
 .login .panel { padding: var(--s5) }
 .login button { width: 100%; margin-top: var(--s4) }
+.login .passkey-btn { margin-top: var(--s2) }
 
 @media (max-width: 720px) {
   header { gap: var(--s3); padding: 0 var(--s3) }

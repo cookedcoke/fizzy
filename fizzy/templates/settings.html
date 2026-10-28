@@ -63,6 +63,37 @@
   </table>
   <div class="actions"><button>Back up now</button><a class="btn" href="/tools/backup.db">Download a copy</a></div>
 </form>
+<div class="panel" id="passkeys"><h2>Security keys</h2>
+  <p class="small" style="margin:0">A security key or passkey can sign in instead of the staff password, so one key can be
+    shared by the team. You still pick who's on the counter, and the PIN and owner passcode still work the same.
+    A key only works on the address it was added on.</p>
+  {% if passkey_options %}
+  <div class="notice" style="margin-top:12px" data-passkey-add>
+    <script type="application/json">{{ passkey_options|safe }}</script>
+    <b>Now plug in the key, or pick a passkey,</b> and press the button.
+    <form method="post" action="/settings/passkeys/finish" class="row" style="margin-top:8px">
+      <input type="hidden" name="credential"><button type="button" class="primary">Add the key</button>
+      <span class="small muted" data-passkey-msg></span>
+    </form>
+  </div>
+  {% else %}
+  <form method="post" action="/settings/passkeys" class="row" style="margin-top:12px">
+    <div><label>Add a key<input type="text" name="name" maxlength="40" placeholder="e.g. Stall key" required></label></div>
+    <button class="primary">Next</button>
+  </form>
+  {% endif %}
+  {% if passkey_list %}<div class="scroll" style="margin-top:16px"><table>
+    <tr><th>Key</th><th>Added</th><th>Last used</th><th></th></tr>
+    {% for k in passkey_list %}<tr>
+      <td>{{ k.name }} <span class="small muted">{{ k.rp_id }}</span></td>
+      <td class="small">{{ k.created_at|local('%d %b %Y') }} · {{ k.created_by }}</td>
+      <td class="small">{{ k.last_used_at|local if k.last_used_at else 'Never' }}</td>
+      <td class="n"><form class="inline" method="post" action="/settings/passkeys/{{ k.id }}/remove">
+        <button class="sm danger" data-confirm="Remove {{ k.name }}? It won't be able to sign in any more.">Remove</button></form></td>
+    </tr>{% endfor %}
+  </table></div>{% endif %}
+</div>
+
 <div class="panel" id="devices"><h2>Devices</h2>
 {% if not devices_on %}
   <p class="small" style="margin:0">Off: any device with the password can sign in. To limit {{ main_host }} to registered

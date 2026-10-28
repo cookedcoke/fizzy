@@ -10,6 +10,10 @@
     <label for="pw">Password</label>
     <input id="pw" type="password" name="password" autofocus autocomplete="current-password">
     <button class="primary" type="submit">Sign in</button>
+    <button class="passkey-btn" type="button" data-passkey-login hidden>Use a security key</button>
+  </form>
+  <form method="post" action="/login/passkey" id="passkey-form" hidden>
+    <input type="hidden" name="next" value="{{ next }}"><input type="hidden" name="who"><input type="hidden" name="credential">
   </form>
 </div>
 {% endblock %}

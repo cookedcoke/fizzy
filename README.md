@@ -108,6 +108,15 @@ a wrong passcode. The PIN stays unlocked for 10 minutes, the owner password for 
 lock again when someone else is put on the counter. Every owner unlock and wrong try is in the
 activity log.
 
+### Security keys
+
+A security key (a YubiKey or similar) or a phone passkey can sign in instead of the staff password,
+and one key can be shared by everyone on the counter. Add it in **Settings, Security keys** (owner
+passcode), then press **Use a security key** on the sign-in page. You still pick who's on the
+counter, and the PIN and owner passcode work the same as before. A key only works on the address it
+was added on, so add it once on fizzy.cookedcoke.co and again on the Cloudflare Access address if you
+use that. Lost a key? Remove it in Settings and it stops working straight away.
+
 ### Scanning student cards
 
 Student ID cards have a barcode with the student's RNS number. Plug a USB barcode scanner

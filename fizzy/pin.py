@@ -35,9 +35,10 @@ FAIL_LIMIT, FAIL_LIMIT_ALL, FAIL_WINDOW = 5, 30, 600  # per browser, and across 
 _fails = {}
 
 # Never asked, whatever the settings say: signing in and out, the student site, devices joining.
-FREE = [r"^/(login|logout|switch)$", r"^/me(/|$)", r"^/enrol/", r"^/square/webhook$", r"^/settings/pin/unlock$"]
+# /settings/passkeys/finish only works after the owner-locked start, so it's free itself.
+FREE = [r"^/(login|logout|switch)$", r"^/login/passkey(/options)?$", r"^/settings/passkeys/finish$", r"^/me(/|$)", r"^/enrol/", r"^/square/webhook$", r"^/settings/pin/unlock$"]
 # Always the owner: the locks themselves.
-LOCKED = [r"^/settings/(pin|permissions|maintenance|update)$", r"^/customers/\d+/kind$"]
+LOCKED = [r"^/settings/(pin|permissions|maintenance|update)$", r"^/settings/passkeys", r"^/customers/\d+/kind$"]
 
 # (id, label, [(method, path)], default level). First match wins, so specific ones go first.
 ACTIONS = [
