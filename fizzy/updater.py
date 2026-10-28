@@ -35,10 +35,14 @@ def _status_dir():
 
 def status():
     """What the updater on the home PC last said, plus whether it's still running."""
+    s = {}
     try:
         s = json.loads((_status_dir() / "update-status.json").read_text(encoding="utf-8-sig"))
+    except PermissionError:
+        s["unreadable"] = True  # it's there but Fizzy's user can't open it: not the same as "not running"
     except (OSError, ValueError):
-        s = {}
+        pass
+    s.setdefault("unreadable", False)
     s["watching"] = time.time() - float(s.get("seen", 0) or 0) < WATCHER_STALE
     s["requested"] = (_dir() / "update-requested").exists()
     s["version"] = VERSION
@@ -54,6 +58,8 @@ def status():
 @router.post("/settings/update")
 def request_update(request: Request, who=Depends(staff)):
     s = status()
+    if s["unreadable"]:
+        return back(request, "/settings#updates", "Fizzy can't read the updater's status file (permissions). See the README, \"Updating\".", "bad")
     if not s["watching"]:
         return back(request, "/settings#updates", "The updater isn't running on the home PC, so nothing would happen. See the README.")
     (_dir() / "update-requested").write_text(f"{who} {time.strftime('%Y-%m-%d %H:%M:%S')}\n")

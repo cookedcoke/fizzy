@@ -23,6 +23,7 @@ FLAG="updates/update-requested"
 LOCK="$DIR/.lock"
 safe_write() {  # stdin -> $1, via a fresh temp file in the same folder; never through a symlink
     local tmp; tmp=$(mktemp "$DIR/.tmp.XXXXXX") || return 1
+    chmod 644 "$tmp"  # mktemp makes it 0600; Fizzy's container runs as another user and has to read it
     cat > "$tmp" && { [ ! -L "$1" ] || rm -f "$1"; } && mv -f "$tmp" "$1"
 }
 

@@ -710,7 +710,9 @@ On Linux, the `data` and `backups` folders on the PC can be owned by root or you
 The container fixes their ownership when it starts, then runs Fizzy as an unprivileged
 `fizzy` user (uid 10001).
 
-**Updating.** The database lives in `./data` and survives rebuilds, and new tables and columns
+**Updating.** The updater script runs as whichever user starts it, and that user must own `update-status/` and `updates/` (`sudo chown -R <user> update-status updates` if Docker created them as root). Fizzy only reads `update-status/`, so the files in it have to be world-readable (the script does this itself).
+
+**Updating, continued.** The database lives in `./data` and survives rebuilds, and new tables and columns
 are added automatically on start, so updating never needs a database step. The updater script
 does it all: pulls, backs up, rebuilds, checks Fizzy came back, and goes back to the old version
 by itself if the new one doesn't start.

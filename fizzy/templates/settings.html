@@ -29,7 +29,8 @@
       {% if update.log %}<details><summary class="small">What went wrong</summary><pre class="logbox">{{ update.log }}</pre></details>{% endif %}</td></tr>{% endif %}
     {% if update.watching %}<tr><td class="muted">New</td><td>{% if update.behind %}<b>{{ update.behind }} new change{{ '' if update.behind == 1 else 's' }}</b> ready{% else %}Nothing new{% endif %}</td></tr>{% endif %}
   </table>
-  {% if not update.watching %}<p class="notice small">The updater isn't running on the home PC, so updating has to be done there (see the README, "Updating").</p>
+  {% if update.unreadable %}<p class="notice small">The updater is writing its status, but Fizzy isn't allowed to read it (file permissions on <code>update-status</code>). Update the updater script on the home PC and restart it, or run <code>chmod 644 update-status/*</code> (see the README, "Updating").</p>
+  {% elif not update.watching %}<p class="notice small">The updater isn't running on the home PC, so updating has to be done there (see the README, "Updating").</p>
   {% elif update.requested %}<p class="hint">Update requested. The home PC will pick it up within a minute or two.</p>
   {% else %}<div class="actions"><button class="{{ 'primary' if update.behind else '' }}" data-confirm="Update Fizzy now? It restarts, so it's down for about a minute. If the new version doesn't start, it goes back to this one by itself.">Update now</button></div>{% endif %}
 </form>

@@ -44,3 +44,20 @@ def test_failed_update_shows_the_log(client, tmp_path, monkeypatch):
     (tmp_path / "last-failure.log").write_text("fizzy-1  | RuntimeError: boom")
     assert "RuntimeError: boom" in client.get("/settings").text
     assert "RuntimeError: boom" in client.get("/settings/update/status").json()["log"]
+
+
+def test_unreadable_status_isnt_reported_as_not_running(client, tmp_path, monkeypatch):
+    from fizzy import updater
+    monkeypatch.setenv("FIZZY_UPDATES_DIR", str(tmp_path))
+    monkeypatch.setenv("FIZZY_UPDATE_STATUS_DIR", str(tmp_path))
+    real = type(tmp_path / "x").read_text
+
+    def deny(self, *a, **k):
+        if self.name == "update-status.json":
+            raise PermissionError("denied")
+        return real(self, *a, **k)
+    monkeypatch.setattr(type(tmp_path / "x"), "read_text", deny)
+    assert updater.status()["unreadable"] is True
+    login(client)
+    page = client.get("/settings").text
+    assert "isn't allowed to read it" in page and "The updater isn't running" not in page
