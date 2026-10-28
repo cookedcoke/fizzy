@@ -185,13 +185,14 @@ def create_app(background=True):
         if msg is None or path.startswith("/static/") or path in ("/healthz", "/square/webhook"):
             return await call_next(request)
         error = None
-        if request.method == "POST" and path.endswith("/maintenance/off"):  # the owner box on the page itself
+        staff_host = not getattr(request.state, "public", False)
+        if request.method == "POST" and path == "/maintenance/off" and staff_host:  # the owner box, staff site only
             password = (await request.form()).get("password", "")
             error = await run_in_threadpool(turn_off_maintenance, request, password)
             if error is None:
                 return RedirectResponse("/", status_code=303)
         student = getattr(request.state, "public", False) or path == "/me" or path.startswith("/me/")
-        return HTMLResponse(down_page(msg, owner_box=True, error=error, student=student), status_code=503,
+        return HTMLResponse(down_page(msg, owner_box=staff_host and not student, error=error, student=student), status_code=503,
                             headers={"Retry-After": "60", "Cache-Control": "no-store", "X-Fizzy": "maintenance"})
 
     @app.middleware("http")
@@ -273,10 +274,12 @@ def set_maintenance(msg, who):
 def turn_off_maintenance(request, password):
     """The owner box on the maintenance page. Returns an error, or None once it's off."""
     now, me = time.time(), pin._browser(request)
-    if pin._recent(me, now) >= pin.FAIL_LIMIT:
+    # Anyone can reach this page, so besides each visitor's 5 tries there's a hard cap for everyone
+    # (the command line on the home PC still turns it off if that's ever hit).
+    if pin._recent(me, now) >= pin.FAIL_LIMIT or pin._recent("maint", now) >= 20:
         return "Too many wrong tries. Wait 10 minutes."
     if not pin.is_owner(password):
-        pin._fails[me].append(now)
+        pin._fail(me, "maint")
         return "Wrong password."
     set_maintenance(None, "owner")  # runs before sign-in cookies are read; the password is what counts
     return None

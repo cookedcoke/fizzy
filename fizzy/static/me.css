@@ -179,9 +179,9 @@ a.go { display: block; box-sizing: border-box; text-align: center; text-decorati
 .score summary::-webkit-details-marker { display: none }
 .score .score-num { flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center;
                     font-family: var(--display); font-weight: 800; font-size: 19px; border: 3px solid currentColor }
-.score .score-num.good { color: var(--ok) } .score .score-num.ok { color: #C08A00 } .score .score-num.low { color: var(--red-deep) }
+.score .score-num.good { color: var(--ok) } .score .score-num.ok { color: #8A6200 } .score .score-num.low { color: var(--red-deep) }
 .score ul { list-style: none; margin: 12px 0 8px; padding: 0; font-size: 14px }
-.score li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid rgba(0,0,0,.06) }
+.score li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line) }
 .score li b.neg { color: var(--red-deep) }
 /* Bigger screens: two columns - your points, rewards and tab; then how you're going. */
 @media (min-width: 860px) {
@@ -190,3 +190,8 @@ a.go { display: block; box-sizing: border-box; text-align: center; text-decorati
   .me-side > .section:first-child, .me-main > :first-child { margin-top: 18px }
 }
 @media (min-width: 600px) and (max-width: 859px) { main, .top { max-width: 640px } }
+.score summary::after { content: ""; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+                        transform: rotate(45deg); transition: transform .2s; flex: none }
+.score[open] summary::after { transform: rotate(225deg) }
+.pill { min-height: 40px }
+details.more > summary { padding: 10px 0 }

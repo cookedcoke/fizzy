@@ -46,12 +46,13 @@
           if (s.log) { var lg = document.getElementById("up-log"); lg.hidden = false; lg.textContent = s.log; }
           return finish(false, "Update didn't go through", s.message || "Something went wrong. Fizzy is still on the old version.");
         }
-        if (s.version && s.version !== "dev" && s.version !== was) {  // the new Fizzy is answering
-          return finish(true, "Updated", "Fizzy is now on " + s.version + ". Everything's back to normal.");
-        }
         if (ours(s) && s.step === "rollback") {
           mark("verify"); title.textContent = "That didn't work, going back";
           sub.textContent = "The new version didn't start, so the home PC is putting the old one back."; return;
+        }
+        var target = ours(s) && s.to;  // only the version this update was going to counts, not the old one coming back
+        if (s.version && s.version !== "dev" && s.version !== was && (!target || target.indexOf(s.version) === 0 || s.version.indexOf(target) === 0)) {
+          return finish(true, "Updated", "Fizzy is now on " + s.version + ". Everything's back to normal.");
         }
         if (ours(s) && s.step) { mark(s.step); return; }
         if (downSeen) {  // it restarted but nothing says how it went (an older updater on the PC)

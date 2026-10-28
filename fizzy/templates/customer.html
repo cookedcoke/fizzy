@@ -206,10 +206,11 @@
   {% if tab_panel %}{{ tab_form(true) }}{% endif %}
   {% set sc = st.score %}
   <div class="panel score-panel" id="score"><h2>Tab score</h2>
-    <div class="score-head"><div class="score-num {{ 'good' if sc.score >= 80 else 'ok' if sc.score >= st.score_needed else 'low' }}">{{ sc.score }}</div>
-      <div><b>{{ sc.limit_cents|money }} limit</b> if their tab is on <span class="muted">({{ (sc.share * 100)|int }}% of the {{ st.max_limit_cents|money }} max)</span>
-        <div class="muted small">{% if sc.next %}{{ sc.next.score }}+ gets {{ sc.next.limit_cents|money }}.{% else %}Top band.{% endif %}
-          {% if not c.tab_decision %}{{ 'Ready for a tab.' if sc.ready else 'Needs ' ~ st.score_needed ~ ' for a tab.' }}{% endif %}</div></div></div>
+    <div class="score-head">{% set usable = c.tab_decision == 'approved' or sc.ready %}
+    <div class="score-num {{ 'good' if sc.score >= 80 else 'ok' if usable else 'low' }}">{{ sc.score }}</div>
+      <div><b>Limit {{ sc.limit_cents|money }}</b>{% if sc.next %} <span class="muted">· {{ sc.next.score }}+ gets {{ sc.next.limit_cents|money }}</span>{% endif %}
+        <div class="muted small">{% if c.tab_decision == 'approved' %}Their tab's on.{% elif not st.spent_enough and not sc.ready %}Needs {{ (st.unlock_spend_cents - st.spend_cents)|money }} more spent and a score of {{ st.score_needed }} for a tab.
+          {% elif not st.spent_enough %}Needs {{ (st.unlock_spend_cents - st.spend_cents)|money }} more spent for a tab.{% elif not sc.ready %}Needs a score of {{ st.score_needed }} for a tab.{% elif not c.tab_decision %}Ready for a tab.{% endif %}</div></div></div>
     <table class="score-factors">{% for label, pts in sc.factors %}<tr><td>{{ label }}</td><td class="n {{ 'red' if pts < 0 }}">{{ '%+d'|format(pts) if loop.index > 1 else pts }}</td></tr>{% endfor %}</table>
   </div>
   <form class="panel" method="post" action="/customers/{{ c.id }}/points"><h2>Adjust points <kbd>P</kbd></h2>

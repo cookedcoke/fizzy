@@ -21,7 +21,7 @@
     {% if restocks %}<div class="scroll"><table>
       <tr><th>Day</th><th>Shop</th><th>Items</th><th class="n">Total</th><th></th></tr>
       {% for r in restocks %}<tr>
-        <td>{{ r.day|ymd('%a %-d %b') }}</td><td>{{ r.shop or '' }}{% if r.note %}<br><span class="muted small">{{ r.note }}</span>{% endif %}</td>
+        <td style="white-space:nowrap">{{ r.day|ymd('%a %-d %b') }}</td><td>{{ r.shop or '' }}{% if r.note %}<br><span class="muted small">{{ r.note }}</span>{% endif %}</td>
         <td class="small">{% for it in items.get(r.id, []) %}{{ it.qty }}× {{ it.name }} <span class="muted">({{ it.cost_cents|money }})</span>{{ '<br>'|safe if not loop.last }}{% endfor %}</td>
         <td class="n">{{ r.total_cents|money }}</td>
         <td class="n">{% if r.receipt %}<a class="btn sm" href="/money/receipts/{{ r.receipt }}" target="_blank" rel="noopener">Receipt</a>{% endif %}
@@ -32,7 +32,7 @@
   {% if payouts %}<div class="panel"><h2>Payouts <span class="count">{{ payouts|length }}</span></h2>
     {% if payouts %}<div class="scroll"><table>
       <tr><th>Day</th><th>Who</th><th>Note</th><th class="n">Amount</th><th></th></tr>
-      {% for p in payouts %}<tr><td>{{ p.day|ymd('%a %-d %b') }}</td><td>{{ p.partner }}</td>
+      {% for p in payouts %}<tr><td style="white-space:nowrap">{{ p.day|ymd('%a %-d %b') }}</td><td>{{ p.partner }}</td>
         <td class="small">{{ p.note or '' }}</td><td class="n">{{ p.amount_cents|money }}</td>
         <td class="n"><form class="inline" method="post" action="/money/payout/{{ p.id }}/delete"><button class="sm danger" data-confirm="Delete {{ p.partner }}'s {{ p.amount_cents|money }} payout?">Delete</button></form></td></tr>{% endfor %}
     </table></div>{% endif %}

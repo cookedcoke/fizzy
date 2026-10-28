@@ -10,3 +10,4 @@ backups/
 .venv/
 .pytest_cache/
 updates/
+update-status/

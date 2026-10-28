@@ -7,8 +7,8 @@
   <span>No points or tab until someone's assigned - <a href="/square?show=unlinked">see them</a>.</span></div>{% endif %}
 {% if sync_error %}<div class="err">Last sync error: {{ sync_error }}</div>{% endif %}
 <div class="stats">
-  <div class="stat"><div class="k">Connection</div><div class="v sm">{{ 'Connected' if square_on else 'Not set up' }}</div><div class="sub">{{ 'Webhooks + polling' if webhook_on else 'Polling every 5 min' }}</div></div>
-  <div class="stat"><div class="k">Synced up to</div><div class="v sm">{{ cursor|local or '-' }}</div></div>
+  <div class="stat"><div class="k">Connection</div><div class="v sm">{{ 'Connected' if square_on else 'Not set up' }}</div>{% if square_on %}<div class="sub">{{ 'Webhooks + polling' if webhook_on else 'Polling every 5 min' }}</div>{% endif %}</div>
+  <div class="stat"><div class="k">Synced up to</div><div class="v sm">{{ cursor|local or 'Never' }}</div></div>
   <div class="stat {{ 'alert' if unlinked_customers }}"><div class="k">Not in Square</div><div class="v">{{ unlinked_customers }}</div><div class="sub"><a href="/export/square-customers.csv">Download import CSV</a></div></div>
 </div>
 {% if conflicts %}

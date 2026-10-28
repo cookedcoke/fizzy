@@ -33,7 +33,7 @@ def test_maintenance_mode(client):
 def test_default_message_and_escaping(client):
     main(["maintenance", "on"])
     _fresh()
-    assert "working on the server" in client.get("/").text and "doing some maintenance" in client.get("/me").text
+    assert "working on the server" in client.get("/").text and "having a break" in client.get("/me").text
     main(["maintenance", "on", "<script>x</script>"])
     _fresh()
     assert "<script>x</script>" not in client.get("/").text
@@ -74,3 +74,19 @@ def test_needs_an_owner_password_to_exist(client):
     _fresh()
     assert client.get("/").status_code == 200
     assert "Turn maintenance off" not in client.get("/static/down.html").text
+
+
+def test_owner_box_cant_be_brute_forced(client, monkeypatch):
+    from fizzy import config, pin
+    monkeypatch.setattr(config, "ADMIN_PASSWORD", "owner-pw")
+    monkeypatch.setattr(pin, "_fails", {})
+    main(["maintenance", "on"])
+    _fresh()
+    for i in range(30):  # a made-up "known browser" cookie each time doesn't buy fresh tries
+        client.cookies.set("fizzy_known", f"fake{i}")
+        client.post("/maintenance/off", data={"password": "nope"})
+    client.cookies.set("fizzy_known", "fake-last")
+    assert "Too many wrong tries" in client.post("/maintenance/off", data={"password": "owner-pw"}).text
+    assert client.post("/me/maintenance/off", data={"password": "owner-pw"}).status_code == 503   # never on the student pages
+    main(["maintenance", "off"])
+    _fresh()

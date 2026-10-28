@@ -7,16 +7,22 @@
 param([switch]$Check, [switch]$Watch, [switch]$Auto)
 $ErrorActionPreference = "Continue"
 Set-Location (Split-Path -Parent $PSScriptRoot)
-$Dir = "updates"; New-Item -ItemType Directory -Force $Dir | Out-Null
-$StatusFile = Join-Path $Dir "update-status.json"; $Flag = Join-Path $Dir "update-requested"
+# ./updates: Fizzy only drops its "please update" note here. ./update-status: only this script
+# writes here; Fizzy reads it through a read-only mount.
+$Dir = "update-status"; New-Item -ItemType Directory -Force $Dir, "updates" | Out-Null
+$StatusFile = Join-Path $Dir "update-status.json"; $Flag = Join-Path "updates" "update-requested"
 $S = @{ state = ""; step = ""; at = ""; from = ""; to = ""; message = ""; behind = 0; started = 0 }
 if (Test-Path $StatusFile) { try { (Get-Content $StatusFile -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $S[$_.Name] = $_.Value } } catch {} }
 
 function Say($m) { Write-Host ("{0}  {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) }
 function Now { Get-Date -Format "ddd d MMM HH:mm" }
+function Now-Unix { [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }   # Get-Date -UFormat %s is local time on Windows PowerShell
+function Write-Text($path, $text) {  # UTF-8 without the BOM Windows PowerShell adds (Python's json can't read that)
+    [IO.File]::WriteAllText((Join-Path (Get-Location) $path), $text, (New-Object Text.UTF8Encoding $false))
+}
 function Write-Status {
-    $S.seen = [int][double]::Parse((Get-Date -UFormat %s))
-    ($S | ConvertTo-Json -Compress) | Set-Content -Encoding utf8 "$StatusFile.tmp"
+    $S.seen = Now-Unix
+    Write-Text "$StatusFile.tmp" ($S | ConvertTo-Json -Compress)
     Move-Item -Force "$StatusFile.tmp" $StatusFile
 }
 function Fetch {
@@ -37,7 +43,7 @@ function Healthy {  # up to 3 minutes, but give up if the container crashes
 function Save-Logs {  # before rolling back throws the failed container (and its logs) away
     $out = @("Fizzy's last log lines from the failed update ($(Get-Date -Format 'yyyy-MM-dd HH:mm')):")
     $out += (docker compose logs --no-color --tail 40 fizzy 2>&1 | ForEach-Object { "$_" })
-    $out | Set-Content -Encoding utf8 (Join-Path $Dir "last-failure.log")
+    Write-Text (Join-Path $Dir "last-failure.log") ($out -join "`n")
 }
 function Step($s) { $S.step = $s; Write-Status }   # what the progress page in Fizzy shows
 function Build {  # build while the old one keeps serving, then swap (the only time Fizzy is down)
@@ -47,8 +53,9 @@ function Build {  # build while the old one keeps serving, then swap (the only t
     Step "restart"; docker compose up -d fizzy 2>$null | Out-Null; return ($LASTEXITCODE -eq 0)
 }
 function Update {
-    $S.started = [int][double]::Parse((Get-Date -UFormat %s)); $S.state = "running"; $S.message = ""; Step "check"
+    $S.started = Now-Unix; $S.state = "running"; $S.message = ""; Step "check"
     git diff --quiet; $dirty = $LASTEXITCODE -ne 0
+    git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { $dirty = $true }
     if ($dirty) { $S.state = "failed"; $S.at = Now; $S.message = "Files in the Fizzy folder were changed by hand, so nothing was pulled. Undo them (git status) and try again."; Step "done"; Say $S.message; return }
     if (-not (Fetch)) { $S.state = "failed"; $S.at = Now; $S.message = "Couldn't reach GitHub."; Step "done"; return }
     $S.from = (git rev-parse --short HEAD)
@@ -67,7 +74,7 @@ function Update {
     Save-Logs; Step "rollback"
     git reset --hard --quiet $old; $env:FIZZY_VERSION = (git rev-parse --short HEAD)
     docker compose up -d --build fizzy 2>$null | Out-Null; Healthy | Out-Null
-    (git rev-parse "@{u}") | Set-Content (Join-Path $Dir "bad-version")  # overnight updates skip this one
+    Write-Text (Join-Path $Dir "bad-version") (git rev-parse "@{u}")  # overnight updates skip this one
     $S.state = "failed"; $S.to = $S.from; $S.message = "The new version didn't start, so it went back to $($S.from). Its last log lines are below."
     Fetch | Out-Null; Step "done"; Say $S.message
 }

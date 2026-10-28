@@ -369,9 +369,10 @@ table.lines input { height: 32px }
 @media (max-width: 720px) { .claim-prompt { left: var(--s3); right: var(--s3); bottom: var(--s3); width: auto } }
 @media (prefers-reduced-motion: reduce) { .claim-prompt.pop { animation: none } }
 body.has-claim-prompt main { padding-bottom: 200px }
-/* With ten tabs the nav never shrinks; on pages with the header search, the search box gives way
-   first, then the clock. */
-header nav { flex-shrink: 0 }
+/* When the header's tight, the extras give way first (search box, then the tagline, label and
+   date, then the clock); only then does the tab strip scroll, so nothing is ever pushed off. */
+header nav { flex-shrink: 1 }
+@media (max-width: 1600px) { header .brand small, header .who .label, .clock .d { display: none } }
 header .hsearch { flex: 1 1 220px; min-width: 96px; max-width: 260px }
 @media (max-width: 1300px) { header:has(.hsearch) .clock { display: none } }
 @media (max-width: 1023px) { header nav { flex-shrink: 1 } }
@@ -485,3 +486,14 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
   .tx th:first-child, .tx td:first-child { padding-left: var(--s4) } .tx th:last-child, .tx td:last-child { padding-right: var(--s4) }
   .tx .assign input { width: 100%; min-width: 0; max-width: 150px }
 }
+.panel code, .notice code { overflow-wrap: anywhere }
+.col.cust-side > * { margin-bottom: 0 }
+@media (min-width: 721px) and (max-width: 1099px) { .col.cust-side > * { margin-bottom: var(--s4) } }
+.panel > .scroll:first-child { margin-top: calc(-1 * var(--s4)) }
+.big-lines { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 6px; font-weight: 400 }
+.big-lines label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 400 }
+.big-lines input { width: 80px !important; margin: 0 !important }
+.period { flex-wrap: wrap; min-width: 0; max-width: 100% }
+.daterange { display: inline-flex; gap: var(--s2); flex-wrap: nowrap }
+.daterange input { min-width: 0; width: 140px }
+@media (max-width: 480px) { .daterange { width: 100% } .daterange input { flex: 1; width: auto } .period .btn { flex: 1 1 auto } }

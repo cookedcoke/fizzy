@@ -11,8 +11,10 @@
     {% for aid, label, _, _ in actions %}{% if aid in groups %}<tr class="group"><th colspan="2">{{ groups[aid] }}</th></tr>{% endif %}<tr><td>{{ label }}</td><td class="n"><select name="{{ aid }}" aria-label="{{ label }}">
       {% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms[aid] == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>{% endfor %}
     <tr class="group"><th colspan="2">Limits</th></tr>
-    <tr class="big-row"><td><b>Big changes by hand</b>: more than <input type="text" name="big_points" inputmode="numeric" value="{{ perms.big_points }}" style="width:90px" aria-label="Points limit"> points,
-      or more than $<input type="text" name="big_dollars" inputmode="numeric" value="{{ perms.big_dollars }}" style="width:70px" aria-label="Dollar limit">, or for everyone at once</td>
+    <tr class="big-row"><td><b>Big changes by hand</b>
+      <div class="big-lines"><label>More than <input type="text" name="big_points" inputmode="numeric" value="{{ perms.big_points }}" aria-label="Points limit"> points</label>
+        <label>or more than $<input type="text" name="big_dollars" inputmode="numeric" value="{{ perms.big_dollars }}" aria-label="Dollar limit"></label>
+        <span class="muted">or anything for everyone at once</span></div></td>
       <td class="n"><select name="big" aria-label="Big changes">{% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms.big == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>
   </table>
   <div class="actions"><button class="primary">Save</button></div>

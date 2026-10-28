@@ -1,7 +1,5 @@
 FROM python:3.13-slim
-# Set by deploy/update.sh (the git commit), so Settings can show what's running.
-ARG FIZZY_VERSION=dev
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 FIZZY_DB=/data/fizzy.db FIZZY_VERSION=$FIZZY_VERSION
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 FIZZY_DB=/data/fizzy.db
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -12,6 +10,10 @@ COPY deploy/entrypoint.sh /usr/local/bin/fizzy-entrypoint
 RUN sed -i 's/\r$//' /usr/local/bin/fizzy-entrypoint && chmod +x /usr/local/bin/fizzy-entrypoint
 # Starts as root only to fix ownership of the mounted folders, then runs as the fizzy user.
 ENTRYPOINT ["fizzy-entrypoint"]
+# Set by deploy/update.sh (the git commit), so Settings can show what's running. Down here so a new
+# version doesn't make Docker reinstall every package.
+ARG FIZZY_VERSION=dev
+ENV FIZZY_VERSION=$FIZZY_VERSION
 EXPOSE 8000
 HEALTHCHECK CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"
 # One worker: SQLite + the in-process Square poller expect a single process.

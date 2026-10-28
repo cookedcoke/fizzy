@@ -35,7 +35,7 @@
       <td class="n muted small">{% if r.price and r.cost_each is not none %}{{ (r.price - r.cost_each)|money }} each{% endif %}</td>
       <td class="n">{% if r.margin is not none %}<span class="{{ 'red' if r.margin < 20 }}">{{ r.margin }}%</span>{% endif %}</td></tr>{% endfor %}
   </table></div>
-  <div class="actions"><button class="primary">Save costs <kbd>Ctrl</kbd> <kbd>Enter</kbd></button>
+  <div class="actions" style="margin-top:var(--s3)"><button class="primary">Save costs <kbd>Ctrl</kbd> <kbd>Enter</kbd></button>
     <span class="hint" style="margin:0;align-self:center">Clear a cost to remove it. Under 20% margin shows in red.</span></div>
   {% else %}<p class="empty">No items sold {{ label|lower }} yet{% if square_on %} - press <b>Get items from Square</b> below to list everything you sell{% endif %}.</p>{% endif %}
 </form>

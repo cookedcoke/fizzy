@@ -15,9 +15,10 @@ import json
 import re
 import secrets
 import time
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
+from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
@@ -183,7 +184,12 @@ def required(conn, method, path, form=None):
         payment = conn.execute("SELECT COALESCE(MAX(customer_id), 0) AS owner, COALESCE(SUM(amount_cents), 0) AS cents, "
                                "MAX(kind != 'sale') AS tab FROM square_payments WHERE square_payment_id IN (?, ?)",
                                (base, base + ":sale")).fetchone()
-        if m.group(2) == "assign" and payment["owner"]:
+        old = conn.execute("SELECT MIN(created_at) FROM square_payments WHERE square_payment_id IN (?, ?)",
+                           (base, base + ":sale")).fetchone()[0]
+        stale = old and old < (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat(timespec="seconds")
+        if m.group(2) == "assign" and (payment["owner"] or stale):
+            # Moving a sale that already belongs to someone isn't claiming: it takes from them. And
+            # old unclaimed sales would pad someone's tab score, so those need the PIN too.
             # Moving a sale that already belongs to someone isn't claiming: it takes from them.
             level = max(level, LEVELS[perms["square_kind"]])
     if form is not None and not re.search(r"^/customers/\d+/claim$", path):
@@ -319,14 +325,31 @@ async def guard(request: Request):
 # ---- pages -----------------------------------------------------------------------------------
 
 def _browser(request):
-    # The signed "known browser" cookie from sign-in, so one person typing wrong codes on
-    # purpose only locks their own browser out (the overall cap still stops guessing).
-    return request.cookies.get("fizzy_known") or (request.client.host if request.client else "?")
+    """Who's guessing: the signed "known browser" cookie from sign-in (checked, so a made-up one
+    doesn't get fresh tries), else the visitor's address as Cloudflare saw it."""
+    token = request.cookies.get("fizzy_known")
+    if token:
+        try:
+            return "b:" + URLSafeSerializer(config.SECRET_KEY, salt="fizzy-known-browser").loads(token)
+        except BadSignature:
+            pass
+    ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
+    return "ip:" + ip
 
 
 def _recent(key, now):
-    _fails[key] = [t for t in _fails.get(key, []) if t > now - FAIL_WINDOW]
-    return len(_fails[key])
+    kept = [t for t in _fails.get(key, []) if t > now - FAIL_WINDOW]
+    if kept:
+        _fails[key] = kept
+    else:
+        _fails.pop(key, None)  # don't keep a key per visitor forever
+    return len(kept)
+
+
+def _fail(*keys):
+    now = time.time()
+    for k in keys:
+        _fails.setdefault(k, []).append(now)
 
 
 @router.post("/settings/pin/unlock")
@@ -338,8 +361,7 @@ def unlock(request: Request, pin: str = Form(""), need: int = Form(PIN), who=Dep
         return JSONResponse({"ok": False, "error": "Too many wrong tries. Wait 10 minutes."})
     rank = OWNER if is_owner(pin) else PIN if check(conn, pin) else OPEN
     if rank < max(need, PIN):  # a PIN where the owner's is needed is just a wrong passcode
-        _fails[me].append(now)
-        _fails["*"].append(now)
+        _fail(me, "*")
         db.audit(conn, who, "passcode_wrong", None, "")
         conn.commit()
         left = FAIL_LIMIT - len(_fails[me])

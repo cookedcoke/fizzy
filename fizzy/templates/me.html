@@ -30,7 +30,7 @@
       <p class="tab-msg">Get your tab score to {{ st.score_needed }} to unlock a tab.</p>
       <p class="tab-sub">You're on {{ st.score.score }}. See below for how it works.</p>
     {% elif st.status == 'locked' %}
-      <p class="tab-msg">Spend {{ (st.unlock_spend_cents - st.spend_cents)|money }} more to unlock a tab.</p>
+      <p class="tab-msg">Spend {{ (st.unlock_spend_cents - st.spend_cents)|money }} more{% if not st.score.ready %} and get your tab score to {{ st.score_needed }}{% endif %} to unlock a tab.</p>
       <div class="bar"><i style="width:{{ (100 * [st.spend_cents, 0]|max / st.unlock_spend_cents)|round|int }}%"></i></div>
       <p class="tab-sub">{{ st.spend_cents|money }} of {{ st.unlock_spend_cents|money }} so far.</p>
     {% else %}
@@ -40,7 +40,7 @@
     <div class="figures">
       <div class="figure {{ 'alert' if led.has_overdue }}"><div class="k">You owe</div><div class="v">{{ led.owing_cents|money }}</div>
         {% if next_due %}<div class="sub">{{ 'Was due' if led.has_overdue else 'Pay by' }} {{ next_due|local('%a %d %b') }}</div>{% endif %}</div>
-      <div class="figure"><div class="k">Tab limit</div><div class="v">{{ st.limit_cents|money }}</div><div class="sub">7 days to pay</div></div>
+      <div class="figure"><div class="k">Tab limit</div><div class="v">{{ st.limit_cents|money }}</div><div class="sub">{{ st.due_days }} days to pay</div></div>
     </div>
     {% if led.balance_cents < 0 %}<p class="tab-sub">You have {{ (-led.balance_cents)|money }} in credit - it's used next time you put something on your tab.</p>{% endif %}
     {% if led.late_count %}<p class="tab-sub">{{ led.late_count }} late payment{{ '' if led.late_count == 1 else 's' }} on record.</p>{% endif %}

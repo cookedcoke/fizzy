@@ -42,7 +42,7 @@ def test_on_time_raises_it_late_and_overdue_lower_it(conn, cust):
     assert logic.tab_score(conn, c["id"])["score"] == base + 5 + 1 + 1   # on time, another day, $3 more spent
     logic.add_tab_charge(conn, c, 500, "y", iso(20))  # older, so repayments go here first: $2 of it is still overdue
     s = logic.tab_score(conn, c["id"])
-    assert ("Has money overdue right now", -25) in s["factors"] and s["score"] < base
+    assert ("Money overdue right now", -25) in s["factors"] and s["score"] < base
     assert logic.tab_status(conn, c)["status"] == "blocked_overdue"
 
 
@@ -54,3 +54,21 @@ def test_score_needed_setting(conn, cust):
     db.set_setting(conn, "tab_score_needed", 70)
     st = logic.tab_status(conn, c)
     assert st["status"] == "locked" and st["spent_enough"]
+
+
+def test_score_cant_be_farmed(conn, cust):
+    c = cust()
+    for d in range(30, 10, -2):
+        buy(conn, c["id"], 400, d)
+    logic.set_tab_decision(conn, c["id"], "approved", "", "Will")
+    c = conn.execute("SELECT * FROM customers WHERE id = ?", (c["id"],)).fetchone()
+    base = logic.tab_score(conn, c["id"])["score"]
+    for i in range(5):  # five 10c tab charges the same day, each repaid straight after
+        logic.add_tab_charge(conn, c, 10, "x", iso(5))
+        logic.add_repayment(conn, c["id"], 10, "cash", "", "Will", created_at=iso(4))
+    names = [n for n, _ in logic.tab_score(conn, c["id"])["factors"]]
+    assert not any("on time" in n for n in names)          # under $1: doesn't count
+    logic.add_tab_charge(conn, c, 300, "y", iso(3))
+    logic.add_tab_charge(conn, c, 300, "z", iso(3))
+    logic.add_repayment(conn, c["id"], 600, "cash", "", "Will", created_at=iso(2))
+    assert ("Paid off 1 tab on time", 5) in logic.tab_score(conn, c["id"])["factors"]   # same week: one

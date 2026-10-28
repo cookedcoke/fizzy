@@ -10,10 +10,13 @@ services:
     environment:
       FIZZY_BACKUP_DIR: /backups
       FIZZY_UPDATES_DIR: /updates
+      FIZZY_UPDATE_STATUS_DIR: /update-status
     volumes:
       - ./data:/data
       # Notes between Fizzy and deploy/update.sh (the Update button and how it went).
       - ./updates:/updates
+      # How updates went, written by the update script; Fizzy can only read it.
+      - ./update-status:/update-status:ro
       # Change the left side to your external SSD later, e.g. /mnt/ssd/fizzy-backups or E:/fizzy-backups
       - ./backups:/backups
 

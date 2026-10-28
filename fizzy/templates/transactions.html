@@ -2,12 +2,12 @@
 {% block body %}
 {% macro url() %}{% set a = dict(start=start, end=end, show=show, q=q) %}{% set _ = a.update(kwargs) %}/transactions?{% for k, v in a.items() if v %}{{ k }}={{ v|string|urlencode }}{{ '&' if not loop.last }}{% endfor %}{% endmacro %}
 <div class="pagehead"><div><h1>Transactions</h1>
-  <div class="meta">{% if start == end %}{{ start.strftime('%A %-d %B') }}{% else %}{{ start.strftime('%-d %b') }} to {{ end.strftime('%-d %b %Y') }}{% endif %} · every Square sale, with who it was</div></div>
+  <div class="meta">{% if start == end %}{{ start.strftime('%A %-d %B') }}{% else %}{{ start.strftime('%-d %b' if start.year == end.year else '%-d %b %Y') }} to {{ end.strftime('%-d %b %Y') }}{% endif %} · every Square sale, with who it was</div></div>
   <form class="actions period" method="get" action="/transactions" style="margin:0">
     {% for label, (s, e) in quick.items() %}<a class="btn {{ 'primary' if s == start and e == end }}" href="{{ url(start=s, end=e) }}">{{ label }}</a>{% endfor %}
-    <input type="date" name="start" value="{{ start }}" aria-label="From"><input type="date" name="end" value="{{ end }}" aria-label="To">
+    <span class="daterange"><input type="date" name="start" value="{{ start }}" aria-label="From"><input type="date" name="end" value="{{ end }}" aria-label="To">
     {% if show %}<input type="hidden" name="show" value="{{ show }}">{% endif %}{% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
-    <button>Show</button></form>
+    <button>Show</button></span></form>
 </div>
 
 <div class="stats">

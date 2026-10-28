@@ -27,10 +27,16 @@ def _dir():
     return Path(os.environ.get("FIZZY_UPDATES_DIR") or Path(config.DB_PATH).resolve().parent)
 
 
+def _status_dir():
+    # Written only by the script on the PC (read-only in here). Older setups kept it with the flag.
+    d = os.environ.get("FIZZY_UPDATE_STATUS_DIR")
+    return Path(d) if d and (Path(d) / "update-status.json").exists() else _dir()
+
+
 def status():
     """What the updater on the home PC last said, plus whether it's still running."""
     try:
-        s = json.loads((_dir() / "update-status.json").read_text())
+        s = json.loads((_status_dir() / "update-status.json").read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         s = {}
     s["watching"] = time.time() - float(s.get("seen", 0) or 0) < WATCHER_STALE
@@ -39,7 +45,7 @@ def status():
     s["log"] = ""
     if s.get("state") == "failed":
         try:
-            s["log"] = (_dir() / "last-failure.log").read_text(errors="replace")[-4000:]
+            s["log"] = (_status_dir() / "last-failure.log").read_text(encoding="utf-8-sig", errors="replace")[-4000:]
         except OSError:
             pass
     return s

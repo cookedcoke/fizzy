@@ -31,10 +31,13 @@ def test_blank_write_off_and_square_payment_moves_are_big(rules):
     conn.execute("INSERT INTO square_payments(square_payment_id, customer_id, kind, amount_cents, created_at, processed_at) "
                  "VALUES ('P1', 1, 'tab_charge', 500, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')")
     conn.execute("INSERT INTO square_payments(square_payment_id, customer_id, kind, amount_cents, created_at, processed_at) "
-                 "VALUES ('P2', NULL, 'sale', 300, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')")
+                 "VALUES ('P2', NULL, 'sale', 300, ?, ?)", (db.now_iso(), db.now_iso()))
+    conn.execute("INSERT INTO square_payments(square_payment_id, customer_id, kind, amount_cents, created_at, processed_at) "
+                 "VALUES ('P3', NULL, 'sale', 300, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')")
     assert r("/square/payments/P1/assign", {"customer": "Test Kid"}) == pin.OWNER   # someone's tab money
     assert r("/square/payments/P1/kind", {"kind": "sale"}) == pin.OWNER
-    assert r("/square/payments/P2/assign", {"customer": "Test Kid"}) == pin.OPEN     # an unclaimed sale: like claiming
+    assert r("/square/payments/P2/assign", {"customer": "Test Kid"}) == pin.OPEN     # a fresh unclaimed sale: like claiming
+    assert r("/square/payments/P3/assign", {"customer": "Test Kid"}) == pin.PIN      # an old one would pad a tab score
 
 
 def test_double_points_rules(rules):
@@ -83,3 +86,34 @@ def test_everyone_skips_test_and_admin(client):
     finally:
         conn.close()
     assert got == {real: 5}
+
+
+def test_transactions_survives_silly_dates(client):
+    for q in ("start=0001-01-01&end=9999-12-31", "start=9999-12-31", "start=nope&end=2026-13-40"):
+        assert client.get(f"/transactions?{q}").status_code == 200
+
+
+def test_assign_moves_the_whole_checkout(client):
+    conn = db.connect()
+    _customer()
+    for pid, kind in (("order:O1", "tab_charge"), ("PAY1", "sale")):
+        conn.execute("INSERT INTO square_payments(square_payment_id, square_order_id, customer_id, kind, amount_cents, created_at, processed_at) "
+                     "VALUES (?, 'O1', NULL, ?, 300, ?, ?)", (pid, kind, db.now_iso(), db.now_iso()))
+    conn.commit()
+    from fizzy import square
+    square.assign_customer(conn, "PAY1", conn.execute("SELECT * FROM customers WHERE id = 1").fetchone(), "t")
+    assert {r[0] for r in conn.execute("SELECT customer_id FROM square_payments")} == {1}
+    conn.close()
+
+
+def test_score_counts_write_offs_net_and_top_band_gets_the_full_limit(client):
+    conn = db.connect()
+    _customer()
+    for amt in (500, -500):
+        conn.execute("INSERT INTO tab_repayments(customer_id, amount_cents, method, note, staff, created_at) "
+                     "VALUES (1, ?, 'writeoff', '', 't', ?)", (amt, db.now_iso()))
+    sc = logic.tab_score(conn, 1)
+    assert not any("written off" in label for label, _ in sc["factors"])
+    conn.close()
+    assert logic.band_limit({"tab_limit_cents": 2525}, 1.0) == 2525
+    assert logic.band_limit({"tab_limit_cents": 2525}, 0.5) == 1250

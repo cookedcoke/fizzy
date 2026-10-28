@@ -6,6 +6,7 @@ Points for tab purchases are earned only when the tab is repaid.
 """
 from datetime import datetime, timedelta, timezone
 
+from . import config
 from .db import audit, get_setting, now_iso
 
 STATUS_LABELS = {
@@ -119,20 +120,35 @@ def _days_ago(ts, at):
     return (at - parse_ts(ts)).days
 
 
+def band_limit(cfg, share):
+    """A score band's limit: a share of the highest limit, rounded down to 50c (the top band gets all of it)."""
+    return cfg["tab_limit_cents"] if share >= 1 else int(cfg["tab_limit_cents"] * share) // 50 * 50
+
+
 def tab_score(conn, customer_id, ledger=None, spent=None, cfg=None, at=None):
     at = at or datetime.now(timezone.utc)
     cfg = cfg or settings(conn)
     ledger = ledger or tab_ledger(conn, customer_id, at)
     spent = spend_cents(conn, customer_id) if spent is None else spent
-    days, first = conn.execute(
-        "SELECT COUNT(DISTINCT substr(created_at, 1, 10)), MIN(created_at) FROM ("
-        "SELECT created_at FROM points_ledger WHERE customer_id = ? AND reason = 'purchase' AND delta > 0 "
-        "UNION ALL SELECT charged_at FROM tab_charges WHERE customer_id = ?)", (customer_id, customer_id)).fetchone()
+    seen = [parse_ts(r[0]) for r in conn.execute(
+        "SELECT created_at FROM ("
+        "SELECT p.created_at FROM points_ledger p WHERE p.customer_id = ? AND p.reason = 'purchase' AND p.delta > 0 "
+        "AND (p.square_payment_id IS NULL OR (SELECT SUM(q.delta) FROM points_ledger q WHERE q.square_payment_id = p.square_payment_id "
+        "AND q.reason IN ('purchase', 'refund')) > 0) "  # a fully refunded purchase isn't a visit
+        "UNION ALL SELECT charged_at FROM tab_charges WHERE customer_id = ?)", (customer_id, customer_id))]
+    days = len({t.astimezone(config.TZ).date() for t in seen})  # school days, not UTC ones
+    first = min(seen) if seen else None
     charges = [c for c in ledger["charges"] if c["net_cents"] > 0]
-    on_time = sum(1 for c in charges if c["unpaid_cents"] == 0 and not c["paid_late"])
-    late_recent = sum(1 for c in charges if (c["paid_late"] and _days_ago(c["settled_at"], at) <= 60) or c["overdue"])
+    # Paid on time: at most one a week, only real charges ($1+), and only ones actually paid off
+    # after the charge (not covered by credit on the spot), so tiny or prepaid charges can't farm it.
+    on_time = len({parse_ts(c["charged_at"]).isocalendar()[:2] for c in charges
+                   if c["unpaid_cents"] == 0 and not c["paid_late"] and c["net_cents"] >= 100
+                   and c["settled_at"] and parse_ts(c["settled_at"]) > parse_ts(c["charged_at"])})
+    late_recent = sum(1 for c in charges if c["paid_late"] and _days_ago(c["settled_at"], at) <= 60)  # overdue has its own line
     late_old = sum(1 for c in charges if c["paid_late"] and _days_ago(c["settled_at"], at) > 60)
-    writeoffs = sum(1 for r in ledger["repayments"] if r["method"] == "writeoff")
+    wo = [r["amount_cents"] for r in ledger["repayments"] if r["method"] == "writeoff"]
+    # Reversed write-offs (items returned) are negative rows; only what's still written off counts.
+    writeoffs = 0 if sum(wo) <= 0 else max(1, sum(1 for a in wo if a > 0) - sum(1 for a in wo if a < 0))
 
     f = [("Everyone starts at", 40)]
     if spent:
@@ -146,24 +162,26 @@ def tab_score(conn, customer_id, ledger=None, spent=None, cfg=None, at=None):
     if late_old:
         f.append((f"Paid late {late_old} time{'' if late_old == 1 else 's'} before that", -5 * late_old))
     if ledger["has_overdue"]:
-        f.append(("Has money overdue right now", -25))
+        f.append(("Money overdue right now", -25))
     if writeoffs:
         f.append((f"Had a debt written off{'' if writeoffs == 1 else f' {writeoffs} times'}", -15 * writeoffs))
-    if first is None or _days_ago(first, at) < 14:
+    if first is None or (at - first).days < 14:
         f.append(("New here (under 2 weeks)", -10))
     score = max(0, min(100, sum(p for _, p in f)))
     share = next(sh for floor, sh in SCORE_BANDS if score >= floor)
-    limit = int(cfg["tab_limit_cents"] * share) // 50 * 50
+    limit = band_limit(cfg, share)
     next_band = next(((floor, sh) for floor, sh in reversed(SCORE_BANDS) if floor > score), None)
     tips = []
     if ledger["has_overdue"]:
-        tips.append("Pay what's overdue - it's the biggest thing holding the score back.")
-    if on_time < 5:
+        tips.append("Pay what's overdue - it's the biggest thing holding it back.")
+    if charges and on_time < 5:
         tips.append("Pay tabs off before they're due.")
     if days < 15:
         tips.append("Keep coming back - every different day counts.")
+    if spent < 5000:
+        tips.append("Spending counts too, up to $50.")
     return {"score": score, "factors": f, "limit_cents": limit, "share": share, "tips": tips[:2],
-            "next": {"score": next_band[0], "limit_cents": int(cfg["tab_limit_cents"] * next_band[1]) // 50 * 50} if next_band else None,
+            "next": {"score": next_band[0], "limit_cents": band_limit(cfg, next_band[1])} if next_band else None,
             "ready": score >= cfg["tab_score_needed"]}
 
 
@@ -199,6 +217,7 @@ def tab_status(conn, customer, ledger=None, cfg=None):
         "score": sc,
         "score_needed": cfg["tab_score_needed"],
         "spent_enough": spent >= cfg["unlock_spend_cents"],
+        "due_days": cfg["tab_due_days"],
     }
 
 

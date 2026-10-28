@@ -4,6 +4,8 @@
 set -e
 # Only when something in them isn't fizzy's yet: going through every backup and receipt on every
 # start can take minutes on a big backup drive (and the updater waits for Fizzy to come back).
+# The Update button's note goes in /updates (sticky, so fizzy can only touch its own files there).
+[ -d /updates ] && chmod 1777 /updates 2>/dev/null
 for d in /data /backups; do
     mkdir -p "$d"
     if [ -n "$(find "$d" ! -user fizzy -print -quit 2>/dev/null)" ]; then

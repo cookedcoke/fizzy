@@ -4,7 +4,7 @@
   <a class="btn" href="/tools/export/audit_log.csv">Export all</a></div>
 <div class="panel"><div class="scroll"><table>
   <tr><th>When</th><th>Who</th><th>Action</th><th>Customer</th><th>Details</th></tr>
-  {% for a in rows %}<tr><td style="white-space:nowrap">{{ a.created_at|local('%a %-d %b %H:%M') }}</td><td>{{ a.staff }}</td><td title="{{ a.action }}">{{ a.action|action }}</td>
+  {% for a in rows %}<tr><td style="white-space:nowrap">{{ a.created_at|local('%a %-d %b') }}<br><span class="muted small">{{ a.created_at|local('%H:%M') }}</span></td><td>{{ a.staff }}</td><td title="{{ a.action }}">{{ a.action|action }}</td>
     <td>{% if a.customer_id %}<a href="/customers/{{ a.customer_id }}">{{ a.name }}</a>{% endif %}</td><td class="small details" title="{{ a.details }}">{{ a.details }}</td></tr>
   {% else %}<tr><td colspan="5" class="empty">Nothing yet.</td></tr>{% endfor %}
 </table></div></div>

@@ -1,6 +1,6 @@
 """Transactions: every Square checkout with who it was, what they got and what it did (points,
 tab), which Square's own list can't show. Plus tab money recorded by hand in Fizzy."""
-from datetime import timedelta
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -21,10 +21,13 @@ def transactions(request: Request, start: str = "", end: str = "", show: str = "
     t = stats.today()
     try:
         s, e = _period(start or t.isoformat(), end or t.isoformat())
-    except MoneyError:
+        s, e = max(s, date(2000, 1, 1)), min(e, date(9000, 1, 1))  # past these the time maths overflows
+        lo, _ = stats.day_bounds(s)
+        _, hi = stats.day_bounds(e)
+    except (MoneyError, OverflowError, ValueError):
         s, e = t, t
-    lo, _ = stats.day_bounds(s)
-    _, hi = stats.day_bounds(e)
+        lo, _ = stats.day_bounds(s)
+        _, hi = stats.day_bounds(e)
     rows = stats.checkouts(conn, lo, hi)
     pids = [p for r in rows for p in r["payment_ids"]]
     refunds, points = {}, {}
@@ -32,7 +35,8 @@ def transactions(request: Request, start: str = "", end: str = "", show: str = "
         chunk = pids[i:i + 500]
         marks = ",".join("?" * len(chunk))
         for pid, cents in conn.execute(f"SELECT square_payment_id, SUM(amount_cents) FROM square_refunds "
-                                       f"WHERE square_payment_id IN ({marks}) GROUP BY square_payment_id", chunk):
+                                       f"WHERE square_payment_id IN ({marks}) AND square_refund_id NOT LIKE 'return:%' "
+                                       f"GROUP BY square_payment_id", chunk):  # return:... rows are item returns, not money back
             refunds[pid] = cents
         for pid, pts in conn.execute(f"SELECT square_payment_id, SUM(delta) FROM points_ledger "
                                      f"WHERE square_payment_id IN ({marks}) GROUP BY square_payment_id", chunk):
@@ -48,13 +52,7 @@ def transactions(request: Request, start: str = "", end: str = "", show: str = "
                      "sale_cents": 0, "tab_cents": 0, "repay_cents": h["amount_cents"], "sold_cents": 0,
                      "tenders": [h["method"]], "refunded_cents": 0, "points": None, "payment_ids": [],
                      "source": "writeoff" if h["method"] == "writeoff" else "hand", "note": h["note"], "staff": h["staff"]})
-    totals = {
-        "count": sum(1 for r in rows if r["source"] == "square"),
-        "sold": sum(r["sold_cents"] for r in rows), "tab": sum(r["tab_cents"] for r in rows),
-        "repaid": sum(r["repay_cents"] for r in rows if r["source"] != "writeoff"),
-        "refunded": sum(r["refunded_cents"] for r in rows),
-        "nobody": sum(1 for r in rows if r["source"] == "square" and not r["customer_id"] and (r["sold_cents"] or r["repay_cents"])),
-    }
+    nobody = sum(1 for r in rows if r["source"] == "square" and not r["customer_id"] and (r["sold_cents"] or r["repay_cents"]))
     keep = {"sales": lambda r: r["sale_cents"], "tab": lambda r: r["tab_cents"], "repaid": lambda r: r["repay_cents"],
             "nobody": lambda r: r["source"] == "square" and not r["customer_id"]}.get(show)
     if keep:
@@ -63,6 +61,13 @@ def transactions(request: Request, start: str = "", end: str = "", show: str = "
     if needle:
         rows = [r for r in rows if needle in (r["customer"] or "no customer").lower()
                 or any(needle in i["name"].lower() for i in r["items"])]
+    totals = {  # of what the filters leave
+        "count": sum(1 for r in rows if r["source"] == "square"),
+        "sold": sum(r["sold_cents"] for r in rows), "tab": sum(r["tab_cents"] for r in rows),
+        "repaid": sum(r["repay_cents"] for r in rows if r["source"] != "writeoff"),
+        "refunded": sum(r["refunded_cents"] for r in rows),
+        "nobody": nobody,  # across the whole range, so "Show them" still makes sense when filtered
+    }
     rows.sort(key=lambda r: r["at"], reverse=True)
     people = conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
     quick = {"Today": (t, t), "Yesterday": (t - timedelta(days=1), t - timedelta(days=1)),

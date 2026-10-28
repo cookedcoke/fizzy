@@ -5,7 +5,7 @@
 
 {% if notice %}<div class="notice">{{ notice }}<a class="small" href="/tools#notice">Edit</a></div>{% endif %}
 {% if tabs_paused %}<div class="err">All tabs are paused. <a href="/tools#pause_tabs">Turn back on</a></div>{% endif %}
-{% if not square_on %}<div class="err">Square isn't connected, so points and tabs won't update by themselves. (Owner: set it up on the home PC, see the README.)</div>
+{% if not square_on %}<div class="err">Square isn't connected yet, so points and tabs won't update by themselves. Ask the owner.</div>
 {% elif sync_error %}<div class="err">Last Square sync failed: {{ sync_error }}</div>{% endif %}
 {% if not backup[0] %}<div class="err">{{ backup[1] }}</div>{% endif %}
 

@@ -502,6 +502,10 @@ def assign_customer(conn, square_payment_id, customer, staff):
     rows = conn.execute("SELECT * FROM square_payments WHERE square_payment_id IN (?, ?)", (base, f"{base}:sale")).fetchall()
     if not rows:
         raise ValueError("Fizzy hasn't seen that payment.")
+    order = next((r["square_order_id"] for r in rows if r["square_order_id"]), None)
+    if order:  # the rest of the same checkout (e.g. the tab charge from the order) moves with it
+        rows = conn.execute("SELECT * FROM square_payments WHERE square_payment_id IN (?, ?) OR square_order_id = ?",
+                            (base, f"{base}:sale", order)).fetchall()
     for sp in rows:
         if sp["customer_id"] is not None:
             undo_payment_effects(conn, sp)
