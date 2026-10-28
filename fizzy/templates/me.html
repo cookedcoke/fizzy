@@ -97,7 +97,7 @@
       {% for a in activity[:5] %}<li><span class="when">{{ a.at|local('%d %b') }}</span><span class="what">{{ a.what }}</span>
         <span class="amt {{ 'up' if a.points is not none and a.points > 0 }}">{% if a.points is not none %}{{ '{:+,}'.format(a.points) }} pts{% else %}{{ a.money|money }}{% endif %}</span></li>{% endfor %}
     </ul>
-    {% if activity[5:] %}<details class="more"><summary>Show more</summary><ul class="feed">
+    {% if activity[5:] %}<details class="more"><summary><span class="c">Show more</span><span class="o">Show less</span></summary><ul class="feed">
       {% for a in activity[5:] %}<li><span class="when">{{ a.at|local('%d %b') }}</span><span class="what">{{ a.what }}</span>
         <span class="amt {{ 'up' if a.points is not none and a.points > 0 }}">{% if a.points is not none %}{{ '{:+,}'.format(a.points) }} pts{% else %}{{ a.money|money }}{% endif %}</span></li>{% endfor %}
     </ul></details>{% endif %}{% else %}<p class="empty">Nothing yet - grab something at the stall to start earning points.</p>{% endif %}
@@ -122,7 +122,7 @@
       {% if not b.earned and b.count %}<div class="bar"><i style="width:{{ b.progress }}%"></i></div><small>{{ b.count }}</small>{% endif %}
     </div>{% endmacro %}
   <div class="badges">{% for b in got + todo[:2] %}{{ badge(b) }}{% endfor %}</div>
-  {% if todo[2:] %}<details class="more"><summary>See all {{ me.badges|length }} badges</summary>
+  {% if todo[2:] %}<details class="more"><summary><span class="c">See all {{ me.badges|length }} badges</span><span class="o">Show fewer</span></summary>
     <div class="badges">{% for b in todo[2:] %}{{ badge(b) }}{% endfor %}</div></details>{% endif %}
 
 </div></div>

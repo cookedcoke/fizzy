@@ -138,3 +138,15 @@ def test_archived_namesake_doesnt_hide_an_admin(rules):
     conn.execute("INSERT INTO customers(name, email, created_at, archived_at) VALUES (?, 'x@x', ?, ?)", (name, db.now_iso(), db.now_iso()))
     conn.commit()
     assert r("/tools/transfer_points", {"from": name, "to": "someone", "points": "5"}) == pin.OWNER
+
+
+def test_pin_stops_working_after_a_day_of_guessing(client, owner, monkeypatch):
+    conn = db.connect()
+    pin.set_pin(conn, "4821", "t")
+    import time as _t
+    db.set_setting(conn, "pin_wrong_day", f"{_t.strftime('%Y-%m-%d')}:{pin.DAY_LIMIT}")
+    conn.commit()
+    conn.close()
+    login(client)
+    assert client.post("/settings/pin/unlock", data={"pin": "4821", "need": 1}).json()["ok"] is False
+    assert client.post("/settings/pin/unlock", data={"pin": "owner-pw", "need": 1}).json()["ok"] is True

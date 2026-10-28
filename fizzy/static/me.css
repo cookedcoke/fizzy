@@ -176,6 +176,11 @@ details.more { margin-top: 10px }
 details.more > summary { cursor: pointer; color: var(--red-deep); font-weight: 650; font-size: 14px; list-style: none; padding: 4px 0 }
 details.more > summary::-webkit-details-marker { display: none }
 details.more[open] > summary { margin-bottom: 8px }
+details.more:not([open]) .o, details.more[open] .c { display: none }
+.pc-wrap { position: relative; margin-bottom: 14px }
+.pc-wrap input { padding-right: 64px }
+.pc-show { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--muted);
+           font: inherit; font-size: 13.5px; font-weight: 600; padding: 8px 10px; cursor: pointer }
 .section small.red { color: var(--red-deep); font-weight: 700 }
 a.go { display: block; box-sizing: border-box; text-align: center; text-decoration: none }
 .score { margin-top: 14px; border-top: 1px dashed var(--line, rgba(0,0,0,.12)); padding-top: 12px }

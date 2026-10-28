@@ -32,6 +32,7 @@ LEVELS = {"open": OPEN, "pin": PIN, "owner": OWNER}
 LEVEL_LABELS = {"open": "Anyone signed in", "pin": "PIN", "owner": "Owner only"}
 UNLOCK_SECONDS = {PIN: 600, OWNER: 300}
 FAIL_LIMIT, FAIL_LIMIT_ALL, FAIL_WINDOW = 5, 30, 600  # per browser, and across everyone
+DAY_LIMIT = 100  # wrong codes in a day before the PIN stops working until tomorrow (a 4-digit PIN has 10,000)
 _fails = {}
 
 # Never asked, whatever the settings say: signing in and out, the student site, devices joining.
@@ -368,6 +369,12 @@ def _fail(*keys):
         _fails.setdefault(k, []).append(now)
 
 
+def _wrong_today(conn):
+    day = time.strftime("%Y-%m-%d")
+    saved_day, _, n = (db.get_setting(conn, "pin_wrong_day", "") or "").partition(":")
+    return day, int(n) if saved_day == day and n.isdigit() else 0
+
+
 @router.post("/settings/pin/unlock")
 def unlock(request: Request, pin: str = Form(""), need: int = Form(PIN), who=Depends(staff), conn=Depends(get_conn)):
     now, me = time.time(), _browser(request)
@@ -375,9 +382,12 @@ def unlock(request: Request, pin: str = Form(""), need: int = Form(PIN), who=Dep
     # can keep the owner locked out by typing wrong codes from lots of browsers.
     if _recent(me, now) >= FAIL_LIMIT or (_recent("*", now) >= FAIL_LIMIT_ALL and not is_owner(pin)):
         return JSONResponse({"ok": False, "error": "Too many wrong tries. Wait 10 minutes."})
-    rank = OWNER if is_owner(pin) else PIN if check(conn, pin) else OPEN
+    day, wrong = _wrong_today(conn)
+    pin_ok = wrong < DAY_LIMIT and check(conn, pin)  # after that many, only the owner password works today
+    rank = OWNER if is_owner(pin) else PIN if pin_ok else OPEN
     if rank < max(need, PIN):  # a PIN where the owner's is needed is just a wrong passcode
         _fail(me, "*")
+        db.set_setting(conn, "pin_wrong_day", f"{day}:{wrong + 1}")  # kept in the database, so a restart doesn't reset it
         db.audit(conn, who, "passcode_wrong", None, "")
         conn.commit()
         left = FAIL_LIMIT - len(_fails[me])

@@ -10,7 +10,8 @@
     <label for="who">Your name or student number</label>
     <input id="who" type="text" name="who" value="{{ who }}" autocomplete="username" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="next" required {{ 'autofocus' if not who }}>
     <label for="pc">Passcode</label>
-    <input id="pc" type="password" name="passcode" autocomplete="current-password" enterkeyhint="go" required {{ 'autofocus' if who }}>
+    <div class="pc-wrap"><input id="pc" type="password" name="passcode" autocomplete="current-password" enterkeyhint="go" required {{ 'autofocus' if who }}>
+      <button class="pc-show" type="button" aria-controls="pc" hidden>Show</button></div>
     <button class="go" type="submit">Let me in</button>
   </form>
   <script>/* One tap, one try: a second tap while it's checking would count as another wrong guess. */
@@ -19,6 +20,11 @@
       f.addEventListener("submit", function (e) {
         if (b.getAttribute("aria-busy")) { e.preventDefault(); return; }
         b.setAttribute("aria-busy", "true"); b.textContent = "Checking...";
+      });
+      var pc = document.getElementById("pc"), show = f.querySelector(".pc-show");
+      show.hidden = false;  /* typos count as wrong tries, so let them check what they typed */
+      show.addEventListener("click", function () {
+        var hide = pc.type === "text"; pc.type = hide ? "password" : "text"; show.textContent = hide ? "Show" : "Hide"; pc.focus();
       });
       addEventListener("pageshow", function () { b.removeAttribute("aria-busy"); b.textContent = "Let me in"; });
     })();
