@@ -117,3 +117,24 @@ def test_score_counts_write_offs_net_and_top_band_gets_the_full_limit(client):
     conn.close()
     assert logic.band_limit({"tab_limit_cents": 2525}, 1.0) == 2525
     assert logic.band_limit({"tab_limit_cents": 2525}, 0.5) == 1250
+
+
+def test_odd_ids_dont_dodge_the_rules(client, owner):
+    login(client)
+    _customer()
+    for bad in ("+1", "%201", "1.0", "1_0"):
+        r = client.post(f"/customers/{bad}/kind", data={"kind": "admin"}, follow_redirects=False)
+        assert r.status_code == 404, bad
+    conn = db.connect()
+    assert conn.execute("SELECT kind FROM customers WHERE id = 1").fetchone()[0] != "admin"
+    conn.close()
+
+
+def test_archived_namesake_doesnt_hide_an_admin(rules):
+    conn, r = rules
+    _customer()
+    conn.execute("UPDATE customers SET kind = 'admin' WHERE id = 1")
+    name = conn.execute("SELECT name FROM customers WHERE id = 1").fetchone()[0]
+    conn.execute("INSERT INTO customers(name, email, created_at, archived_at) VALUES (?, 'x@x', ?, ?)", (name, db.now_iso(), db.now_iso()))
+    conn.commit()
+    assert r("/tools/transfer_points", {"from": name, "to": "someone", "points": "5"}) == pin.OWNER

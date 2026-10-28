@@ -379,6 +379,8 @@ def h_write_off(request, conn, who, form):
 def h_extend_due(request, conn, who, form):
     c = resolve(conn, form.get("customer"))
     days = _int(form, "days", 1)
+    if days > 120:
+        raise ToolError("That's too long. Give at most 120 days.")
     led = logic.tab_ledger(conn, c["id"])
     open_ids = [ch["id"] for ch in led["charges"] if ch["unpaid_cents"] > 0]
     if not open_ids:

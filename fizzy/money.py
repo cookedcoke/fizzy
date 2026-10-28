@@ -220,12 +220,12 @@ async def restock_add(request: Request, who=Depends(staff), conn=Depends(get_con
                 os.remove(os.path.join(receipts_dir(), receipt))
             raise
     except MoneyError as e:
-        return back(request, "/money#restock", str(e))
+        return back(request, "/money#restock", str(e), "bad")
     conn.commit()
     return back(request, "/money", "Restock saved.")
 
 
-@router.post("/money/restock/{rid}/delete")
+@router.post("/money/restock/{rid:int}/delete")
 def restock_delete(request: Request, rid: int, who=Depends(staff), conn=Depends(get_conn)):
     delete_restock(conn, rid, who)
     conn.commit()
@@ -259,12 +259,12 @@ async def payout_add(request: Request, who=Depends(staff), conn=Depends(get_conn
         for p, a in rows:
             add_payout(conn, day, p, a, form.get("note"), who)
     except MoneyError as e:
-        return back(request, "/money#payout", str(e))
+        return back(request, "/money#payout", str(e), "bad")
     conn.commit()
     return back(request, "/money", f"Recorded {len(rows)} payout{'' if len(rows) == 1 else 's'}.")
 
 
-@router.post("/money/payout/{pid}/delete")
+@router.post("/money/payout/{pid:int}/delete")
 def payout_delete(request: Request, pid: int, who=Depends(staff), conn=Depends(get_conn)):
     delete_payout(conn, pid, who)
     conn.commit()

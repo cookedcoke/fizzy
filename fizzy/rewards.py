@@ -177,7 +177,7 @@ def rewards_create(request: Request, name: str = Form(""), points: str = Form(""
         cost = _int_or_none(points)
         create(conn, name, cost or 0, square_note, _int_or_none(limit), who)
     except RewardError as e:
-        return back(request, "/rewards", str(e))
+        return back(request, "/rewards", str(e), "bad")
     conn.commit()
     if announce:
         lim = _int_or_none(limit)
@@ -186,14 +186,14 @@ def rewards_create(request: Request, name: str = Form(""), points: str = Form(""
     return back(request, "/rewards", f"“{' '.join(name.split())}” is on.")
 
 
-@router.post("/rewards/{reward_id}/end")
+@router.post("/rewards/{reward_id:int}/end")
 def rewards_end(request: Request, reward_id: int, who=Depends(staff), conn=Depends(get_conn)):
     end(conn, reward_id, who)
     conn.commit()
     return back(request, "/rewards", "Reward ended. Its history is kept below.")
 
 
-@router.post("/customers/{cid}/redeem/{reward_id}")
+@router.post("/customers/{cid:int}/redeem/{reward_id:int}")
 def customer_redeem(request: Request, cid: int, reward_id: int, who=Depends(staff), conn=Depends(get_conn)):
     c = conn.execute("SELECT * FROM customers WHERE id = ?", (cid,)).fetchone()
     if c is None:
@@ -202,19 +202,19 @@ def customer_redeem(request: Request, cid: int, reward_id: int, who=Depends(staf
         redeem(conn, reward_id, c, who)
     except RewardError as e:
         conn.rollback()
-        return back(request, f"/customers/{cid}", str(e))
+        return back(request, f"/customers/{cid}", str(e), "bad")
     conn.commit()
     r = conn.execute("SELECT * FROM rewards WHERE id = ?", (reward_id,)).fetchone()
     todo = f" In Square: {r['square_note']}." if r["square_note"] else ""
     return back(request, f"/customers/{cid}", f"Redeemed {r['name']} (-{r['points_cost']} points).{todo}")
 
 
-@router.post("/redemptions/{rid}/undo")
+@router.post("/redemptions/{rid:int}/undo")
 def redemption_undo(request: Request, rid: int, who=Depends(staff), conn=Depends(get_conn)):
     try:
         cid = undo(conn, rid, who)
     except RewardError as e:
         conn.rollback()
-        return back(request, request.headers.get("referer") or "/rewards", str(e))
+        return back(request, request.headers.get("referer") or "/rewards", str(e), "bad")
     conn.commit()
     return back(request, f"/customers/{cid}", "Redemption undone - points given back.")

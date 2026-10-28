@@ -176,6 +176,8 @@ def tab_score(conn, customer_id, ledger=None, spent=None, cfg=None, at=None):
         tips.append("Pay what's overdue - it's the biggest thing holding it back.")
     if charges and on_time < 5:
         tips.append("Pay tabs off before they're due.")
+    if first is None or (at - first).days < 14:
+        tips.append("The new-here -10 goes by itself after your first 2 weeks.")
     if days < 15:
         tips.append("Keep coming back - every different day counts.")
     if spent < 5000:

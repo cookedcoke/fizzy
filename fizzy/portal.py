@@ -142,7 +142,7 @@ def candidates(conn, who):
     apostrophes, hyphens, accents, surname first, middle names left out, a typo or two), but
     it never lists or suggests names: the passcode still has to be right, and the reply is the
     same either way. A student number must be exact."""
-    typed = _letters(who)
+    typed = _letters(who.split("@")[0] if "@" in who else who)  # a whole school email works too
     if len(typed) < 3:
         return []
     rows = conn.execute("SELECT * FROM customers WHERE archived_at IS NULL AND merged_into IS NULL "
@@ -151,7 +151,8 @@ def candidates(conn, who):
     full, partial, cap, best, at_best = [], [], _allowed_typos(typed), None, []
     for r in rows:
         keys = _name_keys(r["name"])
-        if typed == _letters(r["email"].split("@")[0]) or typed == _letters(r["name"]) or typed == _letters("".join(reversed(r["name"].split()))):
+        number = _letters(r["email"].split("@")[0])
+        if typed in (number, number.removeprefix("rns")) or typed == _letters(r["name"]) or typed == _letters("".join(reversed(r["name"].split()))):
             full.append(r)
         elif typed in keys:
             partial.append(r)  # matched without middle names
@@ -278,10 +279,16 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
         await asyncio.sleep(FAIL_DELAY)
         return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
                      error="That name and passcode don't match. No passcode yet? Ask at the Cooked Coke stall.")
-    for k, _ in buckets:
-        if k[0] != "ip" and now in _fails.get(k, []):
+    for k, _ in buckets:  # right in the end, so it doesn't count (the school shares one network)
+        if now in _fails.get(k, []):
             _fails[k].remove(now)
     request.session["me"] = {"id": c["id"], "v": _session_marker(c), "at": int(now)}
+    return RedirectResponse(_url("/"), status_code=303)
+
+
+@router.get("/me/login")
+def login_page_again():
+    """Reloading after a sign-in (or the down page coming back) lands here: back to the start."""
     return RedirectResponse(_url("/"), status_code=303)
 
 
@@ -371,7 +378,7 @@ def month_start():
 
 # ---- staff side -------------------------------------------------------------------------------
 
-@router.post("/customers/{cid}/passcode/reveal")
+@router.post("/customers/{cid:int}/passcode/reveal")
 def staff_reveal_passcode(cid: int, who=Depends(staff), conn=Depends(get_conn)):
     """A student's passcode, for staff to read out when they've forgotten it. Only fetched when
     staff press Show (never sitting in the page), and every look is logged."""
@@ -384,7 +391,7 @@ def staff_reveal_passcode(cid: int, who=Depends(staff), conn=Depends(get_conn)):
     return JSONResponse({"passcode": code}, headers={"Cache-Control": "no-store"})
 
 
-@router.post("/customers/{cid}/passcode")
+@router.post("/customers/{cid:int}/passcode")
 def staff_set_passcode(request: Request, cid: int, passcode: str = Form(""), remove: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
     c = conn.execute("SELECT * FROM customers WHERE id = ?", (cid,)).fetchone()
     if c is None:
@@ -396,7 +403,7 @@ def staff_set_passcode(request: Request, cid: int, passcode: str = Form(""), rem
         try:
             set_passcode(conn, c, passcode, who)
         except ValueError as e:
-            request.session["flash"] = str(e)
+            request.session["flash"], request.session["flash_kind"] = str(e), "bad"
             return RedirectResponse(f"/customers/{cid}", status_code=303)
         site = config.PUBLIC_HOST or "the student site"
         msg = f"Passcode set. {c['name'].split(' ')[0]} can log in at {site}."

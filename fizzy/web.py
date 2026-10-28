@@ -77,13 +77,16 @@ def get_conn():
 
 
 def session_gen(conn):
-    """Bumped by the "sign everyone out" tool; sessions from an older generation are rejected."""
-    return db.get_setting(conn, "session_gen", "0")
+    """Bumped by the "sign everyone out" tool; sessions from an older generation are rejected.
+    Changing FIZZY_PASSWORD signs everyone out too."""
+    pw = hashlib.sha256(f"{config.SECRET_KEY}:{config.PASSWORD}".encode()).hexdigest()[:12]
+    return f'{db.get_setting(conn, "session_gen", "0")}:{pw}'
+
 
 
 def staff(request: Request):
     name = request.session.get("staff")
-    if not request.session.get("auth") or not name:
+    if not request.session.get("auth") or name not in config.STAFF_NAMES:  # also anyone taken off FIZZY_STAFF
         raise LoginRequired()
     conn = db.connect()
     try:
@@ -99,6 +102,7 @@ def render(request, name, **ctx):
     ctx.setdefault("staff", request.session.get("staff"))
     ctx["staff_names"] = config.STAFF_NAMES
     ctx["flash"] = request.session.pop("flash", None)
+    ctx["flash_kind"] = request.session.pop("flash_kind", "ok")
     if request.session.get("auth"):
         from . import pin
         conn = db.connect()
@@ -111,9 +115,10 @@ def render(request, name, **ctx):
     return templates.TemplateResponse(request, name, ctx)
 
 
-def back(request, url, msg=None):
+def back(request, url, msg=None, kind="ok"):
+    """Redirect with a message for the next page. kind "bad" shows it as a problem."""
     if msg:
-        request.session["flash"] = msg
+        request.session["flash"], request.session["flash_kind"] = msg, kind
     return RedirectResponse(url, status_code=303)
 
 

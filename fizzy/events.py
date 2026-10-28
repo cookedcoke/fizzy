@@ -63,6 +63,10 @@ def create(conn, name, multiplier, start, end, staff_name):
         raise EventError("Pick today or a day in the future. (For past days, use Tools - Bonus points for a period.)")
     if (e - s).days > 60:
         raise EventError("That's more than 60 days - split it up.")
+    clash = conn.execute("SELECT name FROM points_events WHERE ended_at IS NULL AND start_date <= ? AND end_date >= ?",
+                         (e.isoformat(), s.isoformat())).fetchone()
+    if clash:  # stacked ones multiply up (four double days would be 5x points)
+        raise EventError(f"{clash['name']} is already on for some of those days. End it first, or pick other days.")
     cur = conn.execute("INSERT INTO points_events(name, multiplier, start_date, end_date, created_by, created_at) "
                        "VALUES (?, ?, ?, ?, ?, ?)", (name, mult, s.isoformat(), e.isoformat(), staff_name, now_iso()))
     audit(conn, staff_name, "points_event", None, f"{name} x{mult:g}, {s} to {e}")
@@ -196,21 +200,21 @@ def events_create(request: Request, name: str = Form(""), multiplier: str = Form
             create(conn, name, multiplier, start, end, who)
         reconcile(conn)
     except EventError as e:
-        return back(request, "/rewards#events", str(e))
+        return back(request, "/rewards#events", str(e), "bad")
     conn.commit()
     if announce:
         discord.announce(*announcement(name, multiplier, start, end, weekly))
     return back(request, "/rewards#events", "Done. Extra points get added by themselves.")
 
 
-@router.post("/events/{event_id}/cancel")
+@router.post("/events/{event_id:int}/cancel")
 def events_cancel(request: Request, event_id: int, who=Depends(staff), conn=Depends(get_conn)):
     msg = cancel(conn, event_id, who)
     conn.commit()
     return back(request, "/rewards#events", msg)
 
 
-@router.post("/events/rules/{rule_id}/stop")
+@router.post("/events/rules/{rule_id:int}/stop")
 def rules_stop(request: Request, rule_id: int, who=Depends(staff), conn=Depends(get_conn)):
     msg = stop_rule(conn, rule_id, who)
     conn.commit()

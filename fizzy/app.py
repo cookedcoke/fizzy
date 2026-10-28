@@ -363,11 +363,20 @@ ERRORS = {
 }
 
 
+STUDENT_ERRORS = {  # no talk of logs or home PCs on the student site
+    400: ("That didn't work", "Go back and try again."),
+    403: ("Can't open that", "That page isn't for you."),
+    404: ("Page not found", "That page doesn't exist."),
+    500: ("Something went wrong", "Something went wrong on our end. Try again in a minute."),
+}
+
+
 def error_page(request, status, message=None):
     heading, default = ERRORS.get(status, ERRORS[400] if status < 500 else ERRORS[500])
     if getattr(request.state, "public", False) or request.url.path == "/me" or request.url.path.startswith("/me/"):
         home = "/" if getattr(request.state, "public", False) else "/me"
-        response = templates.TemplateResponse(request, "me_error.html", {"heading": heading, "message": message or default,
+        heading, default = STUDENT_ERRORS.get(status, STUDENT_ERRORS[400] if status < 500 else STUDENT_ERRORS[500])
+        response = templates.TemplateResponse(request, "me_error.html", {"heading": heading, "message": message if status < 500 and message else default,
                                                                           "home": home}, status_code=status)
     else:
         response = render(request, "error.html", heading=heading, message=message or default, home="/")
@@ -390,14 +399,14 @@ def register(app):
         """A missing or garbled form field: back to the form with a note, not a page of JSON."""
         ref = _same_site_referer(request)
         if request.method == "POST" and ref:
-            return back(request, ref, "Something in that form was missing or not a proper number. Check it and try again.")
+            return back(request, ref, "Something in that form was missing or not a proper number. Check it and try again.", "bad")
         return error_page(request, 400)
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(request, exc):
         ref = _same_site_referer(request)
         if exc.status_code == 400 and request.method == "POST" and ref and isinstance(exc.detail, str):
-            return back(request, ref, exc.detail)  # a typo in a form: back to it with what was wrong
+            return back(request, ref, exc.detail, "bad")  # a typo in a form: back to it with what was wrong
         detail = exc.detail if isinstance(exc.detail, str) and exc.detail not in ("Not Found", "Method Not Allowed") else None
         return error_page(request, exc.status_code, detail if exc.status_code != 404 else None)
 
@@ -410,8 +419,8 @@ def register(app):
     async def _need_pin(request, exc):
         msg = "Enter the passcode first. Nothing was changed."
         if request.method == "GET":
-            return back(request, "/tools", msg)
-        return back(request, _same_site_referer(request) or "/", msg)
+            return back(request, "/tools", msg, "bad")
+        return back(request, _same_site_referer(request) or "/", msg, "bad")
 
     @app.exception_handler(LoginRequired)
     async def _login_redirect(request, exc):
@@ -640,7 +649,7 @@ def register(app):
             conn.close()
         return back(request, request.headers.get("referer") or "/profit", f"Saved {changed} cost(s)." if changed else "No changes.")
 
-    @app.post("/breach/{charge_id}/ack")
+    @app.post("/breach/{charge_id:int}/ack")
     def ack_breach(request: Request, charge_id: int, who=Depends(staff), conn=Depends(get_conn)):
         conn.execute("UPDATE tab_charges SET breach_ack_by = ? WHERE id = ?", (who, charge_id))
         db.audit(conn, who, "breach_ack", None, f"charge #{charge_id}")
@@ -705,7 +714,7 @@ def register(app):
             raise HTTPException(404, "No such customer")
         return c
 
-    @app.get("/customers/{cid}", response_class=HTMLResponse)
+    @app.get("/customers/{cid:int}", response_class=HTMLResponse)
     def customer_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
         c = load_customer(conn, cid)
         s = logic.customer_summary(conn, c)
@@ -731,7 +740,7 @@ def register(app):
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
                       passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None)
 
-    @app.get("/customers/{cid}/claim", response_class=HTMLResponse)
+    @app.get("/customers/{cid:int}/claim", response_class=HTMLResponse)
     def claim_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
         """Pick the sale just rung up in Square (with no customer) and give it to this customer."""
         c = load_customer(conn, cid)
@@ -743,7 +752,7 @@ def register(app):
         return render(request, "claim.html", c=c, checkouts=square.unclaimed(conn), note=note, st=logic.tab_status(conn, c),
                       hours=square.CLAIM_HOURS, square_on=bool(config.SQUARE_TOKEN))
 
-    @app.get("/api/customers/{cid}/new-sales")
+    @app.get("/api/customers/{cid:int}/new-sales")
     def new_sales(cid: int, since: str = "", who=Depends(staff), conn=Depends(get_conn)):
         """For the "new sale - claim it?" prompt on a customer's page: unclaimed sales that came in
         after `since` (when the page was opened, less a little slack), newest first."""
@@ -761,17 +770,17 @@ def register(app):
                         "tab_warning": bool(k["tab_cents"]) and (not st["can_charge"] or k["tab_cents"] > st["available_cents"])})
         return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
-    @app.post("/customers/{cid}/claim")
+    @app.post("/customers/{cid:int}/claim")
     def claim(request: Request, cid: int, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
         c = load_customer(conn, cid)
         try:
             square.claim(conn, key, c, who)
         except ValueError as e:
-            return back(request, f"/customers/{cid}/claim", str(e))
+            return back(request, f"/customers/{cid}/claim", str(e), "bad")
         conn.commit()
         return back(request, f"/customers/{cid}", f"Sale claimed for {c['name']}.")
 
-    @app.post("/customers/{cid}/repay")
+    @app.post("/customers/{cid:int}/repay")
     def repay(request: Request, cid: int, amount: str = Form(...), method: str = Form(...), note: str = Form(""),
               confirm_dup: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         load_customer(conn, cid)
@@ -790,11 +799,11 @@ def register(app):
         try:
             logic.add_repayment(conn, cid, amt, method, note, who)
         except ValueError as e:
-            return back(request, f"/customers/{cid}", str(e))
+            return back(request, f"/customers/{cid}", str(e), "bad")
         conn.commit()
         return back(request, f"/customers/{cid}", f"Recorded {money(amt)} repayment ({method}).")
 
-    @app.post("/customers/{cid}/points")
+    @app.post("/customers/{cid:int}/points")
     def points(request: Request, cid: int, delta: str = Form(""), note: str = Form(""), who=Depends(staff),
                conn=Depends(get_conn)):
         load_customer(conn, cid)
@@ -802,11 +811,11 @@ def register(app):
             delta = logic.whole_points(delta)
             logic.adjust_points(conn, cid, delta, note, who)
         except ValueError as e:
-            return back(request, f"/customers/{cid}", str(e))
+            return back(request, f"/customers/{cid}", str(e), "bad")
         conn.commit()
         return back(request, f"/customers/{cid}", f"Points {delta:+d}.")
 
-    @app.post("/customers/{cid}/tab")
+    @app.post("/customers/{cid:int}/tab")
     def tab_decision(request: Request, cid: int, decision: str = Form(...), note: str = Form(""),
                      who=Depends(staff), conn=Depends(get_conn)):
         load_customer(conn, cid)
@@ -817,7 +826,7 @@ def register(app):
         conn.commit()
         return back(request, f"/customers/{cid}", f"Tab {decision} saved.")
 
-    @app.post("/customers/{cid}/kind")
+    @app.post("/customers/{cid:int}/kind")
     def set_kind(request: Request, cid: int, kind: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         c = load_customer(conn, cid)
         kind = kind if kind in ("admin", "test") else None
@@ -827,7 +836,7 @@ def register(app):
         label = {"admin": "an admin account", "test": "a test account", None: "a normal customer"}[kind]
         return back(request, f"/customers/{cid}", f"{c['name']} is now {label}.")
 
-    @app.post("/customers/{cid}/edit")
+    @app.post("/customers/{cid:int}/edit")
     def edit_customer(request: Request, cid: int, name: str = Form(...), square_customer_id: str = Form(""),
                       archived: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         c = load_customer(conn, cid)
@@ -917,7 +926,7 @@ def register(app):
             c = tools.resolve(conn, customer)
             square.assign_customer(conn, pid, c, who)
         except (tools.ToolError, ValueError) as e:
-            return back(request, request.headers.get("referer") or "/square", str(e))
+            return back(request, request.headers.get("referer") or "/square", str(e), "bad")
         conn.commit()
         return back(request, request.headers.get("referer") or "/square", f"Assigned to {c['name']}.")
 
@@ -1026,12 +1035,12 @@ def register(app):
         try:
             link = devices.create_link(conn, name, who)
         except ValueError as e:
-            return back(request, "/settings#devices", str(e))
+            return back(request, "/settings#devices", str(e), "bad")
         conn.commit()
         request.session["new_device_link"] = link
         return back(request, "/settings#devices")
 
-    @app.post("/settings/devices/{device_id}/revoke")
+    @app.post("/settings/devices/{device_id:int}/revoke")
     def device_revoke(request: Request, device_id: int, who=Depends(staff), conn=Depends(get_conn)):
         devices.revoke(conn, device_id, who)
         conn.commit()
@@ -1042,7 +1051,7 @@ def register(app):
         try:
             request.session["pk_add_options"] = passkeys.register_options(conn, request, name)
         except passkeys.PasskeyError as e:
-            return back(request, "/settings#passkeys", str(e))
+            return back(request, "/settings#passkeys", str(e), "bad")
         return back(request, "/settings#passkeys")
 
     @app.post("/settings/passkeys/finish")
@@ -1050,11 +1059,11 @@ def register(app):
         try:
             name = passkeys.register(conn, request, credential, who)
         except (passkeys.PasskeyError, ValueError) as e:
-            return back(request, "/settings#passkeys", str(e) if isinstance(e, passkeys.PasskeyError) else "That didn't work. Try again.")
+            return back(request, "/settings#passkeys", str(e) if isinstance(e, passkeys.PasskeyError) else "That didn't work. Try again.", "bad")
         conn.commit()
         return back(request, "/settings#passkeys", f"Added {name}. You can sign in with it now.")
 
-    @app.post("/settings/passkeys/{key_id}/remove")
+    @app.post("/settings/passkeys/{key_id:int}/remove")
     def passkey_remove(request: Request, key_id: int, who=Depends(staff), conn=Depends(get_conn)):
         passkeys.remove(conn, key_id, who)
         conn.commit()

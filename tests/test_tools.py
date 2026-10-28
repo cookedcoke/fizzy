@@ -1,3 +1,4 @@
+import re
 from fizzy import db, logic, tools
 from tests.test_app import client, login  # noqa: F401  (fixture)
 
@@ -16,7 +17,8 @@ def conn_():
 
 def flash(client):
     r = client.get("/tools")
-    return r.text.split('<div class="flash">')[1].split("</div>")[0] if 'class="flash"' in r.text else ""
+    m = re.search(r'<div class="flash[^"]*"[^>]*>(.*?)</div>', r.text, re.S)
+    return m.group(1) if m else ""
 
 
 def post(client, tool, **data):

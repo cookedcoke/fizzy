@@ -65,7 +65,7 @@ ACTIONS = [
      [("POST", r"^/tools/(reset_points|revoke_all|approve_eligible|pause_tabs|bonus_points|bulk_archive|restore|merge"
                r"|resync|sign_out_all|delete_test_accounts)$")], "owner"),
     ("downloads", "Download exports and backups",
-     [("GET", r"^/tools/(export/|backup\.db)"), ("POST", r"^/tools/download_backup$")], "owner"),
+     [("GET", r"^/tools/(export/|backup\.db)"), ("GET", r"^/export/"), ("POST", r"^/tools/download_backup$")], "owner"),
     ("other_tools", "Other tools: reports, raffle, noticeboard, find a payment", [("POST", r"^/tools/")], "pin"),
     ("import", "Import the school list", [("POST", r"^/import$")], "owner"),
     ("settings", "Settings: tab rules and devices", [("POST", r"^/settings")], "owner"),
@@ -75,7 +75,7 @@ ACTIONS = [
 ]
 OTHER = "pin"  # anything not listed (new pages) until it's given its own row
 # A points or money change by hand bigger than these needs the "big" level, whatever its row says.
-BIG_PATHS = r"^/(customers/\d+/(points|repay)|tools/)"
+BIG_PATHS = r"^/(customers/\d+/(points|repay)|tools/|money/(restock|payout)$)"
 DEFAULTS = {"big_points": 500, "big_dollars": 50, "big": "owner"}
 
 
@@ -204,6 +204,8 @@ def required(conn, method, path, form=None):
         people = max(1, len([x for x in re.split(r"[\n;]+", form.get("people") or "") if x.strip()]))
         big = (form.get("everyone") or _number(form.get("delta")) * people > perms["big_points"]
                or _number(form.get("points")) > perms["big_points"] or _number(form.get("amount")) > perms["big_dollars"])
+        if path == "/tools/extend_due" and _number(form.get("days") or 1) > 30:
+            big = True  # months more to pay is nearly a write-off
         if path == "/tools/write_off" and not (form.get("amount") or "").strip():
             big = True  # blank means "everything they owe", whatever that is
         if payment and (payment["tab"] or payment["cents"] > perms["big_dollars"] * 100):
@@ -255,24 +257,37 @@ def _targets(conn, path, form):
     if form is not None and path.startswith("/tools/"):
         from . import tools
         complete = complete and bool(re.search(PRECISE_TOOLS, path)) and not form.get("everyone") and not form.get("all")
+        archived = path == "/tools/restore"  # look names up the same way the tool will
         for k in ("customer", "from", "to", "keep", "dup"):
             if form.get(k):
                 try:
-                    ids.add(tools.resolve(conn, form[k], True)["id"])
+                    ids.add(tools.resolve(conn, form[k], archived)["id"])
                 except Exception:  # not found / ambiguous: the tool itself says so
                     complete = False
+                    ids |= _same_name(conn, form[k])  # so an admin among them still counts
         if form.get("people"):
             try:
-                found, missing = tools.resolve_many(conn, form["people"], True)
+                found, missing = tools.resolve_many(conn, form["people"], archived)
                 ids |= {c["id"] for c in found}
                 complete = complete and not missing
             except Exception:
                 complete = False
+            if not complete:
+                for line in re.split(r"[\n;]+", form["people"]):
+                    ids |= _same_name(conn, line)
     if not ids:
         return [], False
     marks = ",".join("?" * len(ids))
     kinds = [r[0] for r in conn.execute(f"SELECT kind FROM customers WHERE id IN ({marks})", tuple(ids))]
     return kinds, complete and len(kinds) == len(ids)  # an id that doesn't exist isn't "all test accounts"
+
+
+def _same_name(conn, typed):
+    """Everyone a typed name could mean, archived or not."""
+    name = " ".join((typed or "").split()).lower()
+    if not name:
+        return set()
+    return {r[0] for r in conn.execute("SELECT id FROM customers WHERE lower(name) = ? OR lower(email) = ?", (name, name))}
 
 
 def customer_level(conn, kind, base):
@@ -380,7 +395,7 @@ def change(request: Request, new: str = Form(""), remove: str = Form(""), who=De
     try:
         pin = "" if remove else validate_new(new)
     except ValueError as e:
-        return back(request, "/settings#pin", str(e))
+        return back(request, "/settings#pin", str(e), "bad")
     set_pin(conn, pin, who)
     conn.commit()
     if pin and unlocked(request, conn) < PIN:

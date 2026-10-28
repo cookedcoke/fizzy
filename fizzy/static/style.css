@@ -294,8 +294,8 @@ label.check > input { display: inline-block; margin-top: 0 }
 
 /* The hidden attribute must win over component display rules (e.g. button { display: inline-flex }). */
 [hidden] { display: none !important }
-@media (max-width: 1240px) { header nav a { padding: 0 9px } .hsearch { flex-basis: 170px; min-width: 120px } }
-@media (max-width: 1100px) { header nav a { padding: 0 7px } .hsearch { flex-basis: 140px } header { gap: var(--s3) } }
+@media (max-width: 1240px) { header nav a { padding: 0 9px } }
+@media (max-width: 1100px) { header nav a { padding: 0 7px } header { gap: var(--s3) } }
 /* When the nav doesn't fit, fade whichever edge has more tabs past it (classes set in base.html). */
 header nav.more-r { -webkit-mask-image: linear-gradient(90deg, #000 80%, transparent); mask-image: linear-gradient(90deg, #000 80%, transparent) }
 header nav.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%); mask-image: linear-gradient(90deg, transparent, #000 20%) }
@@ -339,7 +339,7 @@ header nav.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparen
 .clock .d { color: #8B919B; font-weight: 400; font-size: 12px }
 @media (min-width: 1100px) { .clock { display: inline-flex } }
 @media (max-width: 1439px) { .clock .d { display: none } }
-@media (max-width: 1400px) { .hsearch { flex-basis: 180px } }
+
 input.cost { width: 110px; height: 30px; text-align: right; font-variant-numeric: tabular-nums }
 input.cost.missing { border-color: #EBD08A; background: var(--warn-wash) }
 /* Money page */
@@ -499,3 +499,58 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 .daterange { display: inline-flex; gap: var(--s2); flex-wrap: nowrap }
 .daterange input { min-width: 0; width: 140px }
 @media (max-width: 480px) { .daterange { width: 100% } .daterange input { flex: 1; width: auto } .period .btn { flex: 1 1 auto } }
+
+/* Header search: under 1600px it folds down to a magnifier so all the tabs fit, and opens over
+   the tabs when clicked or when / or S is pressed. */
+@media (min-width: 721px) and (max-width: 1599px) {
+  .hsearch { flex: 0 0 34px; min-width: 34px; height: 32px }
+  .hsearch input { position: absolute; right: 0; top: 0; width: 34px; padding: 0 0 0 32px; cursor: pointer; color: transparent;
+    background: #22252B url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23C9CDD3' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 9px center / 16px;
+    transition: width .18s ease, background-color .18s }
+  .hsearch input::placeholder { color: transparent }
+  .hsearch input:focus { width: 280px; cursor: text; color: var(--fg); background-color: #fff; z-index: 16 }
+  .hsearch input:focus::placeholder { color: var(--faint) }
+  .hsearch input::-webkit-search-cancel-button { display: none }
+}
+@media (prefers-reduced-motion: reduce) { .hsearch input { transition: none } }
+
+/* ---- polish pass ---- */
+.flash.ok { border-color: #B5DEC3; border-left-color: var(--ok); background: var(--ok-wash) }
+.flash.bad { border-color: #F3C2C2; border-left-color: var(--red); background: var(--red-wash); color: var(--red-ink) }
+.flash { animation: flash-in .22s ease-out }
+@keyframes flash-in { from { opacity: 0; transform: translateY(-4px) } }
+@media (prefers-reduced-motion: reduce) { .flash { animation: none } }
+/* Search results: names stay on one line; on phones the facts wrap under them. */
+.results .nm { white-space: nowrap }
+@media (max-width: 720px) {
+  .results a.hit { flex-wrap: wrap; row-gap: 4px }
+  .results .facts { flex-wrap: wrap; white-space: normal; font-size: 12.5px; gap: 6px 10px }
+}
+/* Something after an edge-to-edge table: give it room instead of sitting on the last row. */
+.panel > .scroll:not(:last-child), .panel > table:not(:last-child) { margin-bottom: var(--s3); border-bottom: 1px solid var(--line) }
+.clip-more { margin: var(--s3) 0 0 }
+td.when { white-space: nowrap }
+.todos:not(:has(*)) { display: none }
+dialog#keys #keys-page td:first-child { width: 40px }
+.toolgrid h2 kbd { display: none }
+.period input[type=date] { height: 36px }
+.tx-filters .seg .btn, .tx-filters .seg button { min-height: 32px }
+dialog.ask .err { margin: var(--s2) 0 0 }
+.stat .k { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.panel td code { white-space: nowrap }
+td select { border-color: transparent; background-color: transparent }
+tr:hover td select, td select:focus { border-color: var(--line-strong); background-color: var(--surface) }
+form > input[type=hidden]:first-child + * { margin-top: 0 }
+@media (max-width: 480px) { .period .btn { flex: 1 1 40% } }
+@media (max-width: 720px) {
+  .stat a, .todo a { display: inline-block; padding: 6px 0 }
+  .assign input, .assign select { height: 36px }
+  .todo .inline-set input { height: 40px }
+}
+/* Tablet: give item lists room on the Square page. */
+td.items { min-width: 180px }
+@media (max-width: 1099px) { .assign input { min-width: 140px } }
+/* Buttons press in a little, so a tap feels like it did something. */
+button, .btn { transition: background-color .12s, border-color .12s, transform .08s }
+button:active:not(:disabled), .btn:active { transform: translateY(1px) }
+html { -webkit-tap-highlight-color: transparent }

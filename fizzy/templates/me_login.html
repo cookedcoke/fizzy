@@ -8,11 +8,21 @@
   <form class="card" method="post" action="{{ me_url('/login') }}">
     {% if error %}<div class="oops" role="alert">{{ error }}</div>{% endif %}
     <label for="who">Your name or student number</label>
-    <input id="who" type="text" name="who" value="{{ who }}" autocomplete="username" autocapitalize="words" spellcheck="false" required {{ 'autofocus' if not who }}>
+    <input id="who" type="text" name="who" value="{{ who }}" autocomplete="username" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="next" required {{ 'autofocus' if not who }}>
     <label for="pc">Passcode</label>
-    <input id="pc" type="password" name="passcode" autocomplete="current-password" required {{ 'autofocus' if who }}>
+    <input id="pc" type="password" name="passcode" autocomplete="current-password" enterkeyhint="go" required {{ 'autofocus' if who }}>
     <button class="go" type="submit">Let me in</button>
   </form>
+  <script>/* One tap, one try: a second tap while it's checking would count as another wrong guess. */
+    (function () {
+      var f = document.querySelector("form.card"), b = f.querySelector(".go");
+      f.addEventListener("submit", function (e) {
+        if (b.getAttribute("aria-busy")) { e.preventDefault(); return; }
+        b.setAttribute("aria-busy", "true"); b.textContent = "Checking...";
+      });
+      addEventListener("pageshow", function () { b.removeAttribute("aria-busy"); b.textContent = "Let me in"; });
+    })();
+  </script>
   {% if live %}
   <h2 class="section">On now</h2>
   <div class="on-now">{% for r in live %}<span class="chip"><b>{{ r.name }}</b> <span>· {{ '{:,}'.format(r.points_cost) }} pts</span></span>{% endfor %}</div>

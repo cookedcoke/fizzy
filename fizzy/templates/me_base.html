@@ -20,6 +20,14 @@
 </head>
 <body>
 {% block body %}{% endblock %}
+<script>/* Installed as an app there's no reload button: after a minute away, come back to fresh numbers. */
+  (function () { var hid = 0;
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) hid = Date.now(); else if (hid && Date.now() - hid > 60000) location.reload();
+    });
+    addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });
+  })();
+</script>
 <script>if ("serviceWorker" in navigator) addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });</script>
 </body>
 </html>

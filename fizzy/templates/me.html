@@ -39,8 +39,8 @@
     {% if led.owing_cents or led.charges %}
     <div class="figures">
       <div class="figure {{ 'alert' if led.has_overdue }}"><div class="k">You owe</div><div class="v">{{ led.owing_cents|money }}</div>
-        {% if next_due %}<div class="sub">{{ 'Was due' if led.has_overdue else 'Pay by' }} {{ next_due|local('%a %d %b') }}</div>{% endif %}</div>
-      <div class="figure"><div class="k">Tab limit</div><div class="v">{{ st.limit_cents|money }}</div><div class="sub">{{ st.due_days }} days to pay</div></div>
+        {% if next_due %}<div class="sub">{{ 'Was due' if led.has_overdue else 'Pay by' }} {{ next_due|local('%a %-d %b') }}</div>{% endif %}</div>
+      {% if st.status != 'blocked_overdue' %}<div class="figure"><div class="k">Tab limit</div><div class="v">{{ st.limit_cents|money }}</div><div class="sub">{{ st.due_days }} days to pay</div></div>{% endif %}
     </div>
     {% if led.balance_cents < 0 %}<p class="tab-sub">You have {{ (-led.balance_cents)|money }} in credit - it's used next time you put something on your tab.</p>{% endif %}
     {% if led.late_count %}<p class="tab-sub">{{ led.late_count }} late payment{{ '' if led.late_count == 1 else 's' }} on record.</p>{% endif %}
@@ -63,7 +63,7 @@
   <div class="points">
     <div class="k">Your points</div>
     <div class="v">{{ '{:,}'.format(s.points) }}</div>
-    <div class="sub">1 point for every cent you spend at the stall.</div>
+    <div class="sub">1 point for every cent you spend. Tab buys earn theirs when you pay them off.</div>
   </div>
 
   <div class="streak {{ 'hot' if me.streak }}">

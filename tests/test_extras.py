@@ -90,7 +90,9 @@ def test_event_rules(conn):
     with pytest.raises(events.EventError, match="before the first"):
         events.create(conn, "x", "2", (t + timedelta(days=3)).isoformat(), (t + timedelta(days=2)).isoformat(), "Will")
     soon = events.create(conn, "Soon", "2", (t + timedelta(days=2)).isoformat(), "", "Will")
-    now = events.create(conn, "Now", "3", t.isoformat(), (t + timedelta(days=4)).isoformat(), "Will")
+    with pytest.raises(events.EventError, match="already on"):  # stacking would multiply up
+        events.create(conn, "Stack", "2", t.isoformat(), (t + timedelta(days=4)).isoformat(), "Will")
+    now = events.create(conn, "Now", "3", t.isoformat(), (t + timedelta(days=1)).isoformat(), "Will")
     assert [e["name"] for e in events.upcoming(conn)] == ["Soon"] and [e["name"] for e in events.on(conn)] == ["Now"]
     assert "Deleted" in events.cancel(conn, soon, "Will")
     assert "has ended" in events.cancel(conn, now, "Will")

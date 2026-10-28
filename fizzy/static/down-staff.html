@@ -62,7 +62,7 @@
 </main>
 <script>
   // Check again every 30 seconds (a fresh GET, never re-sending a form), but not while the owner is typing.
-  function again() { location.replace(location.pathname === "/maintenance/off" ? "/" : location.href); }
+  function again() { location.replace(/^\/(maintenance\/off|login|logout|me\/login|me\/logout)$/.test(location.pathname) ? "/" : location.href); }
   setInterval(function () { if (!document.querySelector(".owner[open]")) again(); }, 30000);
 </script>
 </body>
