@@ -134,6 +134,7 @@ button.danger:hover { background: var(--red-wash); border-color: var(--red) }
 button.sm, .btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px }
 .row { display: flex; gap: var(--s2) var(--s3); flex-wrap: wrap; align-items: flex-end }
 .row > * { flex: 1 1 130px } .row > button, .row > .btn { flex: 0 0 auto }
+.row > div > label:last-child { margin-bottom: 0 }  /* a label wrapping its input: keep the input level with the button */
 .actions { display: flex; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s4) }
 .hint { color: var(--muted); font-size: 12.5px; margin: var(--s3) 0 0 }
 form > :first-child, .tool-body > :first-child { margin-top: 0 }
