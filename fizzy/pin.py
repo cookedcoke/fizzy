@@ -390,8 +390,7 @@ def unlock(request: Request, pin: str = Form(""), need: int = Form(PIN), who=Dep
         db.set_setting(conn, "pin_wrong_day", f"{day}:{wrong + 1}")  # kept in the database, so a restart doesn't reset it
         db.audit(conn, who, "passcode_wrong", None, "")
         conn.commit()
-        left = FAIL_LIMIT - len(_fails[me])
-        return JSONResponse({"ok": False, "error": "Wrong passcode." + (f" {left} more tries." if left <= 2 else "")})
+        return JSONResponse({"ok": False, "error": "Wrong passcode."})
     until = int(now + UNLOCK_SECONDS[rank])
     request.session["unlock"] = {"rank": rank, "until": until, "for": stored(conn)[:12]}
     if rank == OWNER:
