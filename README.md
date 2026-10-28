@@ -330,6 +330,14 @@ The desktop header also shows the time (and the date on wider screens).
 
 ---
 
+### Transactions
+
+**Transactions** in the top bar lists every Square checkout with who it was, what they got, how
+they paid, any tab or refund, and the points it earned, which Square's own list can't show.
+Pick dates (today by default), filter to sales, tab sales, tab repayments or ones with no
+customer, and search by customer or item. Checkouts with nobody on them have an "Assign to…"
+box right there. Tab money recorded by hand in Fizzy (and write-offs) shows up too.
+
 ## 5. Profit
 
 **Profit** (dashboard button, or `G` then `P`) needs no Square Retail Plus: type what one of

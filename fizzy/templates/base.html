@@ -23,7 +23,7 @@
   <a class="brand" href="/">{% include "_logo.html" %}<span>Fizzy</span><small>Cooked Coke Co.</small></a>
   {% set p = request.url.path %}
   <nav>
-    {% for href, label, key in [('/', 'Dashboard', 'D'), ('/customers', 'Customers', 'C'), ('/square', 'Square', 'S'), ('/rewards', 'Rewards', 'R'), ('/profit', 'Profit', 'P'), ('/money', 'Money', 'M'), ('/tools', 'Tools', 'T'), ('/import', 'Import', 'I'), ('/settings', 'Settings', ','), ('/audit', 'Log', 'L')] %}
+    {% for href, label, key in [('/', 'Dashboard', 'D'), ('/customers', 'Customers', 'C'), ('/transactions', 'Transactions', 'X'), ('/square', 'Square', 'S'), ('/rewards', 'Rewards', 'R'), ('/profit', 'Profit', 'P'), ('/money', 'Money', 'M'), ('/tools', 'Tools', 'T'), ('/import', 'Import', 'I'), ('/settings', 'Settings', ','), ('/audit', 'Log', 'L')] %}
     <a href="{{ href }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}" title="{{ label }} - press G then {{ key }}">{{ label }}</a>
     {% endfor %}
   </nav>
@@ -68,7 +68,7 @@
       <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>Open that search result. Use <kbd>Alt</kbd>+number when searching by student number</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Leave a field · then back to dashboard</td></tr>
       <tr><td><kbd>Ctrl</kbd> <kbd>Enter</kbd></td><td>Submit the form you're in</td></tr>
-      <tr><td><kbd>G</kbd> then <kbd>D</kbd> <kbd>C</kbd> <kbd>S</kbd> <kbd>R</kbd> <kbd>T</kbd> <kbd>I</kbd> <kbd>L</kbd> <kbd>,</kbd> <kbd>P</kbd> <kbd>M</kbd></td><td>Go to Dashboard, Customers, Square, Rewards, Tools, Import, Log, Settings, Profit, Money</td></tr>
+      <tr><td><kbd>G</kbd> then <kbd>D</kbd> <kbd>C</kbd> <kbd>X</kbd> <kbd>S</kbd> <kbd>R</kbd> <kbd>T</kbd> <kbd>I</kbd> <kbd>L</kbd> <kbd>,</kbd> <kbd>P</kbd> <kbd>M</kbd></td><td>Go to Dashboard, Customers, Transactions, Square, Rewards, Tools, Import, Log, Settings, Profit, Money</td></tr>
       <tr><td><kbd>?</kbd></td><td>This list</td></tr>
     </table></div>
     <div><h2>This page</h2><table id="keys-page"></table></div>

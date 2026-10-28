@@ -473,3 +473,15 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 }
 .dash-tabs > .section-h:first-child { margin-top: var(--s2) }
 .dash-tabs .cols { margin: 0 }
+.tx-filters { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; margin-bottom: var(--s3) }
+.tx-filters .seg { display: flex; flex-wrap: wrap; gap: 6px }
+.tx-filters input[type=search] { flex: 1 1 200px; max-width: 320px; margin-left: auto }
+.tx td.when { white-space: nowrap }
+.tx .tag { margin-top: 3px }
+.show-sm { display: none }
+@media (max-width: 720px) { .show-sm { display: block } .tx-filters input[type=search] { max-width: none; margin-left: 0 } }
+@media (max-width: 720px) {
+  .tx th, .tx td { padding-left: 8px; padding-right: 8px }
+  .tx th:first-child, .tx td:first-child { padding-left: var(--s4) } .tx th:last-child, .tx td:last-child { padding-right: var(--s4) }
+  .tx .assign input { width: 100%; min-width: 0; max-width: 150px }
+}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}{% block title %}Transactions{% endblock %}
+{% block body %}
+{% macro url() %}{% set a = dict(start=start, end=end, show=show, q=q) %}{% set _ = a.update(kwargs) %}/transactions?{% for k, v in a.items() if v %}{{ k }}={{ v|string|urlencode }}{{ '&' if not loop.last }}{% endfor %}{% endmacro %}
+<div class="pagehead"><div><h1>Transactions</h1>
+  <div class="meta">{% if start == end %}{{ start.strftime('%A %-d %B') }}{% else %}{{ start.strftime('%-d %b') }} to {{ end.strftime('%-d %b %Y') }}{% endif %} · every Square sale, with who it was</div></div>
+  <form class="actions period" method="get" action="/transactions" style="margin:0">
+    {% for label, (s, e) in quick.items() %}<a class="btn {{ 'primary' if s == start and e == end }}" href="{{ url(start=s, end=e) }}">{{ label }}</a>{% endfor %}
+    <input type="date" name="start" value="{{ start }}" aria-label="From"><input type="date" name="end" value="{{ end }}" aria-label="To">
+    {% if show %}<input type="hidden" name="show" value="{{ show }}">{% endif %}{% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+    <button>Show</button></form>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="k">Checkouts</div><div class="v">{{ totals.count }}</div></div>
+  <div class="stat"><div class="k">Sold</div><div class="v">{{ totals.sold|money }}</div><div class="sub">incl. {{ totals.tab|money }} on tabs</div></div>
+  <div class="stat"><div class="k">Tabs repaid</div><div class="v">{{ totals.repaid|money }}</div></div>
+  <div class="stat"><div class="k">Refunded</div><div class="v">{{ totals.refunded|money }}</div></div>
+  <div class="stat {{ 'alert' if totals.nobody }}"><div class="k">No customer</div><div class="v">{{ totals.nobody }}</div>
+    {% if totals.nobody %}<div class="sub"><a href="{{ url(show='nobody') }}">Show them</a></div>{% endif %}</div>
+</div>
+
+<div class="panel">
+  <form class="tx-filters" method="get" action="/transactions">
+    <input type="hidden" name="start" value="{{ start }}"><input type="hidden" name="end" value="{{ end }}">
+    <div class="seg" role="group" aria-label="Show">{% for k, label in shows.items() %}<a class="btn sm {{ 'primary' if show == k }}" href="{{ url(show=k) }}">{{ label }}</a>{% endfor %}</div>
+    <input type="search" name="q" value="{{ q }}" placeholder="Customer or item" aria-label="Filter by customer or item">
+    {% if show %}<input type="hidden" name="show" value="{{ show }}">{% endif %}
+  </form>
+  {% if rows %}<div class="scroll"><table class="tx">
+    <tr><th>When</th><th>Customer</th><th class="hide-sm">Items</th><th class="n">Amount</th><th class="hide-sm">Paid by</th><th class="n hide-sm">Points</th></tr>
+    {% for r in rows %}<tr>
+      <td class="when">{{ r.at|local('%a %-d %b') }}<br><span class="muted small">{{ r.at|local('%H:%M') }}</span></td>
+      <td>{% if r.customer_id %}<a href="/customers/{{ r.customer_id }}">{{ r.customer }}</a>
+        {% elif r.payment_ids %}<form class="assign" method="post" action="/square/payments/{{ r.payment_ids[0] }}/assign">
+          <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required title="Type who it was, then Enter"></form>{% endif %}
+        <div class="small muted show-sm">{% for i in r['items'] %}{{ i.qty }}× {{ i.name }}{{ ', ' if not loop.last }}{% endfor %}</div></td>
+      <td class="small hide-sm">{% if r.source == 'square' %}{% for i in r['items'] %}{{ i.qty }}× {{ i.name }}{{ ', ' if not loop.last }}{% endfor %}
+        {% else %}<span class="muted">{{ 'Debt written off' if r.source == 'writeoff' else 'Recorded in Fizzy' }}{% if r.note %}: {{ r.note }}{% endif %} · {{ r.staff }}</span>{% endif %}</td>
+      <td class="n">{% if r.sold_cents %}{{ r.sold_cents|money }}{% else %}{{ r.repay_cents|money }}{% endif %}
+        {% if r.tab_cents %}<br><span class="tag eligible">{{ 'On tab' if r.tab_cents == r.sold_cents else r.tab_cents|money ~ ' on tab' }}</span>{% endif %}
+        {% if r.repay_cents and r.source != 'writeoff' %}<br><span class="tag approved">Tab repaid</span>{% endif %}
+        {% if r.source == 'writeoff' %}<br><span class="tag">Written off</span>{% endif %}
+        {% if r.refunded_cents %}<br><span class="tag red">{{ r.refunded_cents|money }} refunded</span>{% endif %}</td>
+      <td class="small hide-sm">{{ r.tenders|join(', ')|lower }}</td>
+      <td class="n hide-sm">{% if r.points %}{{ '{:+,}'.format(r.points) }}{% elif r.points is not none %}<span class="muted">-</span>{% endif %}</td>
+    </tr>{% endfor %}
+  </table></div>
+  {% if more %}<p class="hint">Showing the latest {{ rows|length }}. Pick shorter dates to see the other {{ more }}.</p>{% endif %}
+  {% else %}<p class="empty">{% if q or show %}Nothing matches. <a href="{{ url(show='', q='') }}">Show everything</a>{% else %}No sales in these dates.{% endif %}</p>{% endif %}
+</div>
+<datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>
+{% endblock %}

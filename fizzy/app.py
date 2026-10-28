@@ -24,7 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import pwa, updater
+from . import pwa, transactions, updater
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
 log = logging.getLogger("fizzy")
@@ -221,6 +221,7 @@ def create_app(background=True):
     app.include_router(pin.router)
     app.include_router(pwa.router)
     app.include_router(updater.router)
+    app.include_router(transactions.router)
     app.include_router(money_pages.router)
     return app
 

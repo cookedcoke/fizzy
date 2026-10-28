@@ -105,7 +105,8 @@ def checkouts(conn, start, end):
         g = groups.get(k)
         if g is None:
             g = groups[k] = {"key": k, "at": r["created_at"], "sale_cents": 0, "tab_cents": 0, "repay_cents": 0,
-                             "items": [], "customer_id": None, "customer": None, "tenders": []}
+                             "items": [], "customer_id": None, "customer": None, "tenders": [], "payment_ids": []}
+        g["payment_ids"].append(r["square_payment_id"])
         g[KINDS[r["kind"]]] += r["amount_cents"]
         if r["customer_id"] and not g["customer_id"]:
             g["customer_id"], g["customer"] = r["customer_id"], r["customer_name"]

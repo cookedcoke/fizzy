@@ -116,7 +116,7 @@
   }
 
   // ---- shortcuts ----------------------------------------------------------------------------
-  var GO = { d: ["/", "Dashboard"], c: ["/customers", "Customers"], s: ["/square", "Square"], t: ["/tools", "Tools"], r: ["/rewards", "Rewards"],
+  var GO = { d: ["/", "Dashboard"], c: ["/customers", "Customers"], s: ["/square", "Square"], x: ["/transactions", "Transactions"], t: ["/tools", "Tools"], r: ["/rewards", "Rewards"],
              i: ["/import", "Import"], l: ["/audit", "Log"], ",": ["/settings", "Settings"], p: ["/profit", "Profit"], m: ["/money", "Money"] };
   var pendingG = 0;
 
