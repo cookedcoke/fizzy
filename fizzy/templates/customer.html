@@ -44,7 +44,7 @@
 </div>
 
 {% if st.can_charge %}
-<div class="verdict yes"><div class="mark"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg></div><div><b>Can use tab - up to {{ st.available_cents|money }}</b>
+<div class="verdict yes"><div class="mark"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg></div><div><b>Can use tab – up to {{ st.available_cents|money }}</b>
   <span>In Square: attach {{ c.name.split(' ')[0] }}'s profile, apply the <strong>Fizzy Tab</strong> discount to what goes on the tab, then charge the rest - if it's all on the tab, charge $0 as cash.</span></div></div>
 {% else %}
 {% set waiting = st.status in ('locked', 'eligible', 'paused') %}
@@ -75,7 +75,7 @@
   {% if not c.passcode_set_at or (c.passcode_enc and not passcode_readable) %}{% set _ = todos.append(1) %}
   <form class="todo" method="post" action="/customers/{{ c.id }}/passcode" autocomplete="off">
     <b>{{ 'No student site passcode yet.' if not c.passcode_set_at else 'Passcode needs setting again.' }}</b>
-    <span class="inline-set"><input type="text" name="passcode" placeholder="New passcode (4+ characters)" aria-label="New passcode for {{ first }}"
+    <span class="inline-set"><input type="text" name="passcode" placeholder="New passcode" title="4 or more characters" aria-label="New passcode for {{ first }}"
       autocomplete="off" autocapitalize="off" spellcheck="false" minlength="4" maxlength="64" required><button class="sm">Set</button></span></form>{% endif %}
   {% if not c.square_customer_id and c.kind != 'test' %}{% set _ = todos.append(1) %}<div class="todo"><b>Not in Square yet.</b>
     <span>Their sales won't link by themselves - <a href="/export/square-customers.csv?only=new">get the import file</a>, or claim their sales with <kbd>K</kbd>.</span></div>{% endif %}
@@ -206,10 +206,10 @@
   {% if tab_panel %}{{ tab_form(true) }}{% endif %}
   {% set sc = st.score %}
   <div class="panel score-panel" id="score"><h2>Tab score</h2>
-    <div class="score-head">{% set usable = c.tab_decision == 'approved' or sc.ready %}
-    <div class="score-num {{ 'good' if sc.score >= 80 else 'ok' if usable else 'low' }}">{{ sc.score }}</div>
+    <div class="score-head">
+    <div class="score-num {{ 'good' if sc.score >= 80 else 'ok' if sc.score >= st.score_needed else 'low' }}">{{ sc.score }}</div>
       <div><b>Limit {{ sc.limit_cents|money }}</b>{% if sc.next %} <span class="muted">· {{ sc.next.score }}+ gets {{ sc.next.limit_cents|money }}</span>{% endif %}
-        <div class="muted small">{% if c.tab_decision == 'approved' %}Their tab's on.{% elif not st.spent_enough and not sc.ready %}Needs {{ (st.unlock_spend_cents - st.spend_cents)|money }} more spent and a score of {{ st.score_needed }} for a tab.
+        <div class="muted small">{% if st.status == 'blocked_overdue' %}Tab blocked until what's overdue is paid.{% elif st.status == 'paused' %}Tabs are paused for everyone.{% elif c.tab_decision == 'approved' %}Their tab's on.{% elif not st.spent_enough and not sc.ready %}Needs {{ (st.unlock_spend_cents - st.spend_cents)|money }} more spent and a score of {{ st.score_needed }} for a tab.
           {% elif not st.spent_enough %}Needs {{ (st.unlock_spend_cents - st.spend_cents)|money }} more spent for a tab.{% elif not sc.ready %}Needs a score of {{ st.score_needed }} for a tab.{% elif not c.tab_decision %}Ready for a tab.{% endif %}</div></div></div>
     <table class="score-factors">{% for label, pts in sc.factors %}<tr><td>{{ label }}</td><td class="n {{ 'red' if pts < 0 }}">{{ '%+d'|format(pts) if loop.index > 1 else pts }}</td></tr>{% endfor %}</table>
   </div>

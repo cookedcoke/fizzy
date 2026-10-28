@@ -34,8 +34,8 @@
 <div class="panel">
   <h2>{{ 'Payments with no customer' if show == 'unlinked' else 'Recent payments' }}
     <a class="small" style="float:right;text-transform:none;letter-spacing:0;font-weight:500" href="{{ '/square' if show == 'unlinked' else '/square?show=unlinked' }}">{{ 'Show all' if show == 'unlinked' else 'Only unlinked' }}</a></h2>
-  <div class="scroll"><table>
-    <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th class="hide-sm">Tender</th><th class="hide-sm">Items</th><th title="Change this if Fizzy got it wrong">Counted as</th><th></th></tr>
+  <div class="scroll"><table data-clip="25">
+    <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th class="hide-md">Tender</th><th class="hide-sm">Items</th><th title="Change this if Fizzy got it wrong">Counted as</th><th></th></tr>
     {% for p in rows %}<tr>
       <td style="white-space:nowrap">{{ p.created_at|local('%a %-d %b %H:%M') }}</td>
       <td>{% if p.customer_id %}<a href="/customers/{{ p.customer_id }}">{{ p.name }}</a>{% else %}
@@ -43,7 +43,7 @@
           <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required
                  title="Type who it was, then Enter">
         </form>{% endif %}</td>
-      <td class="n">{{ p.amount_cents|money }}</td><td class="small hide-sm">{{ p.tender }}</td><td class="small hide-sm">{{ p['items'] }}</td>
+      <td class="n">{{ p.amount_cents|money }}</td><td class="small hide-md">{{ p.tender }}</td><td class="small hide-sm items">{{ p['items'] }}</td>
       <td><form class="inline" method="post" action="/square/payments/{{ p.square_payment_id }}/kind">
         <select name="kind" style="height:28px;width:auto" data-was="{{ p.kind }}" onchange="var s=this,v=s.value;s.value=s.dataset.was;fizzyAsk('Change how this payment is counted?',function(){s.value=v;s.form.requestSubmit()})">
           {% for k, l in [('sale','Sale'),('tab_charge','Tab charge'),('tab_repayment','Tab repayment')] %}<option value="{{ k }}" {{ 'selected' if k == p.kind }}>{{ l }}</option>{% endfor %}

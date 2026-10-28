@@ -29,6 +29,6 @@
 {% else %}
 <div class="panel"><p class="empty" style="font-size:14px">No unclaimed sales from the last {{ hours }} hours.
   {% if square_on %}If you just took it, give Square a moment, then <a href="/customers/{{ c.id }}/claim" data-key="k" data-key-label="Check again">check again <kbd>K</kbd></a>.
-  {% else %}Square isn't connected (SQUARE_ACCESS_TOKEN), so there's nothing to claim.{% endif %}</p></div>
+  {% else %}Square isn't connected yet, so there's nothing to claim. Ask the owner.{% endif %}</p></div>
 {% endif %}
 {% endblock %}

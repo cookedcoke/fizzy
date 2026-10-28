@@ -3,8 +3,8 @@
 <div class="pagehead"><div><div class="meta noprint"><a href="/tools">Tools</a> /</div><h1>{{ title }}</h1>{% if note %}<div class="meta">{{ note }}</div>{% endif %}</div>
   <button class="noprint" onclick="print()">Print</button></div>
 <div class="panel"><div class="scroll"><table>
-  <tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr>
-  {% for r in rows %}<tr>{% for cell in r %}<td>{% if cell is mapping %}<a href="{{ cell.href }}">{{ cell.text }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+  <tr>{% for h in headers %}<th class="{{ 'n' if numeric[loop.index0] }}">{{ h }}</th>{% endfor %}</tr>
+  {% for r in rows %}<tr>{% for cell in r %}<td class="{{ 'n' if numeric[loop.index0] }}">{% if cell is mapping %}<a href="{{ cell.href }}">{{ cell.text }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
   {% else %}<tr><td colspan="{{ headers|length }}" class="empty">Nothing to show.</td></tr>{% endfor %}
 </table></div></div>
 {% for label, text in copy or [] %}{% if text %}

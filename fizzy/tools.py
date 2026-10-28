@@ -10,7 +10,7 @@ import re
 import secrets
 import sqlite3
 import tempfile
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -161,8 +161,21 @@ def cust_link(c):
     return link(c["name"], f"/customers/{c['id']}")
 
 
+NUMBER = re.compile(r"^[-+]?\$?[\d,]+(\.\d+)?%?$")
+
+
 def report(request, title, headers, rows, note=None, copy=None):
-    return render(request, "tool_result.html", title=title, headers=headers, rows=rows, note=note, copy=copy)
+    # Columns that are all numbers or money line up on the right, like every other table.
+    numeric = [bool(rows) and all(isinstance(r[i], (int, float)) or (isinstance(r[i], str) and (NUMBER.match(r[i].strip()) or not r[i].strip()))
+                                  for r in rows) for i in range(len(headers))]
+    return render(request, "tool_result.html", title=title, headers=headers, rows=rows, note=note, copy=copy, numeric=numeric)
+
+
+def _nice_day(iso):
+    try:
+        return date.fromisoformat(iso).strftime("%a %-d %b %Y")
+    except (TypeError, ValueError):
+        return iso
 
 
 def done(request, tool, msg):
@@ -536,7 +549,7 @@ def h_takings(request, conn, who, form):
     ):
         label = "Fizzy: debts written off" if r["method"] == "writeoff" else "Fizzy: repayments recorded without Square"
         rows.append([label, r["method"], r["n"], money(r["total"])])
-    return report(request, f"Takings {form['start']} to {form['end']}", ["What", "Tender / method", "Count", "Total"], rows,
+    return report(request, f"Takings {_nice_day(form['start'])}" + ("" if form['start'] == form['end'] else f" to {_nice_day(form['end'])}"), ["What", "Tender / method", "Count", "Total"], rows,
                   note="Square sales are what was paid at the time (tab sales were discounted, so they add $0). "
                        "Square tab repayments are tabs paid off through Square. Fizzy repayments were recorded by hand "
                        "without Square - add those to the till count. Write-offs aren't money.")

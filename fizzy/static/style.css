@@ -554,3 +554,15 @@ td.items { min-width: 180px }
 button, .btn { transition: background-color .12s, border-color .12s, transform .08s }
 button:active:not(:disabled), .btn:active { transform: translateY(1px) }
 html { -webkit-tap-highlight-color: transparent }
+/* Needs attention on a phone: one card per problem instead of a squashed table. */
+@media (max-width: 720px) {
+  table.attn tr:first-child { display: none }
+  table.attn tr { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s3); padding: var(--s3) var(--s4); border-top: 1px solid var(--line) }
+  table.attn td { border: none; padding: 0 }
+  table.attn td:nth-child(4) { grid-column: 1 / -1 }
+  table.attn td:last-child { grid-column: 1 / -1; text-align: left; margin-top: 6px }
+  table.attn .assign input { width: 100%; max-width: none }
+}
+@media (max-width: 1099px) { .hide-md { display: none } }
+@media (max-width: 1099px) { .cols.stack-md > .col { flex-basis: 100% } }
+.offer form button { min-width: 110px }

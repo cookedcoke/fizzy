@@ -67,15 +67,15 @@
 {% if breaches or unlinked_tabs %}
 <div class="panel" style="border-color:#F3C2C2">
   <h2 class="red">Needs attention <span class="count">{{ breaches|length + unlinked_tabs|length }}</span></h2>
-  <div class="scroll"><table>
+  <div class="scroll"><table class="attn">
     <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th>Problem</th><th></th></tr>
     {% for b in breaches %}
-    <tr><td>{{ b.charged_at|local }}</td><td><a href="/customers/{{ b.customer_id }}">{{ b.name }}</a></td>
+    <tr><td class="when">{{ b.charged_at|local }}</td><td><a href="/customers/{{ b.customer_id }}">{{ b.name }}</a></td>
       <td class="n">{{ b.amount_cents|money }}</td><td>Tab used against the rules: {{ b.breach }}</td>
       <td class="n"><form class="inline" method="post" action="/breach/{{ b.id }}/ack"><button class="sm">Dismiss</button></form></td></tr>
     {% endfor %}
     {% for u in unlinked_tabs %}
-    <tr><td>{{ u.created_at|local }}</td><td class="muted">No customer attached</td><td class="n">{{ u.amount_cents|money }}</td>
+    <tr><td class="when">{{ u.created_at|local }}</td><td class="muted">No customer attached</td><td class="n">{{ u.amount_cents|money }}</td>
       <td>{{ 'Tab sale' if u.kind == 'tab_charge' else 'Tab repayment' }} with no customer attached{% if u['items'] %} · <span class="small">{{ u['items'] }}</span>{% endif %}</td>
       <td class="n"><form class="assign" method="post" action="/square/payments/{{ u.square_payment_id }}/assign">
         <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required
