@@ -12,6 +12,7 @@
 		26F0EC8CFABDFFAECB619742 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF95166B76F1B37E0C667295 /* AppDelegate.swift */; };
 		62CC446D910F1EBA0E89D181 /* WebViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A08CBE3221735C3F2E388B9 /* WebViews.swift */; };
 		6C26C36D5F858B1AE47B8011 /* DisplayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474869CA99DD09474E950A44 /* DisplayController.swift */; };
+		8E140E02ADD693DC9268A8E6 /* DisplayBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E8313F936CDDA957D0D823 /* DisplayBridge.swift */; };
 		8F01958019D7604D1F69CB30 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 278824A5EFF2640D4615EC8B /* AppIcon.icns */; };
 		96EFA9EAB6F0C7563444269E /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE849D62B984A9067B4677BB /* MainMenu.swift */; };
 		C930D6DD3448E05F2D7BC140 /* logo.svg in Resources */ = {isa = PBXBuildFile; fileRef = B220A9EB3E545954D114A5C5 /* logo.svg */; };
@@ -29,6 +30,7 @@
 		983D377281760608EA224239 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		A530EDC6C262A0FCE2F3BC67 /* Fizzy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Fizzy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B220A9EB3E545954D114A5C5 /* logo.svg */ = {isa = PBXFileReference; path = logo.svg; sourceTree = "<group>"; };
+		B9E8313F936CDDA957D0D823 /* DisplayBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayBridge.swift; sourceTree = "<group>"; };
 		BE849D62B984A9067B4677BB /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
 		CF95166B76F1B37E0C667295 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		D9CD6F9BB57881C4BF00C01D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -55,6 +57,7 @@
 			isa = PBXGroup;
 			children = (
 				CF95166B76F1B37E0C667295 /* AppDelegate.swift */,
+				B9E8313F936CDDA957D0D823 /* DisplayBridge.swift */,
 				474869CA99DD09474E950A44 /* DisplayController.swift */,
 				D9CD6F9BB57881C4BF00C01D /* Info.plist */,
 				896C291CAB8C85FBBF138BCE /* main.swift */,
@@ -150,6 +153,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				26F0EC8CFABDFFAECB619742 /* AppDelegate.swift in Sources */,
+				8E140E02ADD693DC9268A8E6 /* DisplayBridge.swift in Sources */,
 				6C26C36D5F858B1AE47B8011 /* DisplayController.swift in Sources */,
 				96EFA9EAB6F0C7563444269E /* MainMenu.swift in Sources */,
 				222910900FEB51E59E2D9ED0 /* Settings.swift in Sources */,

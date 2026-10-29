@@ -43,6 +43,12 @@ enum MainMenu {
         view.addItem(.separator())
         view.addItem(item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]))
 
+        let display = submenu(of: main, "Display")
+        display.addItem(item("Hide customer display", #selector(AppDelegate.hideDisplay(_:)), "h", [.command, .shift], target: app))
+        display.addItem(item("Show customer display", #selector(AppDelegate.showDisplay(_:)), target: app))
+        display.addItem(.separator())
+        display.addItem(item("Reload display", #selector(AppDelegate.reloadDisplay(_:)), target: app))
+
         let window = submenu(of: main, "Window")
         window.addItem(item("Minimise", #selector(NSWindow.performMiniaturize(_:)), "m"))
         window.addItem(item("Zoom", #selector(NSWindow.performZoom(_:))))

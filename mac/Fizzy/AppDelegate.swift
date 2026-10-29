@@ -5,14 +5,18 @@ import os
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var staff: StaffWindowController!
     private var display: DisplayController!
+    private var bridge: DisplayBridge!
     private lazy var settings = SettingsWindowController()
     private let log = Logger(subsystem: "co.cookedcoke.fizzy", category: "app")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build(self)
 
-        staff = StaffWindowController(configuration: WebViews.configuration())
         display = DisplayController(configuration: WebViews.configuration())
+        bridge = DisplayBridge(display: display.webView)
+        let staffConfig = WebViews.configuration()
+        bridge.install(in: staffConfig)
+        staff = StaffWindowController(configuration: staffConfig)
         staff.onPageLoaded = { [weak self] in self?.display.retryIfNeeded() }
 
         settings.onChange = { [weak self] url in
@@ -49,6 +53,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showStaffWindow(_ sender: Any?) {
         staff.showWindow(nil)
+    }
+
+    @objc func hideDisplay(_ sender: Any?) {
+        bridge.send(#"{"type":"hide"}"#)
+    }
+
+    @objc func showDisplay(_ sender: Any?) {
+        bridge.send(#"{"type":"idle"}"#)
+    }
+
+    @objc func reloadDisplay(_ sender: Any?) {
+        display.load()
     }
 
     @objc func showSettings(_ sender: Any?) {
