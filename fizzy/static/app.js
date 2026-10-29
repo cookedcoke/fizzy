@@ -436,6 +436,14 @@
   });
   $$("input[data-search]").forEach(bindSearch);
   var hb = $("#keys-btn"); if (hb) hb.addEventListener("click", help);
+  // Customer display: tell the screen facing the queue who's being served. Straight to it, no
+  // server in between: the Mac app's bridge, or a BroadcastChannel when it's a second browser window.
+  if ($("header nav")) {
+    var dm = $("#display-msg") ? JSON.parse($("#display-msg").textContent) : { type: "idle" };
+    dm.auto = true;
+    try { window.webkit.messageHandlers.fizzyDisplay.postMessage(dm); } catch (e) {}
+    try { new BroadcastChannel("fizzy-display").postMessage(dm); } catch (e) {}
+  }
   // Warm the index as soon as the page is idle so the first keystroke is instant.
   (window.requestIdleCallback || setTimeout)(function () { if ($("input[data-search]")) loadIndex(); });
 })();

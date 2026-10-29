@@ -24,7 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import passkeys, pwa, transactions, updater
+from . import display, passkeys, pwa, transactions, updater
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
 log = logging.getLogger("fizzy")
@@ -223,6 +223,7 @@ def create_app(background=True):
     app.include_router(pwa.router)
     app.include_router(updater.router)
     app.include_router(transactions.router)
+    app.include_router(display.router)
     app.include_router(money_pages.router)
     return app
 
@@ -736,7 +737,8 @@ def register(app):
         kind_levels = {lv: pin.customer_level(conn, c["kind"], lv) for lv in (pin.OPEN, pin.PIN, pin.OWNER)}
         return render(request, "customer.html", kind_levels=kind_levels, s=s, c=c, points=points, payments=payments, watch_since=watch_since, opened=opened,
                       decisions=decisions, audit_rows=audit_rows,
-                      offers=rewards.offers_for(conn, cid, s["points"]),
+                      offers=(offers := rewards.offers_for(conn, cid, s["points"])),
+                      display_msg={"type": "show", "customer": display.payload(conn, c, s, offers)},
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
                       passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None)
 

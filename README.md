@@ -108,6 +108,16 @@ a wrong passcode. The PIN stays unlocked for 10 minutes, the owner password for 
 lock again when someone else is put on the counter. Every owner unlock and wrong try is in the
 activity log.
 
+### Customer display
+
+A second screen facing the queue. Open `/display` on it (the Mac app in `mac/` does this for you and
+locks the window so it can't be closed by accident). It shows "Say your name when you pay", double
+points days and rewards between customers. When you open a customer on the staff screen it shows
+their first name, points, any reward they can have now and whether they can use their tab, straight
+away (the staff page sends it directly, not through the server). When a Square sale lands, it shows
+"+300 points" within a few seconds. It goes back to the idle screen 90 seconds after the last change,
+or when you go to any other page. Never shown: surnames, amounts owed, overdue charges, the score.
+
 ### Security keys
 
 A security key (a YubiKey or similar) or a phone passkey can sign in instead of the staff password,

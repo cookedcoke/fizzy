@@ -198,3 +198,17 @@ def test_test_accounts_hand_repayments_left_out_of_transactions_repaid(client):
     finally:
         transactions.render = real
     assert seen["totals"]["repaid"] == 200
+
+
+def test_customer_display(client):
+    assert client.get("/display", follow_redirects=False).status_code == 303          # staff only
+    login(client)
+    cid = _customer()
+    assert "Say your name when you pay" in client.get("/display").text
+    page = client.get(f"/customers/{cid}").text
+    assert 'id="display-msg"' in page and '"type": "show"' in page
+    d = client.get(f"/api/display/customer/{cid}").json()
+    assert set(d) == {"id", "first", "points", "ready", "next", "tab"}                 # first name only, nothing owed
+    assert " " not in d["first"]
+    assert client.get("/api/display/customer/99999").status_code == 404
+    assert "events" in client.get("/api/display/idle").json()
