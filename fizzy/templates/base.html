@@ -33,9 +33,13 @@
   (function (more) {
     var n = more.previousElementSibling, menu = more.querySelector(".nav-menu"), links = Array.prototype.slice.call(n.querySelectorAll("a"));
     function fit() {
+      var clock = document.querySelector("header .clock");
       links.forEach(function (a) { n.appendChild(a); });
       more.hidden = true; more.open = false;
+      if (clock) clock.classList.remove("squeezed");
       if (innerWidth <= 720 || n.scrollWidth <= n.clientWidth + 1) return;
+      if (clock) clock.classList.add("squeezed");  // the clock gives way before any tab does
+      if (n.scrollWidth <= n.clientWidth + 1) return;
       more.hidden = false;
       for (var i = links.length - 1; i >= 0 && n.scrollWidth > n.clientWidth + 1; i--) {
         if (!links[i].classList.contains("on")) menu.insertBefore(links[i], menu.firstChild);

@@ -341,7 +341,7 @@ header nav.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparen
 /* Header clock: desktop only (the header has no room for it on smaller screens). */
 .clock { display: none; align-items: baseline; gap: 7px; color: #fff; font-weight: 650; font-size: 15px; margin-right: var(--s2); white-space: nowrap }
 .clock .d { color: #8B919B; font-weight: 400; font-size: 12px }
-@media (min-width: 1100px) { .clock { display: inline-flex } }
+@media (min-width: 900px) { .clock { display: inline-flex } }
 @media (max-width: 1439px) { .clock .d { display: none } }
 
 input.cost { width: 110px; height: 30px; text-align: right; font-variant-numeric: tabular-nums }
@@ -380,7 +380,7 @@ body.has-claim-prompt main { padding-bottom: 200px }
 header nav { flex-shrink: 1 }
 @media (max-width: 1600px) { header .brand small, header .who .label, .clock .d { display: none } }
 header .hsearch { flex: 1 1 220px; min-width: 96px; max-width: 260px }
-@media (max-width: 1300px) { header:has(.hsearch) .clock { display: none } }
+
 @media (max-width: 1023px) { header nav { flex-shrink: 1 } }
 @media (max-width: 1600px) { header:has(.hsearch) .clock .d, header:has(.hsearch) .who .label { display: none } }
 /* Stat tiles: rows that don't fill up end in white, not grey gaps. */
@@ -599,3 +599,4 @@ html { -webkit-tap-highlight-color: transparent }
 .nav-menu a:hover, .nav-menu a.on { color: #fff; background: #22252B }
 @media (max-width: 720px) { .nav-more { display: none } }
 .nav-more > summary::before { content: none }
+header .clock.squeezed { display: none !important }
