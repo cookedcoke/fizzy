@@ -45,6 +45,7 @@
 <form class="panel" id="display" method="post" action="/settings/display"><h2>Customer display</h2>
   <p class="small" style="margin-top:0">A message for the screen facing the queue, shown between customers. Leave it empty for none.</p>
   <input type="text" name="message" maxlength="120" value="{{ display_message }}" placeholder="e.g. New: mango Chi Forest. Try it.">
+  <label class="check" style="margin-top:12px"><input type="checkbox" name="owing" value="1" {{ 'checked' if display_owing }}> Show what each customer owes on their tab, including anything overdue</label>
   <div class="actions"><button class="primary">Save</button> <a class="btn" href="/display" target="_blank">Open the display</a></div>
 </form>
 <form class="panel" id="closed" method="post" action="/settings/closed"><h2>Closed days</h2>

@@ -54,6 +54,10 @@
   .tag { background: var(--card); border-radius: 99vh; padding: 1vh 2.4vh; font-weight: 700; font-size: 2.6vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3) }
   .tag.hot { background: var(--sun); color: #3A2600 }
   .tag.red { background: var(--red); color: #fff }
+  .owing { margin-top: 3vh; display: inline-flex; align-self: flex-start; align-items: baseline; gap: 2vh; background: var(--card); border-radius: 2.4vh;
+           padding: 1.8vh 3vh; font-size: 3vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3); border-left: 1vh solid var(--sun) }
+  .owing b { font-family: var(--display); font-weight: 800; font-size: 4.4vh }
+  .owing.late { border-left-color: var(--red) } .owing.late em { color: var(--red); font-style: normal; font-weight: 700 }
   .progress { margin-top: 2.6vh; max-width: 46vw }
   .progress .bar { height: 1.8vh; border-radius: 99vh; background: #F3E2D6; overflow: hidden; margin-top: 1.2vh }
   .progress .bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #FF5A3C, var(--red)); transition: width .8s ease }
@@ -121,6 +125,7 @@
   <div class="pts" id="c-pts"><span class="k">Your points</span><span class="v" id="c-points">0</span></div>
   <div class="gain" id="c-gain"></div>
   <div class="tags" id="c-tags"></div>
+  <div class="owing" id="c-owing" hidden></div>
   <div class="lines" id="c-lines"></div>
   <div class="progress" id="c-progress" hidden><div id="c-prog-text"></div><div class="bar"><i id="c-prog-bar"></i></div></div>
   <div class="signin" id="c-signin" hidden></div>
@@ -209,6 +214,15 @@
     if (c.boost) tag((c.boost === 2 ? "Double" : c.boost + "x") + " points today", "red");
     if (c.streak > 1) tag(c.streak + "-day streak" + (c.today ? "" : ". Buy today to keep it"), c.streak >= 5 ? "hot" : "");
     if (c.rank) tag("#" + c.rank + " this month");
+    var ow = $("c-owing"), o = c.owing;
+    ow.hidden = !o; ow.textContent = "";
+    if (o) {
+      ow.className = "owing" + (o.overdue ? " late" : "");
+      var b = document.createElement("b"); b.textContent = o.owing;
+      var s = document.createElement("span"); s.textContent = "on your tab";
+      var e = document.createElement("em"); e.textContent = o.overdue ? (o.overdue === o.owing ? "Overdue. Please pay today." : o.overdue + " of it is overdue. Please pay today.") : (o.due ? "Pay by " + o.due : "");
+      ow.append(b, s, e);
+    }
     var pr = $("c-progress");
     if (c.next && c.next.cost && !(c.ready && c.ready.length)) {
       pr.hidden = false;

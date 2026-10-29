@@ -116,7 +116,7 @@ points days and rewards between customers. When you open a customer on the staff
 their first name, points, any reward they can have now and whether they can use their tab, straight
 away (the staff page sends it directly, not through the server). When a Square sale lands, it shows
 "+300 points" within a few seconds. It goes back to the idle screen 90 seconds after the last change,
-or when you go to any other page. Never shown: surnames, amounts owed, overdue charges, the score.
+or when you go to any other page. It also shows what they owe on their tab, including anything overdue (turn that off in Settings, Customer display). Never shown: surnames or the score breakdown.
 
 **Sign-in code.** On a customer's page, press **Sign-in code** (or Q) and a QR code appears on the
 display. Scanning it signs them in to the student site without their passcode (or before they have

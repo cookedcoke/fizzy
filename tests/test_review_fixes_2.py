@@ -208,7 +208,7 @@ def test_customer_display(client):
     page = client.get(f"/customers/{cid}").text
     assert 'id="display-msg"' in page and '"type": "show"' in page
     d = client.get(f"/api/display/customer/{cid}").json()
-    assert set(d) == {"id", "first", "points", "ready", "next", "tab", "streak", "today", "rank", "boost", "new"}  # nothing owed
+    assert set(d) == {"id", "first", "points", "ready", "next", "tab", "streak", "today", "rank", "boost", "new", "owing"}
     assert " " not in d["first"]
     assert client.get("/api/display/customer/99999").status_code == 404
     assert "events" in client.get("/api/display/idle").json()

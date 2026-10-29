@@ -21,6 +21,11 @@ final class StaffWindowController: NSWindowController, NSWindowDelegate, NSMenuI
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.title = "Fizzy"
+        // Blend the title bar into Fizzy's dark header instead of a white strip above it.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.backgroundColor = NSColor(srgbRed: 0x15 / 255.0, green: 0x17 / 255.0, blue: 0x1B / 255.0, alpha: 1)
+        window.appearance = NSAppearance(named: .darkAqua)
         window.minSize = NSSize(width: 480, height: 360)
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed

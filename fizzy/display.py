@@ -1,14 +1,14 @@
 """The customer display: a second screen facing the queue. The staff pages tell it who's being
 served (instantly, through the Mac app's message bridge or a BroadcastChannel in the same browser);
-it shows their first name, points, rewards they can have now and whether they can use their tab.
-Privacy: first name only, never amounts owed, overdue charges or the score breakdown."""
+it shows their first name, points, rewards they can have now, their tab and what they owe (the
+owner chose to show that; Settings, Customer display turns it off). First name only, never the score breakdown."""
 from functools import lru_cache
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from . import badges, config, db, events, logic, portal, rewards, stats
-from .web import back, get_conn, money, staff, templates
+from .web import back, get_conn, local, money, staff, templates
 
 router = APIRouter()
 
@@ -28,12 +28,13 @@ def _qr():
 
 
 @router.post("/settings/display")
-def save_message(request: Request, message: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+def save_message(request: Request, message: str = Form(""), owing: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
     text = " ".join(message.split())[:120]
     db.set_setting(conn, "display_message", text)
+    db.set_setting(conn, "display_owing", "1" if owing else "0")
     db.audit(conn, who, "settings", None, f"display message: {text}")
     conn.commit()
-    return back(request, "/settings#display", "Saved. It's on the customer display now." if text else "Message taken off the display.")
+    return back(request, "/settings#display", "Saved.")
 
 
 @router.get("/api/display/idle")
@@ -57,7 +58,9 @@ def idle(who=Depends(staff), conn=Depends(get_conn)):
 def _tab_line(st):
     if st["status"] == "approved" and st["can_charge"]:
         return f"You can put up to {money(st['available_cents'])} on your tab."
-    if st["status"] in ("approved", "blocked_overdue", "paused"):
+    if st["status"] == "blocked_overdue":
+        return "Nothing more on your tab until that's paid."
+    if st["status"] in ("approved", "paused"):
         return "Your tab's paused. Ask at the counter."
     if st["status"] == "eligible":
         return "You can ask for a tab."
@@ -72,6 +75,12 @@ def payload(conn, c, summary=None, offers=None):
     ready = [o["reward"]["name"] for o in offers if o["can_redeem"]]
     nxt = min((o for o in offers if not o["can_redeem"] and not o["limit_hit"]), key=lambda o: o["short"], default=None)
     me = badges.for_customer(conn, c["id"])
+    led = s["ledger"]
+    owing = None
+    if led["owing_cents"] > 0 and db.get_setting(conn, "display_owing", "1") == "1":
+        unpaid = [ch["due_at"] for ch in led["charges"] if ch["unpaid_cents"] > 0]
+        owing = {"owing": money(led["owing_cents"]), "overdue": money(led["overdue_cents"]) if led["overdue_cents"] else None,
+                 "due": local(min(unpaid), "%A") if unpaid and not led["overdue_cents"] else None}
     _, rank = portal.leaderboard(conn, since=portal.month_start(), limit=0, me=c["id"]) if c["passcode_enc"] else (None, None)
     on = events.on(conn)
     return {
@@ -83,6 +92,7 @@ def payload(conn, c, summary=None, offers=None):
         "rank": rank["rank"] if rank and rank["rank"] <= 10 else None,     # only bragging rights, top 10 this month
         "boost": max((e["multiplier"] for e in on), default=None),
         "new": me["visits"] == 0,
+        "owing": owing,
     }
 
 
