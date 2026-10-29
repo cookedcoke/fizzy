@@ -28,8 +28,10 @@
   .chip { background: var(--card); border-radius: 2.4vh; padding: 2vh 2.8vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3); font-size: 2.6vh }
   .chip b { display: block; font-family: var(--display); font-size: 3.2vh }
   .chip.hot { background: var(--red); color: #fff }
-  #idle .site { position: absolute; bottom: 4vh; left: 7vw; font-size: 2.4vh; color: var(--muted) }
-  #idle .site b { color: var(--ink) }
+  #idle .qr { position: absolute; right: 7vw; bottom: 6vh; display: flex; flex-direction: column; align-items: center; gap: 1.6vh;
+              text-align: center; font-size: 2.2vh; color: var(--muted) }
+  #idle .qr svg { width: 22vh; height: 22vh; background: #fff; border-radius: 2vh; padding: 1.2vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3) }
+  #idle .qr b { color: var(--ink) }
 
   /* someone's being served */
   #cust h1 { font-size: 8vh }
@@ -64,7 +66,7 @@
   <h1>Say your name when you pay. <span>Get points.</span></h1>
   <p class="lede">1 point for every cent. Swap them for free drinks and money off.</p>
   <div class="row" id="idle-row"></div>
-  {% if student_site %}<p class="site">See your points at <b>{{ student_site }}</b></p>{% endif %}
+  {% if student_site %}<div class="qr">{% if qr %}{{ qr|safe }}{% endif %}<p>Scan to see your points<br><b>{{ student_site }}</b></p></div>{% endif %}
 </section>
 
 <section class="screen" id="cust" aria-live="polite">

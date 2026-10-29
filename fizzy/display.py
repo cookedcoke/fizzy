@@ -2,6 +2,8 @@
 served (instantly, through the Mac app's message bridge or a BroadcastChannel in the same browser);
 it shows their first name, points, rewards they can have now and whether they can use their tab.
 Privacy: first name only, never amounts owed, overdue charges or the score breakdown."""
+from functools import lru_cache
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -13,7 +15,16 @@ router = APIRouter()
 
 @router.get("/display", response_class=HTMLResponse)
 def display(request: Request, who=Depends(staff)):
-    return templates.TemplateResponse(request, "display.html", {"student_site": config.PUBLIC_HOST})
+    return templates.TemplateResponse(request, "display.html", {"student_site": config.PUBLIC_HOST, "qr": _qr()})
+
+
+@lru_cache(maxsize=1)
+def _qr():
+    """The student site as a QR code (inline SVG), so a phone in the queue can open it."""
+    if not config.PUBLIC_HOST:
+        return None
+    import segno
+    return segno.make(f"https://{config.PUBLIC_HOST}/", error="m").svg_inline(scale=1, border=2, dark="#1B1A1F", light="#FFFFFF", omitsize=True)
 
 
 @router.get("/api/display/idle")
