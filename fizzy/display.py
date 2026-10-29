@@ -4,11 +4,11 @@ it shows their first name, points, rewards they can have now and whether they ca
 Privacy: first name only, never amounts owed, overdue charges or the score breakdown."""
 from functools import lru_cache
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from . import config, events, logic, rewards
-from .web import get_conn, money, staff, templates
+from . import badges, config, db, events, logic, portal, rewards, stats
+from .web import back, get_conn, money, staff, templates
 
 router = APIRouter()
 
@@ -27,12 +27,30 @@ def _qr():
     return segno.make(f"https://{config.PUBLIC_HOST}/", error="m").svg_inline(scale=1, border=2, dark="#1B1A1F", light="#FFFFFF", omitsize=True)
 
 
+@router.post("/settings/display")
+def save_message(request: Request, message: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+    text = " ".join(message.split())[:120]
+    db.set_setting(conn, "display_message", text)
+    db.audit(conn, who, "settings", None, f"display message: {text}")
+    conn.commit()
+    return back(request, "/settings#display", "Saved. It's on the customer display now." if text else "Message taken off the display.")
+
+
 @router.get("/api/display/idle")
 def idle(who=Depends(staff), conn=Depends(get_conn)):
     """What's on: shown between customers."""
+    start, end = stats.day_bounds(stats.today())
+    board, _ = portal.leaderboard(conn, since=portal.month_start(), limit=3)
+    menu = conn.execute("SELECT display, MIN(price_cents) AS price FROM catalog_items WHERE deleted = 0 AND price_cents > 0 "
+                        "GROUP BY item_id ORDER BY item_name LIMIT 12").fetchall()
     return JSONResponse({
         "events": [{"name": e["name"], "multiplier": e["multiplier"]} for e in events.on(conn)],
+        "soon": [{"name": e["name"], "multiplier": e["multiplier"], "start": e["start_date"]} for e in events.upcoming(conn)][:2],
         "rewards": [{"name": r["name"], "points": r["points_cost"]} for r in rewards.active(conn)][:6],
+        "leaders": [{"rank": b["rank"], "name": b["name"], "points": b["points"]} for b in board],
+        "popular": [i["name"] for i in stats.top_items(stats.checkouts(conn, start, end), 3)],
+        "menu": [{"name": m["display"], "price": money(m["price"])} for m in menu],
+        "message": db.get_setting(conn, "display_message", "") or "",
     }, headers={"Cache-Control": "no-store"})
 
 
@@ -53,11 +71,18 @@ def payload(conn, c, summary=None, offers=None):
     offers = rewards.offers_for(conn, c["id"], s["points"]) if offers is None else offers
     ready = [o["reward"]["name"] for o in offers if o["can_redeem"]]
     nxt = min((o for o in offers if not o["can_redeem"] and not o["limit_hit"]), key=lambda o: o["short"], default=None)
+    me = badges.for_customer(conn, c["id"])
+    _, rank = portal.leaderboard(conn, since=portal.month_start(), limit=0, me=c["id"]) if c["passcode_enc"] else (None, None)
+    on = events.on(conn)
     return {
         "id": c["id"], "first": (c["name"] or "").split(" ")[0], "points": s["points"],
         "ready": ready[:3],
-        "next": {"name": nxt["reward"]["name"], "short": nxt["short"]} if nxt else None,
+        "next": {"name": nxt["reward"]["name"], "short": nxt["short"], "cost": nxt["reward"]["points_cost"]} if nxt else None,
         "tab": _tab_line(s["status"]),
+        "streak": me["streak"], "today": me["today"],
+        "rank": rank["rank"] if rank and rank["rank"] <= 10 else None,     # only bragging rights, top 10 this month
+        "boost": max((e["multiplier"] for e in on), default=None),
+        "new": me["visits"] == 0,
     }
 
 

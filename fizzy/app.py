@@ -950,7 +950,8 @@ def register(app):
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
-        return render(request, "settings.html", cfg=logic.settings(conn), closed=logic.closed_days(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
+        return render(request, "settings.html", cfg=logic.settings(conn), closed=logic.closed_days(conn),
+                      display_message=db.get_setting(conn, "display_message", "") or "", pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
                       actions=pin.ACTIONS, level_labels=pin.LEVEL_LABELS,
                       devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
                       passkey_list=passkeys.listed(conn), passkey_options=request.session.pop("pk_add_options", None),

@@ -42,6 +42,11 @@
   <div class="actions"><button class="primary">Save</button></div>
   <p class="hint">Each person's limit comes from their tab score: 80+ gets the highest limit, 65+ three quarters, 50+ half, below that a quarter. Paying on time raises it; paying late lowers it. 1 point per cent; tab buys earn points once paid off.</p>
 </form>
+<form class="panel" id="display" method="post" action="/settings/display"><h2>Customer display</h2>
+  <p class="small" style="margin-top:0">A message for the screen facing the queue, shown between customers. Leave it empty for none.</p>
+  <input type="text" name="message" maxlength="120" value="{{ display_message }}" placeholder="e.g. New: mango Chi Forest. Try it.">
+  <div class="actions"><button class="primary">Save</button> <a class="btn" href="/display" target="_blank">Open the display</a></div>
+</form>
 <form class="panel" id="closed" method="post" action="/settings/closed"><h2>Closed days</h2>
   <p class="small" style="margin-top:0">Holidays and days off. cookedcoke.co shows "Closed" on these instead of the usual hours. One per line.</p>
   <textarea name="days" rows="4" placeholder="2026-12-12 to 2027-01-31 Summer holidays&#10;2027-01-26 Australia Day">{% for a, b, label in closed %}{{ a }}{% if b != a %} to {{ b }}{% endif %}{% if label %} {{ label }}{% endif %}

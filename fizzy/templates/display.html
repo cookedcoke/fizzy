@@ -28,6 +28,35 @@
   .chip { background: var(--card); border-radius: 2.4vh; padding: 2vh 2.8vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3); font-size: 2.6vh }
   .chip b { display: block; font-family: var(--display); font-size: 3.2vh }
   .chip.hot { background: var(--red); color: #fff }
+  /* idle slides take turns */
+  .slide { position: absolute; left: 7vw; right: 34vw; top: 50%; transform: translateY(-46%); opacity: 0; transition: opacity .6s ease, transform .6s ease }
+  .slide.on { opacity: 1; transform: translateY(-50%) }
+  .slide h2 { font-family: var(--display); font-weight: 800; font-size: 6vh; letter-spacing: -.03em; line-height: 1.05; margin-bottom: 4vh }
+  .slide h2 span { color: var(--red) }
+  .menu { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4vh 5vw; font-size: 3vh }
+  .menu div { display: flex; gap: 1.6vh; align-items: baseline; border-bottom: .3vh dashed #F0E4D8; padding-bottom: 1vh }
+  .menu b { font-weight: 650 } .menu i { flex: 1 } .menu span { font-family: var(--display); font-weight: 800 }
+  .leaders { display: grid; gap: 2vh }
+  .leaders div { display: flex; align-items: center; gap: 3vh; font-size: 4vh; font-weight: 650 }
+  .leaders em { width: 8vh; height: 8vh; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-family: var(--display); font-weight: 800;
+                background: #E9E6E3 } .leaders div:nth-child(1) em { background: var(--sun) } .leaders div:nth-child(3) em { background: #F2C29B }
+  .leaders span { margin-left: auto; font-family: var(--display); font-weight: 800; color: var(--muted) }
+  .big-list { font-family: var(--display); font-weight: 800; font-size: 7vh; letter-spacing: -.03em; line-height: 1.15 }
+  .big-list .first { color: var(--red) }
+  .dots { position: absolute; left: 7vw; bottom: 6vh; display: flex; gap: 1vh }
+  .dots i { width: 1.2vh; height: 1.2vh; border-radius: 50%; background: #E3D6CA; transition: background .3s, width .3s }
+  .dots i.on { background: var(--red); width: 3.6vh; border-radius: 1vh }
+  .banner { position: absolute; top: 3.4vh; left: 50%; transform: translateX(-50%); background: var(--sun); color: #3A2600; border-radius: 99vh;
+            padding: 1.4vh 3.4vh; font-weight: 700; font-size: 2.8vh; max-width: 60vw; text-align: center; box-shadow: 0 1vh 3vh -2vh rgba(120,80,0,.5) }
+  .clock { position: absolute; top: 4.4vh; right: 7vw; font-family: var(--display); font-weight: 800; font-size: 3vh; color: var(--muted) }
+  /* customer extras */
+  .tags { display: flex; gap: 1.4vh; margin-top: 3vh; flex-wrap: wrap }
+  .tag { background: var(--card); border-radius: 99vh; padding: 1vh 2.4vh; font-weight: 700; font-size: 2.6vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3) }
+  .tag.hot { background: var(--sun); color: #3A2600 }
+  .tag.red { background: var(--red); color: #fff }
+  .progress { margin-top: 2.6vh; max-width: 46vw }
+  .progress .bar { height: 1.8vh; border-radius: 99vh; background: #F3E2D6; overflow: hidden; margin-top: 1.2vh }
+  .progress .bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #FF5A3C, var(--red)); transition: width .8s ease }
   #idle .qr { position: absolute; right: 7vw; bottom: 6vh; display: flex; flex-direction: column; align-items: center; gap: 1.6vh;
               text-align: center; font-size: 2.2vh; color: var(--muted) }
   #idle .qr svg { width: 22vh; height: 22vh; background: #fff; border-radius: 2vh; padding: 1.2vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3) }
@@ -71,10 +100,19 @@
 <body>
 <div class="brand"><img src="/static/logo.svg?v={{ V }}" alt=""><span>Cooked Coke</span></div>
 
+<div class="clock" id="clock"></div>
 <section class="screen" id="idle" aria-live="polite">
-  <h1>Say your name when you pay. <span>Get points.</span></h1>
-  <p class="lede">1 point for every cent. Swap them for free drinks and money off.</p>
-  <div class="row" id="idle-row"></div>
+  <div class="banner" id="banner" hidden></div>
+  <div class="slide" data-s="hello">
+    <h1>Say your name when you pay. <span>Get points.</span></h1>
+    <p class="lede">1 point for every cent. Swap them for free drinks and money off.</p>
+    <div class="row" id="idle-row"></div>
+  </div>
+  <div class="slide" data-s="menu"><h2>On the <span>shelf</span></h2><div class="menu" id="s-menu"></div></div>
+  <div class="slide" data-s="popular"><h2>Popular <span>today</span></h2><div class="big-list" id="s-popular"></div></div>
+  <div class="slide" data-s="leaders"><h2>Top this <span>month</span></h2><div class="leaders" id="s-leaders"></div></div>
+  <div class="slide" data-s="soon"><h2>Coming <span>up</span></h2><div class="big-list" id="s-soon"></div></div>
+  <div class="dots" id="dots"></div>
   {% if student_site %}<div class="qr">{% if qr %}{{ qr|safe }}{% endif %}<p>Scan to see your points<br><b>{{ student_site }}</b></p></div>{% endif %}
 </section>
 
@@ -82,7 +120,9 @@
   <h1>Hey <span id="c-first"></span></h1>
   <div class="pts" id="c-pts"><span class="k">Your points</span><span class="v" id="c-points">0</span></div>
   <div class="gain" id="c-gain"></div>
+  <div class="tags" id="c-tags"></div>
   <div class="lines" id="c-lines"></div>
+  <div class="progress" id="c-progress" hidden><div id="c-prog-text"></div><div class="bar"><i id="c-prog-bar"></i></div></div>
   <div class="signin" id="c-signin" hidden></div>
 </section>
 
@@ -110,8 +150,37 @@
       var row = $("idle-row"); row.textContent = "";
       d.events.forEach(function (e) { chip(row, e.multiplier === 2 ? "Double points" : e.multiplier + "x points", e.name || "On today", true); });
       d.rewards.forEach(function (r) { chip(row, r.name, fmt(r.points) + " points"); });
+      $("banner").textContent = d.message; $("banner").hidden = !d.message;
+      var m = $("s-menu"); m.textContent = "";
+      d.menu.forEach(function (x) { var r = document.createElement("div"), b = document.createElement("b"), i = document.createElement("i"), s = document.createElement("span");
+        b.textContent = x.name; s.textContent = x.price; r.append(b, i, s); m.appendChild(r); });
+      list($("s-popular"), d.popular);
+      var l = $("s-leaders"); l.textContent = "";
+      d.leaders.forEach(function (x) { var r = document.createElement("div"), e = document.createElement("em"), n = document.createElement("b"), p = document.createElement("span");
+        e.textContent = x.rank; n.textContent = x.name; p.textContent = fmt(x.points); r.append(e, n, p); l.appendChild(r); });
+      list($("s-soon"), d.soon.map(function (e) {
+        return (e.multiplier === 2 ? "Double points " : e.multiplier + "x points ") + new Date(e.start + "T12:00").toLocaleDateString("en-AU", { weekday: "long" });
+      }));
+      have = { hello: true, menu: d.menu.length > 0, popular: d.popular.length > 0, leaders: d.leaders.length > 0, soon: d.soon.length > 0 };
+      rotate(true);
     }).catch(gone);
   }
+  function list(el, items) {
+    el.textContent = "";
+    items.forEach(function (t, i) { var p = document.createElement("div"); p.textContent = t; if (!i) p.className = "first"; el.appendChild(p); });
+  }
+  // Slides take turns every 9 seconds; ones with nothing to show are skipped.
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide")), have = { hello: true }, at = 0;
+  function rotate(keep) {
+    var on = slides.filter(function (s) { return have[s.dataset.s]; });
+    if (!keep) at = (at + 1) % on.length; else at = Math.min(at, on.length - 1);
+    slides.forEach(function (s) { s.classList.toggle("on", s === on[at]); });
+    var dots = $("dots"); dots.textContent = "";
+    if (on.length > 1) on.forEach(function (s, i) { var d = document.createElement("i"); if (i === at) d.className = "on"; dots.appendChild(d); });
+  }
+  setInterval(function () { if (mode === "idle") rotate(); }, 9000);
+  function clock() { $("clock").textContent = new Date().toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" }); }
+  clock(); setInterval(clock, 10000);
   function chip(row, big, small, hot) {
     var c = document.createElement("div"); c.className = "chip" + (hot ? " hot" : "");
     var b = document.createElement("b"); b.textContent = big; c.appendChild(b); c.appendChild(document.createTextNode(small)); row.appendChild(c);
@@ -132,8 +201,20 @@
   function lines(c) {
     var el = $("c-lines"); el.textContent = "";
     if (c.ready && c.ready.length) text(el, "You can have " + c.ready.join(", ") + " now. Just ask.", "ready");
-    else if (c.next) text(el, fmt(c.next.short) + " more points for " + c.next.name + ".");
+    else if (c.next && !c.next.cost) text(el, fmt(c.next.short) + " more points for " + c.next.name + ".");
     if (c.tab) text(el, c.tab, "muted");
+    var tags = $("c-tags"); tags.textContent = "";
+    function tag(t, cls) { var s = document.createElement("span"); s.className = "tag " + (cls || ""); s.textContent = t; tags.appendChild(s); }
+    if (c.new) tag("Welcome! First time here", "hot");
+    if (c.boost) tag((c.boost === 2 ? "Double" : c.boost + "x") + " points today", "red");
+    if (c.streak > 1) tag(c.streak + "-day streak" + (c.today ? "" : ". Buy today to keep it"), c.streak >= 5 ? "hot" : "");
+    if (c.rank) tag("#" + c.rank + " this month");
+    var pr = $("c-progress");
+    if (c.next && c.next.cost && !(c.ready && c.ready.length)) {
+      pr.hidden = false;
+      $("c-prog-text").textContent = fmt(c.next.short) + " more points for " + c.next.name;
+      $("c-prog-bar").style.width = Math.max(3, Math.min(100, 100 * (c.next.cost - c.next.short) / c.next.cost)) + "%";
+    } else pr.hidden = true;
   }
   function gained(n, total) {
     var g = $("c-gain"), p = $("c-pts"), r = p.getBoundingClientRect();
