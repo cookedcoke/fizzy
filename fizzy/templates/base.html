@@ -27,7 +27,27 @@
     <a href="{{ href }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}" title="{{ label }} - press G then {{ key }}">{{ label }}</a>
     {% endfor %}
   </nav>
-  <script>/* Runs before first paint: keep the current page's tab in view, and fade only the edges with more tabs past them. */
+  <details class="nav-more" hidden><summary>More</summary><div class="nav-menu"></div></details>
+  <script>/* Runs before first paint. Wider than a phone: tabs that don't fit go into a "More" menu at the end
+     (never the current page's). Phone: the row scrolls, kept on the current tab, edges faded. */
+  (function (more) {
+    var n = more.previousElementSibling, menu = more.querySelector(".nav-menu"), links = Array.prototype.slice.call(n.querySelectorAll("a"));
+    function fit() {
+      links.forEach(function (a) { n.appendChild(a); });
+      more.hidden = true; more.open = false;
+      if (innerWidth <= 720 || n.scrollWidth <= n.clientWidth + 1) return;
+      more.hidden = false;
+      for (var i = links.length - 1; i >= 0 && n.scrollWidth > n.clientWidth + 1; i--) {
+        if (!links[i].classList.contains("on")) menu.insertBefore(links[i], menu.firstChild);
+      }
+      more.classList.toggle("on", !!menu.querySelector("a.on"));
+    }
+    fit(); addEventListener("resize", fit); document.addEventListener("DOMContentLoaded", fit); addEventListener("load", fit);
+    if (document.fonts) document.fonts.ready.then(fit);
+    document.addEventListener("click", function (e) { if (more.open && !more.contains(e.target)) more.open = false; });
+  })(document.currentScript.previousElementSibling);
+  </script>
+  <script>
   (function (n) {
     var on = n.querySelector("a.on");
     if (on && n.scrollWidth > n.clientWidth) n.scrollLeft += on.getBoundingClientRect().left - n.getBoundingClientRect().left - (n.clientWidth - on.offsetWidth) / 2;
@@ -36,7 +56,7 @@
       n.classList.toggle("more-r", n.scrollLeft + n.clientWidth < n.scrollWidth - 2);
     }
     edges(); n.addEventListener("scroll", edges, { passive: true }); addEventListener("resize", edges);
-  })(document.currentScript.previousElementSibling);
+  })(document.currentScript.previousElementSibling.previousElementSibling.previousElementSibling);
   </script>
   {% if p not in ('/', '/customers') %}
   <div class="hsearch"><input type="search" data-search placeholder="Search  /" title="Search customers - press / or S" autocomplete="off" aria-label="Find a customer"><div class="results"></div></div>

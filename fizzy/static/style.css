@@ -507,7 +507,7 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 /* Header search: under 1600px it folds down to a magnifier so all the tabs fit, and opens over
    the tabs when clicked or when / or S is pressed. */
 @media (min-width: 721px) and (max-width: 1599px) {
-  .hsearch { flex: 0 0 34px; min-width: 34px; height: 32px }
+  header .hsearch { flex: 0 0 34px; min-width: 34px; max-width: 34px; height: 32px }
   .hsearch input { position: absolute; right: 0; top: 0; width: 34px; padding: 0 0 0 32px; cursor: pointer; color: transparent;
     background: #22252B url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23C9CDD3' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 9px center / 16px;
     transition: width .18s ease, background-color .18s }
@@ -585,3 +585,17 @@ html { -webkit-tap-highlight-color: transparent }
   dialog { background: var(--surface); color: var(--fg) }
   .hsearch input { background-color: #22252B }
 }
+/* Tabs that don't fit the header go in here. */
+.nav-more { position: relative; flex: none; display: flex; align-items: stretch }
+.nav-more > summary { list-style: none; display: flex; align-items: center; gap: 6px; padding: 0 var(--s3); color: #B7BCC4; cursor: pointer;
+  border-bottom: 2px solid transparent; border-top: 2px solid transparent; white-space: nowrap }
+.nav-more > summary::-webkit-details-marker { display: none }
+.nav-more > summary::after { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg) }
+.nav-more > summary:hover, .nav-more[open] > summary { color: #fff }
+.nav-more.on > summary { color: #fff; border-bottom-color: var(--red); font-weight: 600 }
+.nav-menu { position: absolute; top: 100%; left: 0; z-index: 20; min-width: 170px; background: var(--header); border: 1px solid #2C3038; border-top: none;
+  border-radius: 0 0 6px 6px; padding: 4px 0; box-shadow: 0 12px 30px rgba(0, 0, 0, .3) }
+.nav-menu a { display: block; padding: 9px 16px; color: #B7BCC4; text-decoration: none }
+.nav-menu a:hover, .nav-menu a.on { color: #fff; background: #22252B }
+@media (max-width: 720px) { .nav-more { display: none } }
+.nav-more > summary::before { content: none }
