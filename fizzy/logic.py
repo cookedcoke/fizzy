@@ -4,7 +4,9 @@ Repayments are applied to charges oldest-first (FIFO). Allocation is derived on 
 from the totals, so refunds and corrections never leave stale allocation rows behind.
 Points for tab purchases are earned only when the tab is repaid.
 """
-from datetime import datetime, timedelta, timezone
+import json
+import re
+from datetime import date, datetime, timedelta, timezone
 
 from . import config
 from .db import audit, get_setting, now_iso
@@ -506,3 +508,36 @@ def purchases_in(conn, start, end):
             "SELECT id FROM tab_charges WHERE customer_id = ? AND charged_at >= ? AND charged_at < ?", (cid, start, end)))
         totals[cid] = totals.get(cid, 0) + paid
     return totals
+
+
+# ---- days the stall is shut (holidays), for cookedcoke.co's open/closed sign -----------------
+
+CLOSED_MAX = 40
+
+
+def parse_closed(text):
+    """Lines like "2026-12-12 to 2027-01-31 Summer holidays" or "2026-11-03 Melbourne Cup".
+    Returns ([(start, end, label)], [lines it couldn't read])."""
+    out, bad = [], []
+    for line in (text or "").splitlines():
+        line = " ".join(line.split())
+        if not line:
+            continue
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})(?:\s*(?:to|-|–)\s*(\d{4}-\d{2}-\d{2}))?\s*(.*)$", line)
+        try:
+            a = date.fromisoformat(m.group(1))
+            b = date.fromisoformat(m.group(2)) if m.group(2) else a
+        except (AttributeError, ValueError):
+            bad.append(line)
+            continue
+        if b < a:
+            a, b = b, a
+        out.append((a.isoformat(), b.isoformat(), m.group(3)[:60]))
+    return sorted(out)[:CLOSED_MAX], bad
+
+
+def closed_days(conn):
+    try:
+        return [tuple(r) for r in json.loads(get_setting(conn, "closed_dates", "[]") or "[]")]
+    except ValueError:
+        return []

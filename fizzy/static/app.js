@@ -370,6 +370,12 @@
       level = Math.max(level, R.big.level);
     }
     if (data && path === "/tools/write_off" && !String(data.get("amount") || "").trim()) level = Math.max(level, R.big.level);
+    if (data && path === "/tools/extend_due" && num(data.get("days") || 1) > 30) level = Math.max(level, R.big.level);
+    var run = R.big.running;  // lots of small hand changes in the last hour add up
+    if (data && run && test(R.big.paths) && path !== "/events") {
+      var p = num(data.get("delta")) * people + num(data.get("points")), d = num(data.get("amount"));
+      if ((p || d) && (run.points + p > R.big.points * run.times || run.dollars + d > R.big.dollars * run.times)) level = Math.max(level, R.big.level);
+    }
     if (data && path === "/events") {
       var s0 = data.get("start"), e0 = data.get("end") || s0, days = (Date.parse(e0) - Date.parse(s0)) / 864e5;
       var big = !!data.get("weekly") || num(data.get("multiplier") || 2) > 2 || !(days <= 6);

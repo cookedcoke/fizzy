@@ -163,7 +163,22 @@ def _number(v):
     return n if n == n else float("inf")
 
 
-def required(conn, method, path, form=None):
+RUNNING_HOURS = 1  # hand changes by one person within this long add up towards "big"
+
+
+def _running(conn, staff):
+    """(points, dollars) this person has changed by hand recently, so lots of small ones add up."""
+    if not staff:
+        return 0, 0
+    since = (datetime.now(timezone.utc) - timedelta(hours=RUNNING_HOURS)).isoformat(timespec="seconds")
+    pts = conn.execute("SELECT COALESCE(SUM(ABS(delta)), 0) FROM points_ledger WHERE reason = 'manual' AND staff = ? AND created_at >= ?",
+                       (staff, since)).fetchone()[0]
+    cents = conn.execute("SELECT COALESCE(SUM(ABS(amount_cents)), 0) FROM tab_repayments WHERE square_payment_id IS NULL AND staff = ? "
+                         "AND created_at >= ?", (staff, since)).fetchone()[0]
+    return pts, cents / 100
+
+
+def required(conn, method, path, form=None, staff=None):
     """The level this request needs, as a number (0 = just being signed in)."""
     if any(re.search(p, path) for p in FREE):
         return OPEN
@@ -205,6 +220,12 @@ def required(conn, method, path, form=None):
         people = max(1, len([x for x in re.split(r"[\n;]+", form.get("people") or "") if x.strip()]))
         big = (form.get("everyone") or _number(form.get("delta")) * people > perms["big_points"]
                or _number(form.get("points")) > perms["big_points"] or _number(form.get("amount")) > perms["big_dollars"])
+        if not big and staff and path != "/events":  # several small ones in a row count together
+            pts_now = _number(form.get("delta")) * people + _number(form.get("points"))
+            dollars_now = _number(form.get("amount"))
+            if pts_now or dollars_now:
+                pts_before, dollars_before = _running(conn, staff)
+                big = pts_before + pts_now > perms["big_points"] * 3 or dollars_before + dollars_now > perms["big_dollars"] * 3
         if path == "/tools/extend_due" and _number(form.get("days") or 1) > 30:
             big = True  # months more to pay is nearly a write-off
         if path == "/tools/write_off" and not (form.get("amount") or "").strip():
@@ -311,13 +332,15 @@ def unlocked(request, conn):
     return u.get("rank", OPEN)
 
 
-def rules(conn):
+def rules(conn, staff=None):
     """For the browser, so it can ask before sending rather than after (the server checks again)."""
+    pts, dollars = _running(conn, staff)
     perms, eff = permissions(conn), lambda lv: _eff(conn, lv)
     acts = [[m, p, eff(LEVELS[perms[aid]])] for aid, _, pats, _ in ACTIONS for m, p in pats]
     return {"free": FREE, "locked": [[p, eff(OWNER)] for p in LOCKED], "actions": acts, "other": eff(LEVELS[OTHER]),
             "big": {"paths": BIG_PATHS, "points": perms["big_points"], "dollars": perms["big_dollars"],
-                    "level": eff(LEVELS[perms["big"]])}, "numeric": not admin_on()}
+                    "level": eff(LEVELS[perms["big"]]),
+                    "running": {"points": pts, "dollars": dollars, "times": 3}}, "numeric": not admin_on()}
 
 
 async def guard(request: Request):
@@ -332,7 +355,7 @@ async def guard(request: Request):
     def check():  # in a worker thread: the database can wait on a write, and that mustn't stall every request
         conn = db.connect()
         try:
-            return required(conn, request.method, path, form) > unlocked(request, conn)
+            return required(conn, request.method, path, form, request.session.get("staff")) > unlocked(request, conn)
         finally:
             conn.close()
     if await run_in_threadpool(check):

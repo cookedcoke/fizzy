@@ -107,7 +107,7 @@ def render(request, name, **ctx):
         from . import pin
         conn = db.connect()
         try:
-            ctx["lock_rules"] = pin.rules(conn)
+            ctx["lock_rules"] = pin.rules(conn, request.session.get("staff"))
             ctx["unlocked"] = pin.unlocked(request, conn)
             ctx["unlocked_until"] = (request.session.get("unlock") or {}).get("until", 0)
         finally:

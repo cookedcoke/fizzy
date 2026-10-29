@@ -948,7 +948,7 @@ def register(app):
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
-        return render(request, "settings.html", cfg=logic.settings(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
+        return render(request, "settings.html", cfg=logic.settings(conn), closed=logic.closed_days(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
                       actions=pin.ACTIONS, level_labels=pin.LEVEL_LABELS,
                       devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
                       passkey_list=passkeys.listed(conn), passkey_options=request.session.pop("pk_add_options", None),
@@ -978,6 +978,16 @@ def register(app):
         db.audit(conn, who, "settings", None, json.dumps(new))
         conn.commit()
         return back(request, "/settings", "Saved.")
+
+    @app.post("/settings/closed")
+    def save_closed(request: Request, days: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+        found, bad = logic.parse_closed(days[:5000])
+        if bad:
+            return back(request, "/settings#closed", f"Couldn't read: {bad[0][:60]}. Use dates like 2026-12-12 to 2027-01-31.", "bad")
+        db.set_setting(conn, "closed_dates", json.dumps(found))
+        db.audit(conn, who, "settings", None, f"closed days: {len(found)}")
+        conn.commit()
+        return back(request, "/settings#closed", "Saved. cookedcoke.co will show Closed on those days.")
 
     @app.post("/settings/maintenance")
     def maintenance_on(request: Request, message: str = Form(""), who=Depends(staff)):

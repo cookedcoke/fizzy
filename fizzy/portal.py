@@ -297,12 +297,15 @@ def promos(conn=Depends(get_conn)):
     """What's on, for the main website (cookedcoke.co) to show: live rewards and double points
     days now or in the next two weeks. Public on purpose - nothing about any student."""
     t = stats.today()
+    cfg = logic.settings(conn)
     body = {
         "rewards": [{"name": r["name"], "points": r["points_cost"]} for r in rewards.active(conn)],
         "double_points": [{"name": e["name"], "multiplier": e["multiplier"], "start": e["start_date"], "end": e["end_date"],
                            "on_now": e["start_date"] <= t.isoformat() <= e["end_date"]}
                           for e in list(events.on(conn)) + list(events.upcoming(conn))],
         "student_site": f"https://{config.PUBLIC_HOST}/" if config.PUBLIC_HOST else None,
+        "closed": [{"start": a, "end": b, "label": label} for a, b, label in logic.closed_days(conn) if b >= t.isoformat()],
+        "rules": {"unlock_spend_cents": cfg["unlock_spend_cents"], "score_needed": cfg["tab_score_needed"], "due_days": cfg["tab_due_days"]},
     }
     return JSONResponse(body, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60"})
 

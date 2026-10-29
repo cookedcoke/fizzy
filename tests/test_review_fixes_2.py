@@ -150,3 +150,24 @@ def test_pin_stops_working_after_a_day_of_guessing(client, owner, monkeypatch):
     login(client)
     assert client.post("/settings/pin/unlock", data={"pin": "4821", "need": 1}).json()["ok"] is False
     assert client.post("/settings/pin/unlock", data={"pin": "owner-pw", "need": 1}).json()["ok"] is True
+
+
+def test_small_changes_add_up(rules):
+    conn, r = rules
+    _customer()
+    for _ in range(4):
+        conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, staff, created_at) VALUES (1, 400, 'manual', 'Will', ?)", (db.now_iso(),))
+    conn.commit()
+    assert pin.required(conn, "POST", "/customers/1/points", {"delta": "400"}, "Mike") == pin.PIN   # someone else: fine
+    assert pin.required(conn, "POST", "/customers/1/points", {"delta": "400"}, "Will") == pin.OWNER  # 2000 in an hour
+
+
+def test_closed_days_reach_the_website(client, owner):
+    login(client)
+    _unlock(client, "owner-pw", 2)
+    assert "Couldn" in client.post("/settings/closed", data={"days": "next tuesday"}).text
+    client.post("/settings/closed", data={"days": "2099-12-12 to 2100-01-31 Summer holidays\n2099-01-26 Australia Day\n\n"})
+    assert "2099-12-12 to 2100-01-31 Summer holidays" in client.get("/settings").text
+    p = client.get("/me/promos.json").json()
+    assert p["closed"][0] == {"start": "2099-01-26", "end": "2099-01-26", "label": "Australia Day"}
+    assert p["rules"]["score_needed"] == 60 and p["rules"]["due_days"] == 7
