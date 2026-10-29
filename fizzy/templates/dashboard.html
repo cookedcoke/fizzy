@@ -65,7 +65,7 @@
 </div>
 
 {% if breaches or unlinked_tabs %}
-<div class="panel" style="border-color:#F3C2C2">
+<div class="panel" style="border-color:var(--red-line)">
   <h2 class="red">Needs attention <span class="count">{{ breaches|length + unlinked_tabs|length }}</span></h2>
   <div class="scroll"><table class="attn">
     <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th>Problem</th><th></th></tr>
