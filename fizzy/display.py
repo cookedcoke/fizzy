@@ -42,15 +42,15 @@ def idle(who=Depends(staff), conn=Depends(get_conn)):
     """What's on: shown between customers."""
     start, end = stats.day_bounds(stats.today())
     board, _ = portal.leaderboard(conn, since=portal.month_start(), limit=3)
-    menu = conn.execute("SELECT display, MIN(price_cents) AS price FROM catalog_items WHERE deleted = 0 AND price_cents > 0 "
-                        "GROUP BY item_id ORDER BY item_name LIMIT 12").fetchall()
+    menu = conn.execute("SELECT item_name, MIN(price_cents) AS price FROM catalog_items WHERE deleted = 0 AND price_cents > 0 "
+                        "GROUP BY item_id ORDER BY item_name LIMIT 12").fetchall()  # the item, not "Coke (Mini)"
     return JSONResponse({
         "events": [{"name": e["name"], "multiplier": e["multiplier"]} for e in events.on(conn)],
         "soon": [{"name": e["name"], "multiplier": e["multiplier"], "start": e["start_date"]} for e in events.upcoming(conn)][:2],
         "rewards": [{"name": r["name"], "points": r["points_cost"]} for r in rewards.active(conn)][:6],
         "leaders": [{"rank": b["rank"], "name": b["name"], "points": b["points"]} for b in board],
         "popular": [i["name"] for i in stats.top_items(stats.checkouts(conn, start, end), 3)],
-        "menu": [{"name": m["display"], "price": money(m["price"])} for m in menu],
+        "menu": [{"name": m["item_name"], "price": money(m["price"])} for m in menu],
         "message": db.get_setting(conn, "display_message", "") or "",
     }, headers={"Cache-Control": "no-store"})
 
