@@ -56,6 +56,7 @@ ACTIONS = [
     ("tab_money", "Tab money by hand: repayments, charges, write-offs, more time",
      [("POST", r"^/customers/\d+/repay$"), ("POST", r"^/tools/(manual_charge|write_off|extend_due)$")], "pin"),
     ("customers", "Add and edit customers", [("POST", r"^/customers/\d+/edit$"), ("POST", r"^/tools/add_customer$")], "pin"),
+    ("qr_login", "Show a one-time sign-in code on the customer display", [("POST", r"^/customers/\d+/qr-login$")], "open"),
     ("passcodes", "Set or read back student passcodes", [("POST", r"^/customers/\d+/passcode")], "pin"),
     ("money", "Add restocks and payouts", [("POST", r"^/money/(restock|payout)$")], "pin"),
     ("money_delete", "Delete restocks and payouts", [("POST", r"^/money/(restock|payout)/\d+/delete$")], "owner"),

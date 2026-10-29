@@ -39,8 +39,12 @@
     <h1>{{ c.name }} <span class="tag {{ st.status }}">{{ st.label }}</span>{% if c.archived_at %} <span class="tag">Archived</span>{% endif %}{% if c.kind == 'admin' %} <span class="tag kind-admin" title="One of us. Changes to this account need the level set under Who can do what.">Admin</span>{% elif c.kind == 'test' %} <span class="tag kind-test" title="Test account: left out of leaderboards, reports and exports.">Test</span>{% endif %}</h1>
     <div class="meta"><span class="mono">{{ c.email.split('@')[0] }}</span> · {{ 'Linked to Square' if c.square_customer_id else 'Test account' if c.kind == 'test' else 'Not in Square yet' }}</div>
   </div>
+  <div class="actions" style="margin:0">
+  <button type="button" data-qr-login="/customers/{{ c.id }}/qr-login" data-key="q" data-key-label="Show a sign-in code on the customer display"
+     title="A QR code on the customer display that signs {{ c.name.split(' ')[0] }} in to the student site. Works once, for a minute.">Sign-in code <kbd>Q</kbd></button>
   <a class="btn primary" href="/customers/{{ c.id }}/claim" data-key="k" data-key-label="Claim the sale just rung up in Square"
      title="Give {{ c.name.split(' ')[0] }} the sale you just rang up">Claim sale <kbd>K</kbd></a>
+  </div>
 </div>
 
 {% if st.can_charge %}
@@ -187,7 +191,8 @@
       <label for="ed-name">Name</label><input id="ed-name" type="text" name="name" value="{{ c.name }}">
       <label for="ed-sq">Square customer ID</label><input id="ed-sq" type="text" name="square_customer_id" value="{{ c.square_customer_id or '' }}" class="mono">
       <label class="check"><input type="checkbox" name="archived" value="1" {{ 'checked' if c.archived_at }}> Archived - hidden from search</label>
-      <div class="actions"><button>Save</button></div>
+      <div class="actions"><button>Save</button>
+        <button formaction="/customers/{{ c.id }}/passcode/signout" formnovalidate data-confirm="Sign {{ c.name }} out of the student site on every phone?">Sign out their phones</button></div>
     </form>
     <form method="post" action="/customers/{{ c.id }}/kind" style="max-width:420px">
       <label for="ed-kind">Account type</label>

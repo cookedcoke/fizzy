@@ -212,3 +212,28 @@ def test_customer_display(client):
     assert " " not in d["first"]
     assert client.get("/api/display/customer/99999").status_code == 404
     assert "events" in client.get("/api/display/idle").json()
+
+
+def test_qr_sign_in(client, monkeypatch):
+    from fastapi.testclient import TestClient
+    from fizzy import portal
+    monkeypatch.setattr(portal.secrets, "token_urlsafe", lambda n: "tok-123")
+    login(client)
+    cid = _customer()
+    d = client.post(f"/customers/{cid}/qr-login").json()
+    assert d["svg"].startswith("<svg") and d["seconds"] == 60
+    assert client.get(f"/api/display/qr/{d['id']}").json()["state"] == "waiting"
+    phone = TestClient(client.app)
+    r = phone.get("/me/q/tok-123", follow_redirects=False)
+    assert r.status_code == 303
+    assert "points" in phone.get("/me").text.lower() and "Let me in" not in phone.get("/me").text   # signed in, no passcode needed
+    assert client.get(f"/api/display/qr/{d['id']}").json()["state"] == "used"
+    other = TestClient(client.app)
+    assert "no good" in other.get("/me/q/tok-123").text                                           # works once
+    client.post(f"/customers/{cid}/passcode/signout")
+    assert "Let me in" in phone.get("/me").text                                                   # signed out remotely
+    monkeypatch.setattr(portal.secrets, "token_urlsafe", lambda n: "tok-456")
+    d2 = client.post(f"/customers/{cid}/qr-login").json()
+    conn = db.connect(); conn.execute("UPDATE qr_logins SET expires_at = 1 WHERE id = ?", (d2["id"],)); conn.commit(); conn.close()
+    assert "no good" in TestClient(client.app).get("/me/q/tok-456").text                          # expired
+    assert "no good" in TestClient(client.app).get("/me/q/nonsense").text

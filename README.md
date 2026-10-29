@@ -118,6 +118,12 @@ away (the staff page sends it directly, not through the server). When a Square s
 "+300 points" within a few seconds. It goes back to the idle screen 90 seconds after the last change,
 or when you go to any other page. Never shown: surnames, amounts owed, overdue charges, the score.
 
+**Sign-in code.** On a customer's page, press **Sign-in code** (or Q) and a QR code appears on the
+display. Scanning it signs them in to the student site without their passcode (or before they have
+one). It only appears when you press the button, works once, lasts a minute, and the display says
+"Signed in on a phone" when it's used, so a photo taken from the queue is no good and a stolen one
+gets noticed. **Edit customer, Sign out their phones** signs them out everywhere.
+
 ### Security keys
 
 A security key (a YubiKey or similar) or a phone passkey can sign in instead of the staff password,

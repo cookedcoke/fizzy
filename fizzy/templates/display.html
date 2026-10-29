@@ -52,6 +52,15 @@
             animation: rise 1.6s ease-out forwards }
   @keyframes rise { to { transform: translate(var(--dx), var(--dy)); opacity: 0 } }
 
+  /* one-time sign-in code: small and low, so it has to be scanned up close */
+  .signin { position: absolute; right: 7vw; bottom: 7vh; display: flex; align-items: center; gap: 2vh; background: var(--card); border-radius: 2.4vh;
+            padding: 1.6vh 2.2vh 1.6vh 1.6vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3); font-size: 2.2vh; max-width: 40vw }
+  .signin svg { width: 16vh; height: 16vh; flex: none }
+  .signin b { display: block; font-family: var(--display); font-size: 2.8vh; color: var(--ink) }
+  .signin .left { color: var(--muted) }
+  .signin.done { color: var(--ok); font-weight: 700; font-size: 3vh; padding: 2.4vh 3vh }
+  [hidden] { display: none !important }
+
   /* hidden, or not signed in */
   #blank { align-items: center; text-align: center }
   #blank img { height: 14vh; opacity: .9 }
@@ -74,6 +83,7 @@
   <div class="pts" id="c-pts"><span class="k">Your points</span><span class="v" id="c-points">0</span></div>
   <div class="gain" id="c-gain"></div>
   <div class="lines" id="c-lines"></div>
+  <div class="signin" id="c-signin" hidden></div>
 </section>
 
 <section class="screen" id="blank"><img src="/static/logo.svg?v={{ V }}" alt=""><p id="blank-msg"></p></section>
@@ -93,7 +103,7 @@
 
   // ---- between customers ----
   function idle() {
-    cur = null; stopPoll(); screen("idle"); loadIdle();
+    stopSignin(); cur = null; stopPoll(); screen("idle"); loadIdle();
   }
   function loadIdle() {
     fetch("/api/display/idle", { credentials: "same-origin", cache: "no-store" }).then(ok).then(function (d) {
@@ -112,7 +122,7 @@
   function show(c) {
     if (!c || !c.id) return idle();
     var same = cur === c.id;
-    if (!same) { shown = c.points; $("c-points").textContent = fmt(c.points); }
+    if (!same) { stopSignin(); shown = c.points; $("c-points").textContent = fmt(c.points); }
     cur = c.id; $("c-first").textContent = c.first || "there";
     lines(c);
     if (same && c.points > shown) gained(c.points - shown, c.points);
@@ -159,8 +169,35 @@
   function stopPoll() { if (poll) clearInterval(poll); poll = null; }
   function later() { clearTimeout(back); back = setTimeout(idle, IDLE_AFTER); }
 
+  // ---- one-time sign-in code ----
+  var qrPoll = null, qrTick = null;
+  function stopSignin() { clearInterval(qrPoll); clearInterval(qrTick); qrPoll = qrTick = null; $("c-signin").hidden = true; }
+  function signin(l) {
+    stopSignin();
+    var box = $("c-signin"), until = Date.now() + l.seconds * 1000;
+    box.className = "signin"; box.innerHTML = l.svg;  // the QR code, made by Fizzy
+    var t = document.createElement("div");
+    t.innerHTML = "<b>Scan to sign in</b>Works once. <span class=left></span>";
+    box.appendChild(t); box.hidden = false;
+    function tick() {
+      var s = Math.max(0, Math.round((until - Date.now()) / 1000));
+      box.querySelector(".left").textContent = s + "s left";
+      if (!s) stopSignin();
+    }
+    tick(); qrTick = setInterval(tick, 1000);
+    qrPoll = setInterval(function () {
+      fetch("/api/display/qr/" + l.id, { credentials: "same-origin", cache: "no-store" }).then(ok).then(function (d) {
+        if (d.state === "used") {
+          stopSignin(); box.className = "signin done"; box.textContent = "Signed in on a phone."; box.hidden = false;
+          setTimeout(function () { if (box.classList.contains("done")) box.hidden = true; }, 8000);
+        } else if (d.state !== "waiting") stopSignin();
+      }).catch(gone);
+    }, 1500);
+    later();
+  }
+
   // ---- hidden / signed out ----
-  function blank(msg) { cur = null; stopPoll(); clearTimeout(back); $("blank-msg").textContent = msg || ""; screen("blank"); }
+  function blank(msg) { stopSignin(); cur = null; stopPoll(); clearTimeout(back); $("blank-msg").textContent = msg || ""; screen("blank"); }
   function ok(r) { if (r.redirected || r.status === 401 || r.status === 303) throw "out"; if (!r.ok) throw r.status; return r.json(); }
   function gone(e) { if (e === "out") blank("Sign in to Fizzy on the staff screen."); }
 
@@ -169,7 +206,7 @@
     if (typeof m === "string") { try { m = JSON.parse(m); } catch (e) { return; } }
     if (!m || !m.type) return;
     if (m.auto && mode === "blank" && hidden) return;  // hidden from the menu stays hidden while staff move between pages
-    if (m.type === "show") show(m.customer);
+    if (m.type === "show") { show(m.customer); if (m.login) signin(m.login); }
     else if (m.type === "idle") { hidden = false; idle(); }
     else if (m.type === "hide") { hidden = true; blank(""); }
   }

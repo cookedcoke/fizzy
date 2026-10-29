@@ -258,6 +258,26 @@
     }
   });
 
+  // ---- sign-in code on the customer display: made fresh each press, works once, for a minute ----
+  $$("[data-qr-login]").forEach(function (b) {
+    var label = b.innerHTML, timer = null;
+    b.addEventListener("click", function () { fizzyPin("POST", b.dataset.qrLogin, make); });
+    function make() {
+      fetch(b.dataset.qrLogin, { method: "POST", credentials: "same-origin" }).then(function (r) { if (!r.ok) throw r; return r.json(); }).then(function (d) {
+        var dm = $("#display-msg") ? JSON.parse($("#display-msg").textContent) : null;
+        if (!dm) return;
+        sendDisplay({ type: "show", customer: dm.customer, login: d });
+        var left = d.seconds; clearInterval(timer);
+        b.textContent = "On the display (" + left + "s)";
+        timer = setInterval(function () {
+          left -= 1;
+          if (left <= 0) { clearInterval(timer); b.innerHTML = label; return; }
+          b.textContent = "On the display (" + left + "s)";
+        }, 1000);
+      }).catch(function () { b.textContent = "Couldn't make one - try again"; setTimeout(function () { b.innerHTML = label; }, 3000); });
+    }
+  });
+
   // ---- "i" tips: open towards whichever side has room ------------------------------------------
   $$(".tip").forEach(function (t) {
     t.addEventListener("pointerenter", function () { t.classList.toggle("tip-right", t.getBoundingClientRect().left < 280); });
@@ -436,13 +456,16 @@
   });
   $$("input[data-search]").forEach(bindSearch);
   var hb = $("#keys-btn"); if (hb) hb.addEventListener("click", help);
+  function sendDisplay(m) {
+    try { window.webkit.messageHandlers.fizzyDisplay.postMessage(m); } catch (e) {}
+    try { new BroadcastChannel("fizzy-display").postMessage(m); } catch (e) {}
+  }
   // Customer display: tell the screen facing the queue who's being served. Straight to it, no
   // server in between: the Mac app's bridge, or a BroadcastChannel when it's a second browser window.
   if ($("header nav")) {
     var dm = $("#display-msg") ? JSON.parse($("#display-msg").textContent) : { type: "idle" };
     dm.auto = true;
-    try { window.webkit.messageHandlers.fizzyDisplay.postMessage(dm); } catch (e) {}
-    try { new BroadcastChannel("fizzy-display").postMessage(dm); } catch (e) {}
+    sendDisplay(dm);
   }
   // Warm the index as soon as the page is idle so the first keystroke is instant.
   (window.requestIdleCallback || setTimeout)(function () { if ($("input[data-search]")) loadIndex(); });

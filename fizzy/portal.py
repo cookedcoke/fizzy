@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import re
+import secrets
 import time
 import unicodedata
 
@@ -191,8 +192,10 @@ def _buckets(request, who):
 
 
 def _session_marker(customer):
-    """Changes when the passcode changes or is removed, which signs out existing sessions."""
-    return hashlib.sha256((customer["passcode_enc"] or "").encode()).hexdigest()[:16]
+    """Changes when the passcode changes or is removed, or staff sign out their phones, which
+    signs out existing sessions."""
+    gen = customer["me_gen"] or 0
+    return hashlib.sha256(((customer["passcode_enc"] or "") + (f":{gen}" if gen else "")).encode()).hexdigest()[:16]
 
 
 def current(request, conn):
@@ -201,7 +204,7 @@ def current(request, conn):
         return None
     c = conn.execute("SELECT * FROM customers WHERE id = ? AND archived_at IS NULL AND merged_into IS NULL",
                      (me.get("id"),)).fetchone()
-    if c is None or not c["passcode_enc"] or me.get("v") != _session_marker(c):
+    if c is None or me.get("v") != _session_marker(c) or not (c["passcode_enc"] or me.get("qr")):
         return None
     return c
 
@@ -412,4 +415,70 @@ def staff_set_passcode(request: Request, cid: int, passcode: str = Form(""), rem
         msg = f"Passcode set. {c['name'].split(' ')[0]} can log in at {site}."
     conn.commit()
     request.session["flash"] = msg
+    return RedirectResponse(f"/customers/{cid}", status_code=303)
+
+
+# ---- signing in by QR code (shown on the customer display) ----------------------------------
+# Only when staff press the button, only once, only for a minute, and the display says when it's
+# been used, so a photo taken from the queue is no good and a stolen one gets noticed.
+
+QR_SECONDS = 60
+
+
+def _qr_hash(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@router.post("/customers/{cid:int}/qr-login")
+def make_qr_login(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
+    c = conn.execute("SELECT * FROM customers WHERE id = ? AND archived_at IS NULL AND merged_into IS NULL", (cid,)).fetchone()
+    if c is None:
+        raise HTTPException(404)
+    # One live code per customer: making a new one cancels the last.
+    conn.execute("UPDATE qr_logins SET expires_at = 0 WHERE customer_id = ? AND used_at IS NULL", (cid,))
+    token = secrets.token_urlsafe(18)
+    cur = conn.execute("INSERT INTO qr_logins(customer_id, token_hash, expires_at, staff, created_at) VALUES (?, ?, ?, ?, ?)",
+                       (cid, _qr_hash(token), time.time() + QR_SECONDS, who, now_iso()))
+    audit(conn, who, "qr_login", cid, "")
+    conn.commit()
+    url = f"https://{config.PUBLIC_HOST}/q/{token}" if config.PUBLIC_HOST else str(request.base_url).rstrip("/") + f"/me/q/{token}"
+    import segno
+    svg = segno.make(url, error="m").svg_inline(scale=1, border=2, dark="#1B1A1F", light="#FFFFFF", omitsize=True)
+    return JSONResponse({"id": cur.lastrowid, "svg": svg, "seconds": QR_SECONDS}, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/api/display/qr/{qid:int}")
+def qr_state(qid: int, who=Depends(staff), conn=Depends(get_conn)):
+    r = conn.execute("SELECT used_at, expires_at FROM qr_logins WHERE id = ?", (qid,)).fetchone()
+    state = "gone" if r is None else "used" if r["used_at"] else "expired" if r["expires_at"] < time.time() else "waiting"
+    return JSONResponse({"state": state}, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/me/q/{token}")
+def use_qr_login(request: Request, token: str, conn=Depends(get_conn)):
+    row = conn.execute("SELECT * FROM qr_logins WHERE token_hash = ?", (_qr_hash(token[:64]),)).fetchone()
+    c = row and conn.execute("SELECT * FROM customers WHERE id = ? AND archived_at IS NULL AND merged_into IS NULL",
+                             (row["customer_id"],)).fetchone()
+    if not row or not c or row["used_at"] or row["expires_at"] < time.time():
+        return _page(request, "me_error.html", heading="That code's no good now",
+                     message="Sign-in codes work once, for a minute. Ask at the counter for a new one.", home=_url("/"))
+    # Used up before anything else, so two scans at once can't both get in.
+    if conn.execute("UPDATE qr_logins SET used_at = ? WHERE id = ? AND used_at IS NULL", (now_iso(), row["id"])).rowcount != 1:
+        return RedirectResponse(_url("/"), status_code=303)
+    audit(conn, "student", "qr_login_used", c["id"], "")
+    conn.commit()
+    request.session["me"] = {"id": c["id"], "v": _session_marker(c), "at": int(time.time()), "qr": 1}
+    return RedirectResponse(_url("/"), status_code=303)
+
+
+@router.post("/customers/{cid:int}/passcode/signout")
+def sign_out_phones(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
+    c = conn.execute("SELECT * FROM customers WHERE id = ?", (cid,)).fetchone()
+    if c is None:
+        raise HTTPException(404)
+    conn.execute("UPDATE customers SET me_gen = COALESCE(me_gen, 0) + 1 WHERE id = ?", (cid,))
+    conn.execute("UPDATE qr_logins SET expires_at = 0 WHERE customer_id = ? AND used_at IS NULL", (cid,))
+    audit(conn, who, "me_signout", cid, "")
+    conn.commit()
+    request.session["flash"] = f"Signed {c['name'].split(' ')[0]} out on every phone."
     return RedirectResponse(f"/customers/{cid}", status_code=303)

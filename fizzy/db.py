@@ -118,6 +118,17 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at TEXT NOT NULL
 );
 
+-- One-time sign-in codes for the student site, shown as a QR code on the customer display.
+CREATE TABLE IF NOT EXISTS qr_logins (
+    id INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at REAL NOT NULL,
+    used_at TEXT,
+    staff TEXT,
+    created_at TEXT NOT NULL
+);
+
 -- Security keys that can sign in instead of the staff password (see passkeys.py).
 CREATE TABLE IF NOT EXISTS passkeys (
     id INTEGER PRIMARY KEY,
@@ -290,6 +301,7 @@ MIGRATIONS = [
     ("points_events", "ended_at", "TEXT"),
     ("points_events", "rule_id", "INTEGER"),
     ("customers", "kind", "TEXT"),  # NULL (a normal customer), admin (staff themselves) or test
+    ("customers", "me_gen", "INTEGER"),  # bumped by "Sign out their phones" on the customer page
 ]
 
 

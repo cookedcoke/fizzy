@@ -43,6 +43,7 @@ ACTION_LABELS = {
     "download_backup": "Downloaded a backup", "export": "Exported", "export_square_csv": "Exported for Square",
     "extend_due": "Gave more time to pay", "import": "Imported the school list", "item_costs": "Changed item costs",
     "login": "Signed in", "merge": "Merged customers", "notice": "Changed the noticeboard", "owner_unlock": "Owner unlocked",
+    "qr_login": "Showed a sign-in code", "qr_login_used": "Signed in with a code", "me_signout": "Signed out their phones",
     "passkey_add": "Added a security key", "passkey_remove": "Removed a security key",
     "passcode_removed": "Removed a passcode", "passcode_set": "Set a passcode", "passcode_viewed": "Read a passcode",
     "passcode_wrong": "Wrong passcode", "pin_wrong": "Wrong passcode", "admin_wrong": "Wrong passcode",
