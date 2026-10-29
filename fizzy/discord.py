@@ -1,4 +1,4 @@
-"""Announce new rewards and double points days in the Cooked Coke Discord.
+"""Announce new rewards and double points days in the Cooked Coke Co. Discord.
 
 Uses a channel webhook (Discord: channel settings → Integrations → Webhooks → New Webhook → Copy
 URL) in DISCORD_WEBHOOK_URL. DISCORD_MENTION is who to ping, e.g. "@everyone", "@here" or a role

@@ -281,7 +281,7 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
     if c is None:
         await asyncio.sleep(FAIL_DELAY)
         return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
-                     error="That name and passcode don't match. No passcode yet? Ask at the Cooked Coke stall.")
+                     error="That name and passcode don't match. No passcode yet? Ask at the Cooked Coke Co. stall.")
     for k, _ in buckets:  # right in the end, so it doesn't count (the school shares one network)
         if now in _fails.get(k, []):
             _fails[k].remove(now)
