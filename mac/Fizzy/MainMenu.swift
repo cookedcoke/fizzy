@@ -48,6 +48,7 @@ enum MainMenu {
         display.addItem(item("Show customer display", #selector(AppDelegate.showDisplay(_:)), target: app))
         display.addItem(.separator())
         display.addItem(item("Reload display", #selector(AppDelegate.reloadDisplay(_:)), target: app))
+        display.addItem(item("Move display to other screen", #selector(AppDelegate.moveDisplay(_:)), target: app))
 
         let window = submenu(of: main, "Window")
         window.addItem(item("Minimise", #selector(NSWindow.performMiniaturize(_:)), "m"))

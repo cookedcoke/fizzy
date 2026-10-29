@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var display: DisplayController!
     private var bridge: DisplayBridge!
     private lazy var settings = SettingsWindowController()
+    private let keepAwake = KeepAwake()
     private let log = Logger(subsystem: "co.cookedcoke.fizzy", category: "app")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -28,17 +29,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         staff.showWindow(nil)
         staff.loadHome()
         display.load()
-        display.place(on: displayScreen())
+        display.staffWindow = staff.window
+        display.place()
+        keepAwake.start()
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// The screen for the customer display: any screen other than the main one, or none if
-    /// there's only one screen.
-    private func displayScreen() -> NSScreen? {
-        let screens = NSScreen.screens
-        guard screens.count > 1 else { return nil }
-        let staffScreen = staff.window?.screen ?? screens[0]
-        return screens.first { $0 != staffScreen }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Logging out, restarting or shutting down: don't hold that up with a question.
+        let reason = NSAppleEventManager.shared().currentAppleEvent?
+            .attributeDescriptor(forKeyword: kAEQuitReason)?.enumCodeValue
+        if let reason, [kAELogOut, kAEReallyLogOut, kAEShowRestartDialog, kAERestart,
+                        kAEShowShutdownDialog, kAEShutDown].contains(reason) {
+            return .terminateNow
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Quit Fizzy?"
+        alert.informativeText = "The customer display will turn off."
+        // Esc means Cancel and Return does nothing, so a stray key press can't quit.
+        alert.addButton(withTitle: "Cancel")
+        let quit = alert.addButton(withTitle: "Quit")
+        quit.keyEquivalent = ""
+        if #available(macOS 11.0, *) { quit.hasDestructiveAction = true }
+        return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        keepAwake.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -65,6 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func reloadDisplay(_ sender: Any?) {
         display.load()
+    }
+
+    @objc func moveDisplay(_ sender: Any?) {
+        display.moveToNextScreen()
     }
 
     @objc func showSettings(_ sender: Any?) {
