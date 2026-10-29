@@ -27,8 +27,29 @@ def _qr():
     return segno.make(f"https://{config.PUBLIC_HOST}/", error="m").svg_inline(scale=1, border=2, dark="#1B1A1F", light="#FFFFFF", omitsize=True)
 
 
+def menu_items(conn):
+    """Every Square item with a price: (item_id, name, price_cents). One line per item."""
+    return conn.execute("SELECT item_id, item_name, MIN(price_cents) AS price FROM catalog_items WHERE deleted = 0 AND price_cents > 0 "
+                        "GROUP BY item_id ORDER BY item_name").fetchall()
+
+
+def hidden_items(conn):
+    """Items left off the display's menu. Stored as the ones hidden, so new items show by default."""
+    import json
+    try:
+        return set(json.loads(db.get_setting(conn, "display_hidden_items", "[]") or "[]"))
+    except ValueError:
+        return set()
+
+
 @router.post("/settings/display")
-def save_message(request: Request, message: str = Form(""), owing: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+async def save_message(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+    import json
+    form = await request.form()
+    message, owing = form.get("message", ""), form.get("owing", "")
+    if form.get("menu"):  # the item list was on the page, so unticked ones are hidden
+        shown = set(form.getlist("show"))
+        db.set_setting(conn, "display_hidden_items", json.dumps(sorted(r["item_id"] for r in menu_items(conn) if r["item_id"] not in shown)))
     text = " ".join(message.split())[:120]
     db.set_setting(conn, "display_message", text)
     db.set_setting(conn, "display_owing", "1" if owing else "0")
@@ -42,8 +63,8 @@ def idle(who=Depends(staff), conn=Depends(get_conn)):
     """What's on: shown between customers."""
     start, end = stats.day_bounds(stats.today())
     board, _ = portal.leaderboard(conn, since=portal.month_start(), limit=3)
-    menu = conn.execute("SELECT item_name, MIN(price_cents) AS price FROM catalog_items WHERE deleted = 0 AND price_cents > 0 "
-                        "GROUP BY item_id ORDER BY item_name LIMIT 12").fetchall()  # the item, not "Coke (Mini)"
+    hide = hidden_items(conn)
+    menu = [m for m in menu_items(conn) if m["item_id"] not in hide][:12]  # the item, not "Coke (Mini)"
     return JSONResponse({
         "events": [{"name": e["name"], "multiplier": e["multiplier"]} for e in events.on(conn)],
         "soon": [{"name": e["name"], "multiplier": e["multiplier"], "start": e["start_date"]} for e in events.upcoming(conn)][:2],

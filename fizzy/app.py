@@ -952,7 +952,8 @@ def register(app):
     def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         return render(request, "settings.html", cfg=logic.settings(conn), closed=logic.closed_days(conn),
                       display_message=db.get_setting(conn, "display_message", "") or "",
-                      display_owing=db.get_setting(conn, "display_owing", "1") == "1", pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
+                      display_owing=db.get_setting(conn, "display_owing", "1") == "1",
+                      display_menu=display.menu_items(conn), display_hidden=display.hidden_items(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
                       actions=pin.ACTIONS, level_labels=pin.LEVEL_LABELS,
                       devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
                       passkey_list=passkeys.listed(conn), passkey_options=request.session.pop("pk_add_options", None),

@@ -237,3 +237,18 @@ def test_qr_sign_in(client, monkeypatch):
     conn = db.connect(); conn.execute("UPDATE qr_logins SET expires_at = 1 WHERE id = ?", (d2["id"],)); conn.commit(); conn.close()
     assert "no good" in TestClient(client.app).get("/me/q/tok-456").text                          # expired
     assert "no good" in TestClient(client.app).get("/me/q/nonsense").text
+
+
+def test_pick_display_menu_items(client, owner):
+    conn = db.connect()
+    for i, (n, var, p) in enumerate([("Coke", "Can", 300), ("Coke", "Mini", 200), ("Fanta", None, 300), ("Tab repayment", None, None)]):
+        conn.execute("INSERT INTO catalog_items VALUES (?,?,?,?,?,?,0,?)", (f"v{i}", f"i-{n}", n, var, f"{n} ({var})" if var else n, p, db.now_iso()))
+    conn.commit(); conn.close()
+    login(client)
+    _unlock(client, "owner-pw", 2)
+    menu = client.get("/api/display/idle").json()["menu"]
+    assert menu == [{"name": "Coke", "price": "$2.00"}, {"name": "Fanta", "price": "$3.00"}]   # no variations, nothing unpriced
+    assert 'value="i-Fanta" checked' in client.get("/settings").text
+    client.post("/settings/display", data={"message": "", "owing": "1", "menu": "1", "show": ["i-Coke"]})
+    assert [m["name"] for m in client.get("/api/display/idle").json()["menu"]] == ["Coke"]
+    assert 'value="i-Fanta" >' in client.get("/settings").text                                 # unticked now

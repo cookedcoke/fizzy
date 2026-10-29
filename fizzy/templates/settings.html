@@ -45,6 +45,10 @@
 <form class="panel" id="display" method="post" action="/settings/display"><h2>Customer display</h2>
   <p class="small" style="margin-top:0">A message for the screen facing the queue, shown between customers. Leave it empty for none.</p>
   <input type="text" name="message" maxlength="120" value="{{ display_message }}" placeholder="e.g. New: mango Chi Forest. Try it.">
+  {% if display_menu %}<input type="hidden" name="menu" value="1">
+  <label style="margin-top:12px">On the shelf <span class="muted">(ticked items show on the display's menu, up to 12)</span></label>
+  <div class="menu-pick">{% for m in display_menu %}<label class="check"><input type="checkbox" name="show" value="{{ m.item_id }}" {{ '' if m.item_id in display_hidden else 'checked' }}> {{ m.item_name }} <span class="muted">{{ m.price|money }}</span></label>{% endfor %}</div>
+  {% endif %}
   <label class="check" style="margin-top:12px"><input type="checkbox" name="owing" value="1" {{ 'checked' if display_owing }}> Show what each customer owes on their tab, including anything overdue</label>
   <div class="actions"><button class="primary">Save</button> <a class="btn" href="/display" target="_blank">Open the display</a></div>
 </form>

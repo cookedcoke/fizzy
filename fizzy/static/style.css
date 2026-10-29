@@ -600,3 +600,6 @@ html { -webkit-tap-highlight-color: transparent }
 @media (max-width: 720px) { .nav-more { display: none } }
 .nav-more > summary::before { content: none }
 header .clock.squeezed { display: none !important }
+.menu-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 2px var(--s3); max-height: 260px; overflow: auto;
+  border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3) }
+.menu-pick label.check { margin: 0; padding: 4px 0; font-weight: 500 }
