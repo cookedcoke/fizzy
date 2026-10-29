@@ -60,8 +60,8 @@
 <div class="me-cols"><div class="me-main">
   {% if urgent %}{{ tab_block }}{% endif %}
   {% include "_me_events.html" %}
-  <div class="points">
-    <div class="k">Your points</div>
+  <div class="points" data-pts="{{ s.points }}" data-who="{{ c.id }}">
+    <div class="k">Your points <span class="gain" hidden></span></div>
     <div class="v">{{ '{:,}'.format(s.points) }}</div>
     <div class="sub">1 point for every cent you spend. Tab buys earn theirs when you pay them off.</div>
   </div>
@@ -104,9 +104,10 @@
   </div>
 </div><div class="me-side">
   <h2 class="section">Leaderboard <small>points earned</small></h2>
+  <div class="board-pick" role="tablist" hidden>{% for title, _, _ in boards %}<button type="button" role="tab" data-b="{{ loop.index0 }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ title }}</button>{% endfor %}</div>
   <div class="boards">
     {% for title, board, mine in boards %}
-    <div class="card board"><h3>{{ title }}</h3>
+    <div class="card board" data-b="{{ loop.index0 }}"><h3>{{ title }}</h3>
       {% if board %}<ol>{% for b in board %}<li class="{{ 'you' if b.me }}"><span class="rk {{ 'r%d'|format(b.rank) if b.rank <= 3 }}">{{ b.rank }}</span><span class="nm">{{ b.name }}{% if b.me %} <span class="muted">(you)</span>{% endif %}</span><span class="pt">{{ '{:,}'.format(b.points) }}</span></li>{% endfor %}</ol>
       {% if mine and mine.rank > board|length %}<p class="mine">You're #{{ mine.rank }} of {{ mine.of }} with {{ '{:,}'.format(mine.points) }}.</p>{% endif %}
       {% else %}<p class="empty">No points yet{{ ' this month' if title == 'This month' }}.</p>{% endif %}
@@ -128,4 +129,39 @@
 </div></div>
   <p class="note">Something look off? Ask us at the stall.</p>
 </main>
+<script>
+(function () {
+  /* "+120 since last time": counts up from what they saw last visit. Kept on this phone only. */
+  var card = document.querySelector(".points[data-pts]");
+  if (card) {
+    var now = Number(card.dataset.pts), key = "cc-pts-" + card.dataset.who, before = null;
+    try { before = localStorage.getItem(key); localStorage.setItem(key, now); } catch (e) {}
+    before = before === null ? null : Number(before);
+    if (before !== null && now > before) {
+      var gain = card.querySelector(".gain"), v = card.querySelector(".v");
+      gain.textContent = "+" + (now - before).toLocaleString("en-AU") + " since last time"; gain.hidden = false;
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        var t0 = performance.now();
+        (function step(t) {
+          var k = Math.min(1, (t - t0) / 700), e = 1 - Math.pow(1 - k, 3);
+          v.textContent = Math.round(before + (now - before) * e).toLocaleString("en-AU");
+          if (k < 1) requestAnimationFrame(step);
+        })(t0);
+      }
+    }
+  }
+  /* Leaderboard: one board at a time, with a switch. */
+  var pick = document.querySelector(".board-pick");
+  if (pick) {
+    var boards = document.querySelectorAll(".board[data-b]");
+    function show(i) {
+      boards.forEach(function (b) { b.hidden = b.dataset.b !== i; });
+      pick.querySelectorAll("button").forEach(function (b) { b.setAttribute("aria-selected", b.dataset.b === i); });
+    }
+    pick.hidden = false; document.querySelector(".boards").classList.add("one");
+    pick.addEventListener("click", function (e) { var b = e.target.closest("button"); if (b) show(b.dataset.b); });
+    show("0");
+  }
+})();
+</script>
 {% endblock %}
