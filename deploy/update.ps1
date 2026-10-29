@@ -13,6 +13,11 @@ $Dir = "update-status"; New-Item -ItemType Directory -Force $Dir, "updates" | Ou
 $StatusFile = Join-Path $Dir "update-status.json"; $Flag = Join-Path "updates" "update-requested"
 $S = @{ state = ""; step = ""; at = ""; from = ""; to = ""; message = ""; behind = 0; started = 0 }
 if (Test-Path $StatusFile) { try { (Get-Content $StatusFile -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $S[$_.Name] = $_.Value } } catch {} }
+$Lock = Join-Path $Dir ".lock"   # holds the PID of the updater that's part way through an update
+function Lock-Held {
+    $p = Get-Content $Lock -ErrorAction SilentlyContinue | Select-Object -First 1
+    return ($p -match '^\d+$') -and [bool](Get-Process -Id ([int]$p) -ErrorAction SilentlyContinue)
+}
 
 function Say($m) { Write-Host ("{0}  {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) }
 function Now { Get-Date -Format "ddd d MMM HH:mm" }
@@ -31,7 +36,8 @@ function Fetch {
     $S.behind = [int](git rev-list --count "HEAD..@{u}"); return $true
 }
 function Healthy {  # up to 3 minutes, but give up if the container crashes
-    for ($i = 0; $i -lt 90; $i++) {
+    $tries = if ($env:UPDATE_HEALTH_TRIES) { [int]$env:UPDATE_HEALTH_TRIES } else { 90 }
+    for ($i = 0; $i -lt $tries; $i++) {
         docker compose exec -T fizzy python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)" 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) { return $true }
         $state = (docker compose ps -a --format "{{.State}}" fizzy 2>$null)
@@ -45,14 +51,27 @@ function Save-Logs {  # before rolling back throws the failed container (and its
     $out += (docker compose logs --no-color --tail 40 fizzy 2>&1 | ForEach-Object { "$_" })
     Write-Text (Join-Path $Dir "last-failure.log") ($out -join "`n")
 }
-function Step($s) { $S.step = $s; Write-Status }   # what the progress page in Fizzy shows
+# A "running" status with nobody holding the lock means the last update was cut off part way
+# (the PC restarted, or the updater was stopped). Say so, or Settings shows "running" for ever.
+if ($S.state -eq "running" -and -not (Lock-Held)) {
+    $S.state = "failed"; $S.step = "done"; if (-not $S.at) { $S.at = Now }
+    $S.message = "The last update was interrupted (the home PC restarted or the updater was stopped). Check Fizzy is on the version you expect, then press Update again."
+    Write-Status
+}
+function Step($name) { $S.step = $name; Write-Status }   # what the progress page shows. Not $s: PowerShell names ignore case, so $s would hide $S
 function Build {  # build while the old one keeps serving, then swap (the only time Fizzy is down)
     $env:FIZZY_VERSION = (git rev-parse --short HEAD)
     Step "build"; docker compose build fizzy 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { return $false }
+    if ($LASTEXITCODE -ne 0) { $script:BuildFailed = $true; return $false }
     Step "restart"; docker compose up -d fizzy 2>$null | Out-Null; return ($LASTEXITCODE -eq 0)
 }
 function Update {
+    if (Lock-Held) { Say "Another update is running."; return }
+    Set-Content -Path $Lock -Value $PID
+    try { Update-Inner } finally { Remove-Item -Force $Lock -ErrorAction SilentlyContinue }
+}
+function Update-Inner {
+    Remove-Item -Force (Join-Path $Dir "last-failure.log") -ErrorAction SilentlyContinue  # so an early failure doesn't show old logs
     $S.started = Now-Unix; $S.state = "running"; $S.message = ""; Step "check"
     git diff --quiet; $dirty = $LASTEXITCODE -ne 0
     git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { $dirty = $true }
@@ -69,13 +88,23 @@ function Update {
     if ($LASTEXITCODE -ne 0) { $S.state = "failed"; $S.message = "Couldn't move to the new version (the branch has local commits)."; Step "done"; Say $S.message; return }
     $S.to = (git rev-parse --short HEAD)
     Say "Building $($S.to) ($($S.behind) new change(s))..."
+    $script:BuildFailed = $false
     if ((Build) -and ((Step "verify") -or $true) -and (Healthy)) { $S.state = "ok"; $S.behind = 0; $S.message = "$($S.from) to $($S.to)"; Step "done"; Say "Updated: $($S.message)"; return }
+    Write-Text (Join-Path $Dir "bad-version") (git rev-parse "@{u}")  # overnight updates skip this one
+    if ($script:BuildFailed) {
+        # Nothing was swapped: up -d only runs after a good build, so the old one is still serving.
+        git reset --hard --quiet $old
+        $S.state = "failed"; $S.to = $S.from; $S.message = "The new version didn't build, so Fizzy stayed on $($S.from)."
+        Fetch | Out-Null; Step "done"; Say $S.message; return
+    }
     Say "The new version didn't start. Going back to $($S.from)..."
     Save-Logs; Step "rollback"
     git reset --hard --quiet $old; $env:FIZZY_VERSION = (git rev-parse --short HEAD)
-    docker compose up -d --build fizzy 2>$null | Out-Null; Healthy | Out-Null
-    Write-Text (Join-Path $Dir "bad-version") (git rev-parse "@{u}")  # overnight updates skip this one
-    $S.state = "failed"; $S.to = $S.from; $S.message = "The new version didn't start, so it went back to $($S.from). Its last log lines are below."
+    docker compose up -d --build fizzy 2>$null | Out-Null
+    $back = ($LASTEXITCODE -eq 0) -and (Healthy)
+    $S.state = "failed"; $S.to = $S.from
+    if ($back) { $S.message = "The new version didn't start, so it went back to $($S.from). Its last log lines are below." }
+    else { $S.message = "The new version didn't start, and going back to $($S.from) didn't work either: Fizzy is down. On the home PC: docker compose logs fizzy" }
     Fetch | Out-Null; Step "done"; Say $S.message
 }
 

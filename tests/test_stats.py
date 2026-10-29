@@ -19,7 +19,7 @@ def test_sold_taken_orders_and_items(conn, cust):
     assert t["orders"] == 4
     assert t["sold_cents"] == 650 + 400 + 350 + 350                        # goods, including what went on the tab
     assert t["taken_cents"] == 650 + 750 + 350 + 100                       # money in: tab sale adds nothing
-    assert (t["tab_cents"], t["repaid_cents"]) == (400, 400)
+    assert (t["tab_cents"], t["repaid_cents"]) == (400, 400 + 100)             # repaid includes cash taken by hand
     assert (t["customers"], t["walkups"]) == (1, 1)
     top = {i["name"]: i["qty"] for i in stats.top_items(t["checkouts"])}
     assert top == {"Coke": 3, "Chips": 1, "Noodles": 1}                    # the repayment item isn't an item

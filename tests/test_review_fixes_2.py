@@ -171,3 +171,30 @@ def test_closed_days_reach_the_website(client, owner):
     p = client.get("/me/promos.json").json()
     assert p["closed"][0] == {"start": "2099-01-26", "end": "2099-01-26", "label": "Australia Day"}
     assert p["rules"]["score_needed"] == 60 and p["rules"]["due_days"] == 7
+
+
+def test_test_accounts_hand_repayments_left_out_of_transactions_repaid(client):
+    from fizzy import stats
+    login(client)
+    cid = _customer()
+    conn = db.connect()
+    tid = conn.execute("INSERT INTO customers(name, email, kind, created_at) VALUES ('Fake', 'f@x', 'test', ?)", (db.now_iso(),)).lastrowid
+    for c in (cid, tid):
+        conn.execute("INSERT INTO tab_charges(customer_id, amount_cents, items, charged_at, due_at) VALUES (?, 500, 'x', ?, ?)",
+                     (c, db.now_iso(), db.now_iso()))
+    logic.add_repayment(conn, cid, 200, "cash", "", "Mike")
+    logic.add_repayment(conn, tid, 300, "cash", "", "Mike")  # a test account: not real money
+    logic.add_repayment(conn, cid, 100, "writeoff", "", "Mike")
+    conn.commit()
+    s = stats.summary(conn, stats.today())
+    conn.close()
+    assert s["taken_cents"] == 200   # the dashboard leaves the test account's cash out
+    from fizzy import transactions
+    seen = {}
+    real = transactions.render
+    transactions.render = lambda request, tpl, **kw: seen.update(kw) or real(request, tpl, **kw)
+    try:
+        client.get("/transactions")
+    finally:
+        transactions.render = real
+    assert seen["totals"]["repaid"] == 200

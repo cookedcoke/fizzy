@@ -46,12 +46,13 @@ def transactions(request: Request, start: str = "", end: str = "", show: str = "
         r["points"] = sum(points.get(p, 0) for p in r["payment_ids"])
         r["source"] = "square"
     # Tab money recorded by hand in Fizzy (not through Square).
-    for h in conn.execute("SELECT r.*, c.name FROM tab_repayments r JOIN customers c ON c.id = r.customer_id "
+    for h in conn.execute("SELECT r.*, c.name, c.kind FROM tab_repayments r JOIN customers c ON c.id = r.customer_id "
                           "WHERE r.square_payment_id IS NULL AND r.created_at >= ? AND r.created_at < ?", (lo, hi)):
         rows.append({"at": h["created_at"], "customer_id": h["customer_id"], "customer": h["name"], "items": [],
                      "sale_cents": 0, "tab_cents": 0, "repay_cents": h["amount_cents"], "sold_cents": 0,
                      "tenders": [h["method"]], "refunded_cents": 0, "points": None, "payment_ids": [],
-                     "source": "writeoff" if h["method"] == "writeoff" else "hand", "note": h["note"], "staff": h["staff"]})
+                     "source": "writeoff" if h["method"] == "writeoff" else "hand", "note": h["note"], "staff": h["staff"],
+                     "test": h["kind"] == "test"})
     nobody = sum(1 for r in rows if r["source"] == "square" and not r["customer_id"] and (r["sold_cents"] or r["repay_cents"]))
     keep = {"sales": lambda r: r["sale_cents"], "tab": lambda r: r["tab_cents"], "repaid": lambda r: r["repay_cents"],
             "nobody": lambda r: r["source"] == "square" and not r["customer_id"]}.get(show)
@@ -64,7 +65,7 @@ def transactions(request: Request, start: str = "", end: str = "", show: str = "
     totals = {  # of what the filters leave
         "count": sum(1 for r in rows if r["source"] == "square"),
         "sold": sum(r["sold_cents"] for r in rows), "tab": sum(r["tab_cents"] for r in rows),
-        "repaid": sum(r["repay_cents"] for r in rows if r["source"] != "writeoff"),
+        "repaid": sum(r["repay_cents"] for r in rows if r["source"] != "writeoff" and not r.get("test")),  # as the dashboard
         "refunded": sum(r["refunded_cents"] for r in rows),
         "nobody": nobody,  # across the whole range, so "Show them" still makes sense when filtered
     }

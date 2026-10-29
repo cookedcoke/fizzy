@@ -38,11 +38,19 @@ fi
 if [ ! -w "$DIR" ]; then
     echo "Can't write to $(pwd)/$DIR. Fix it with: sudo chown -R $(id -un) $DIR updates" >&2; exit 1
 fi
+lock_held() { kill -0 "$(cat "$LOCK/pid" 2>/dev/null)" 2>/dev/null; }
 write_status() {
     printf '{"state": "%s", "step": "%s", "at": "%s", "from": "%s", "to": "%s", "message": "%s", "behind": %s, "started": %s, "seen": %s}\n' \
         "$(json "$STATE")" "$(json "$STEP")" "$(json "$AT")" "$(json "$FROM")" "$(json "$TO")" "$(json "$MSG")" "${BEHIND:-0}" \
         "${STARTED:-0}" "$(date +%s)" | safe_write "$STATUS"
 }
+# A "running" status with nobody holding the lock means the last update was cut off part way
+# (the PC restarted, or the updater was stopped). Say so, or Settings shows "running" for ever.
+if [ "$STATE" = running ] && ! lock_held; then
+    STATE=failed; STEP=done; AT=${AT:-$(date '+%a %-d %b %H:%M')}
+    MSG="The last update was interrupted (the home PC restarted or the updater was stopped). Check Fizzy is on the version you expect, then press Update again."
+    write_status
+fi
 
 fetch() {
     git fetch --quiet 2>/dev/null || { say "Couldn't reach GitHub."; return 1; }
@@ -50,7 +58,7 @@ fetch() {
 }
 
 healthy() {  # Fizzy answers /healthz inside its container: up to 3 minutes, but give up if it crashes
-    for _ in $(seq 1 90); do
+    for _ in $(seq 1 "${UPDATE_HEALTH_TRIES:-90}"); do
         docker compose exec -T fizzy python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)" \
             >/dev/null 2>&1 && return 0
         case "$(docker compose ps -a --format '{{.State}}' fizzy 2>/dev/null)" in exited*|dead*) return 1 ;; esac
@@ -68,17 +76,18 @@ step() { STEP=$1; write_status; }   # what the progress page in Fizzy shows
 
 build() {  # build while the old one keeps serving, then swap (the only time Fizzy is down)
     export FIZZY_VERSION; FIZZY_VERSION="$(git rev-parse --short HEAD)"
-    step build; docker compose build fizzy >/dev/null 2>&1 || return 1
+    step build; docker compose build fizzy >/dev/null 2>&1 || { BUILD_FAILED=1; return 1; }
     step restart; docker compose up -d fizzy >/dev/null 2>&1
 }
 
 update() {
     if ! mkdir "$LOCK" 2>/dev/null; then
-        if kill -0 "$(cat "$LOCK/pid" 2>/dev/null)" 2>/dev/null; then say "Another update is running."; return 1; fi
+        if lock_held; then say "Another update is running."; return 1; fi
         say "Clearing a lock left by an update that was interrupted."; rm -rf "$LOCK"; mkdir "$LOCK" || return 1
     fi
     echo $$ > "$LOCK/pid"
     trap 'rm -rf "$LOCK"' RETURN
+    rm -f "$DIR/last-failure.log"  # so a failure that never got as far as starting it doesn't show old logs
     STARTED=$(date +%s); STATE=running; MSG=""; step check
     if ! git diff --quiet || ! git diff --cached --quiet; then
         STATE=failed; AT=$(date '+%a %-d %b %H:%M'); MSG="Files in the Fizzy folder were changed by hand, so nothing was pulled. Undo them (git status) and try again."
@@ -100,14 +109,21 @@ update() {
     git merge --ff-only --quiet @{u} || { STATE=failed; MSG="Couldn't move to the new version (the branch has local commits)."; step done; say "$MSG"; return 1; }
     TO=$(git rev-parse --short HEAD)
     say "Building $TO ($BEHIND new change(s))..."
+    BUILD_FAILED=""
     if build && step verify && healthy; then
         STATE=ok; BEHIND=0; MSG="$FROM to $TO"; step done; say "Updated: $MSG"; return 0
+    fi
+    git rev-parse @{u} | safe_write "$DIR/bad-version"  # overnight updates skip this one; pressing Update still tries it
+    if [ -n "$BUILD_FAILED" ]; then
+        # Nothing was swapped: up -d only runs after a good build, so the old one is still serving.
+        git reset --hard --quiet "$old"
+        STATE=failed; TO=$FROM; MSG="The new version didn't build, so Fizzy stayed on $FROM."
+        fetch; step done; say "$MSG"; return 1
     fi
     say "The new version didn't start. Going back to $FROM..."
     save_logs; step rollback
     git reset --hard --quiet "$old"
     export FIZZY_VERSION; FIZZY_VERSION="$(git rev-parse --short HEAD)"
-    git rev-parse @{u} | safe_write "$DIR/bad-version"  # overnight updates skip this one; pressing Update still tries it
     if docker compose up -d --build fizzy >/dev/null 2>&1 && healthy; then
         STATE=failed; TO=$FROM; MSG="The new version didn't start, so it went back to $FROM. Its last log lines are below."
     else

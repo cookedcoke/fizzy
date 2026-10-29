@@ -61,3 +61,19 @@ def test_unreadable_status_isnt_reported_as_not_running(client, tmp_path, monkey
     login(client)
     page = client.get("/settings").text
     assert "isn't allowed to read it" in page and "The updater isn't running" not in page
+
+
+def test_interrupted_update_isnt_left_running(tmp_path):
+    # The PC restarted (or the updater was stopped) part way through: the next start says so.
+    import shutil
+    import subprocess
+    from pathlib import Path
+    (tmp_path / "deploy").mkdir()
+    shutil.copy(Path(__file__).resolve().parent.parent / "deploy" / "update.sh", tmp_path / "deploy" / "update.sh")
+    (tmp_path / "update-status").mkdir()
+    status = tmp_path / "update-status" / "update-status.json"
+    status.write_text(json.dumps({"state": "running", "step": "verify", "at": "Mon", "from": "a", "to": "b",
+                                  "message": "Updating from a", "behind": 1, "started": 5, "seen": 5}))
+    subprocess.run(["bash", str(tmp_path / "deploy" / "update.sh"), "--check"], cwd=tmp_path, capture_output=True, timeout=30)
+    s = json.loads(status.read_text())
+    assert s["state"] == "failed" and s["step"] == "done" and "interrupted" in s["message"]

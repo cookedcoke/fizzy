@@ -134,12 +134,12 @@ def summary(conn, day):
     cos = checkouts(conn, start, end)
     orders = [c for c in cos if c["items"] or c["sold_cents"]]
     sold = sum(c["sold_cents"] for c in cos)
-    taken = (sum(c["sale_cents"] + c["repay_cents"] for c in cos) + hand_repayments_cents(conn, start, end)
-             - refunds_cents(conn, start, end))
+    by_hand = hand_repayments_cents(conn, start, end)
+    taken = sum(c["sale_cents"] + c["repay_cents"] for c in cos) + by_hand - refunds_cents(conn, start, end)
     return {
         "day": day, "checkouts": cos, "orders": len(orders), "sold_cents": sold, "taken_cents": taken,
         "avg_cents": round(sold / len(orders)) if orders else 0,
-        "tab_cents": sum(c["tab_cents"] for c in cos), "repaid_cents": sum(c["repay_cents"] for c in cos),
+        "tab_cents": sum(c["tab_cents"] for c in cos), "repaid_cents": sum(c["repay_cents"] for c in cos) + by_hand,  # same as Transactions
         "customers": len({c["customer_id"] for c in orders if c["customer_id"]}),
         "walkups": sum(1 for c in orders if not c["customer_id"]),
     }
