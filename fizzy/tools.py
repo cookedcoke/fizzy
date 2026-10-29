@@ -148,6 +148,8 @@ def day_start(d, end=False):
         day = datetime.strptime(d, "%Y-%m-%d").date()
     except (TypeError, ValueError):
         raise ToolError("Pick a date.")
+    if not 2000 <= day.year <= 2999:
+        raise ToolError("Pick a date between 2000 and 2999.")
     dt = datetime.combine(day + timedelta(days=1) if end else day, time(), tzinfo=config.TZ)
     return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
 
