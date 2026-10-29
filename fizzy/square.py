@@ -740,13 +740,13 @@ def sync_catalog(conn, client, force=False):
     return n
 
 
-def _sync_once(conn, client):
+def _sync_once(conn, client, catalog=False):
     retry = json.loads(get_setting(conn, "square_retry") or "{}")   # "type:id" -> last error
     failed = {}
     result = sync_customers(conn, client.customers())
     conn.commit()
     try:
-        sync_catalog(conn, client)
+        sync_catalog(conn, client, force=catalog)
     except Exception:  # the item list is a nice-to-have: never let it stop sales syncing
         conn.rollback()
         log.exception("Square catalogue sync failed")
@@ -814,12 +814,13 @@ def _sync_once(conn, client):
     return result
 
 
-def sync(conn, client=None, wait=False):
+def sync(conn, client=None, wait=False, catalog=False):
     """Full poll: customers, then payments, tab orders and refunds since the cursor.
 
     If a sync is already running, the request is queued and the running sync goes round once
     more when it finishes (wait=True blocks up to a minute instead, for staff-triggered syncs;
-    a number waits that many seconds)."""
+    a number waits that many seconds). catalog=True also refreshes the item list now, for "Sync
+    now", so a renamed or new item shows up straight away instead of within 6 hours)."""
     got = _sync_lock.acquire(timeout=60 if wait is True else wait) if wait else _sync_lock.acquire(blocking=False)
     if not got:
         _sync_pending.set()
@@ -832,7 +833,7 @@ def sync(conn, client=None, wait=False):
         try:
             _sync_pending.clear()
             try:
-                result = _sync_once(conn, client or SquareClient())
+                result = _sync_once(conn, client or SquareClient(), catalog)
             except Exception as e:  # keep the poller alive; show the error on the Square page
                 conn.rollback()
                 log.exception("Square sync failed")

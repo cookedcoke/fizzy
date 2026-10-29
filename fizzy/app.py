@@ -936,7 +936,7 @@ def register(app):
     def square_sync_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         if not config.SQUARE_TOKEN:
             return back(request, "/square", "Square isn't configured (SQUARE_ACCESS_TOKEN).")
-        return back(request, "/square", square.describe_sync(square.sync(conn, wait=True)))
+        return back(request, "/square", square.describe_sync(square.sync(conn, wait=True, catalog=True)))
 
     @app.post("/square/webhook")
     async def square_webhook(request: Request):

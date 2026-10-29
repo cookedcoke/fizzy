@@ -644,7 +644,7 @@ def h_raffle(request, conn, who, form):
 def h_sync_now(request, conn, who, form):
     if not config.SQUARE_TOKEN:
         raise ToolError("Square isn't configured (SQUARE_ACCESS_TOKEN).")
-    return done(request, "sync_now", square.describe_sync(square.sync(conn, wait=True)))
+    return done(request, "sync_now", square.describe_sync(square.sync(conn, wait=True, catalog=True)))
 
 
 def h_resync(request, conn, who, form):
