@@ -1,0 +1,43 @@
+# Fizzy.xcodeproj is generated from this file with XcodeGen (brew install xcodegen; then
+# `xcodegen` in this folder). The generated project is committed, so you only need XcodeGen
+# if you change this file or add or remove source files.
+name: Fizzy
+options:
+  bundleIdPrefix: co.cookedcoke
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+targets:
+  Fizzy:
+    type: application
+    platform: macOS
+    sources:
+      - path: Fizzy
+    info:
+      path: Fizzy/Info.plist
+      properties:
+        CFBundleName: Fizzy
+        CFBundleDisplayName: Fizzy
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        CFBundleIconFile: AppIcon
+        LSApplicationCategoryType: public.app-category.business
+        LSMinimumSystemVersion: "13.0"
+        NSHumanReadableCopyright: Cooked Coke
+        NSPrincipalClass: NSApplication
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.cookedcoke.fizzy
+        PRODUCT_NAME: Fizzy
+        # Not signed with a developer account: "Sign to Run Locally" (ad hoc) only.
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_APP_SANDBOX: NO
+        GENERATE_INFOPLIST_FILE: NO
+        COMBINE_HIDPI_IMAGES: YES
