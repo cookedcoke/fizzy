@@ -19,6 +19,7 @@ enum MainMenu {
 
         let file = submenu(of: main, "File")
         file.addItem(item("Open Link…", #selector(AppDelegate.openLink(_:)), "l", target: app))
+        file.addItem(item("Print…", #selector(StaffWindowController.printPage(_:)), "p"))
         file.addItem(.separator())
         file.addItem(item("Close Window", #selector(NSWindow.performClose(_:)), "w"))
 

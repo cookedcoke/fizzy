@@ -50,7 +50,8 @@ final class DisplayBridge: NSObject, WKScriptMessageHandler {
     }
 }
 
-private final class WeakHandler: NSObject, WKScriptMessageHandler {
+/// WKUserContentController holds its handlers strongly; this breaks the cycle.
+final class WeakHandler: NSObject, WKScriptMessageHandler {
     weak var target: WKScriptMessageHandler?
     init(_ target: WKScriptMessageHandler) { self.target = target }
 

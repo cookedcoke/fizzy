@@ -11,6 +11,7 @@ final class StaffWindowController: NSWindowController, NSWindowDelegate, NSMenuI
     /// The page that failed to load, so View > Reload Page tries it again instead of the error page.
     private var lastFailedURL: URL?
     private static let zoomKey = "StaffZoom"
+    private static let printHandler = "fizzyPrint"
     private let log = Logger(subsystem: "co.cookedcoke.fizzy", category: "staff")
 
     init(configuration: WKWebViewConfiguration) {
@@ -33,6 +34,12 @@ final class StaffWindowController: NSWindowController, NSWindowDelegate, NSMenuI
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        // window.print() does nothing in a Mac web view, so Fizzy's Print buttons ask the app instead.
+        let content = webView.configuration.userContentController
+        content.add(WeakHandler(self), name: Self.printHandler)
+        content.addUserScript(WKUserScript(
+            source: "window.print = function () { window.webkit.messageHandlers.\(Self.printHandler).postMessage({}); };",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let zoom = UserDefaults.standard.double(forKey: Self.zoomKey)
         if zoom > 0 { webView.pageZoom = zoom }
     }
@@ -71,6 +78,22 @@ final class StaffWindowController: NSWindowController, NSWindowDelegate, NSMenuI
     private func setZoom(_ zoom: CGFloat) {
         webView.pageZoom = min(max(zoom, 0.5), 3)
         UserDefaults.standard.set(Double(webView.pageZoom), forKey: Self.zoomKey)
+    }
+
+    /// File > Print, and the pages' own Print buttons.
+    @objc func printPage(_ sender: Any?) {
+        showWindow(nil)
+        guard let window, window.attachedSheet == nil else { return }
+        let info = NSPrintInfo.shared.copy() as! NSPrintInfo
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        info.isVerticallyCentered = false
+        let operation = webView.printOperation(with: info)
+        operation.showsPrintPanel = true
+        operation.showsProgressPanel = true
+        // Without a frame, WKWebView prints blank pages.
+        operation.view?.frame = webView.bounds
+        operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
     }
 
     @objc func goBack(_ sender: Any?) { webView.goBack() }
@@ -113,6 +136,16 @@ final class StaffWindowController: NSWindowController, NSWindowDelegate, NSMenuI
         alert.messageText = title
         alert.informativeText = detail
         alert.beginSheetModal(for: window)
+    }
+}
+
+// MARK: - Print requests from the pages
+
+extension StaffWindowController: WKScriptMessageHandler {
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        let host = message.frameInfo.securityOrigin.host.lowercased()
+        guard message.name == Self.printHandler, Settings.appHosts.contains(host) else { return }
+        printPage(nil)
     }
 }
 

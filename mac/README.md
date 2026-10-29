@@ -57,6 +57,7 @@ The menu bar (while the staff window is in front):
 | Display | Reload display | Loads the display page again |
 | Display | Move display to other screen | Puts the display on the next screen and remembers it |
 | File | Open Link (Cmd+L) | Opens a pasted Fizzy link in the staff window |
+| File | Print (Cmd+P) | Prints the staff page. Fizzy's own Print buttons do the same |
 | View | Back, Forward, Home, Reload Page, zoom | For the staff window |
 | Fizzy | Settings (Cmd+,) | Change the Fizzy address, e.g. to a test server |
 

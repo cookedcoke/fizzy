@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bridge: DisplayBridge!
     private lazy var settings = SettingsWindowController()
     private let keepAwake = KeepAwake()
+    /// Stops App Nap slowing the display's timers while someone's using another app.
+    private var activity: NSObjectProtocol?
     private let log = Logger(subsystem: "co.cookedcoke.fizzy", category: "app")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -32,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         display.staffWindow = staff.window
         display.place()
         keepAwake.start()
+        activity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Customer display")
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -57,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         keepAwake.stop()
+        if let activity { ProcessInfo.processInfo.endActivity(activity) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

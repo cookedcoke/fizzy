@@ -21,7 +21,8 @@ final class DisplayWindow: NSWindow {
         hidesOnDeactivate = false
         hasShadow = false
         animationBehavior = .none
-        backgroundColor = .white
+        // The /display page's cream, so there's no white flash while it loads.
+        backgroundColor = NSColor(srgbRed: 0xFF / 255.0, green: 0xF7 / 255.0, blue: 0xEE / 255.0, alpha: 1)
     }
 }
 
