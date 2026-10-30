@@ -27,3 +27,16 @@ def cust(conn):
                            (name, email, sq, db.now_iso()))
         return conn.execute("SELECT * FROM customers WHERE id = ?", (cur.lastrowid,)).fetchone()
     return make
+
+
+@pytest.fixture(autouse=True)
+def no_badge_points(request, monkeypatch):
+    """Badges pay points (badges.award); most tests check exact balances, so it's off unless a test
+    asks for it with @pytest.mark.badge_points."""
+    if "badge_points" not in request.keywords:
+        from fizzy import badges
+        monkeypatch.setattr(badges, "BADGE_POINTS", {})
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "badge_points: let badges pay their real points in this test")

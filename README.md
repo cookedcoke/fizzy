@@ -449,6 +449,15 @@ as `<@&ROLE_ID>`). Starting a reward or scheduling double points then shows an *
 Discord* box, ticked by default. The post is sent by Fizzy on the home PC, never by the counter
 device's browser, so it works even where the school wifi blocks Discord.
 
+### Badges pay points
+
+Each badge on the student site pays points once, the first time it's earned: First sip 50,
+Regular 200, Legend 1,000, On a roll 200, Unstoppable 750, Explorer 150, Big spender 300,
+Treat yourself 100, Good for it 200, Double trouble 100 (fizzy/badges.py, `BADGE_POINTS`). They're
+paid when the sale that earns them syncs from Square, or when their page is next opened. Badges
+people already had when this was switched on didn't pay out, so it didn't hand out a pile of free
+rewards on day one. Badge points count on the leaderboard but not towards tab spend or the tab score.
+
 ## 7. Student site
 
 Students can check their own **points, rewards, tab and recent activity**, plus a

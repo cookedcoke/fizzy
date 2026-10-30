@@ -119,7 +119,7 @@
   {% set got = me.badges|selectattr('earned')|list %}{% set todo = me.badges|rejectattr('earned')|list %}
   {% macro badge(b) %}<div class="badge {{ 'got' if b.earned }}" title="{{ b.how }}">
       <div class="ico" aria-hidden="true">{{ b.icon }}</div>
-      <b>{{ b.name }}</b><span>{{ b.how }}</span>
+      <b>{{ b.name }}</b><span>{{ b.how }}</span>{% if b.points %}<em class="bp">+{{ b.points }} points</em>{% endif %}
       {% if not b.earned and b.count %}<div class="bar"><i style="width:{{ b.progress }}%"></i></div><small>{{ b.count }}</small>{% endif %}
     </div>{% endmacro %}
   <div class="badges">{% for b in got + todo[:2] %}{{ badge(b) }}{% endfor %}</div>

@@ -252,3 +252,29 @@ def test_pick_display_menu_items(client, owner):
     client.post("/settings/display", data={"message": "", "owing": "1", "menu": "1", "show": ["i-Coke"]})
     assert [m["name"] for m in client.get("/api/display/idle").json()["menu"]] == ["Coke"]
     assert 'value="i-Fanta" >' in client.get("/settings").text                                 # unticked now
+
+
+@pytest.mark.badge_points
+def test_badges_pay_points_once(client):
+    from fizzy import badges
+    conn = db.connect()
+    cid = _customer()
+    conn.execute("INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, created_at) VALUES (?, 300, 300, 'purchase', ?)", (cid, db.now_iso()))
+    conn.commit()
+    assert badges.award(conn, cid) == ["First sip"]
+    assert badges.award(conn, cid) == []                                       # only once
+    conn.commit()
+    assert logic.points_balance(conn, cid) == 300 + 50
+    login(client)
+    client.post("/logout")
+    conn.close()
+
+
+@pytest.mark.badge_points
+def test_badges_already_had_dont_pay_when_switched_on(conn, cust):
+    from fizzy import badges
+    c = cust()
+    conn.execute("INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, created_at) VALUES (?, 300, 300, 'purchase', ?)", (c["id"], db.now_iso()))
+    conn.execute("DELETE FROM settings WHERE key = 'badge_points_baseline'")
+    badges.baseline(conn)
+    assert badges.award(conn, c["id"]) == [] and logic.points_balance(conn, c["id"]) == 300

@@ -213,3 +213,4 @@ a.go { display: block; box-sizing: border-box; text-align: center; text-decorati
 .pill { min-height: 40px }
 details.more > summary { padding: 10px 0 }
 [hidden] { display: none !important }
+.badge .bp { display: block; font-style: normal; font-size: 12px; font-weight: 700; color: var(--red-deep); margin-top: 2px } .badge.got .bp { color: var(--ok) }

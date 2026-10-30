@@ -232,6 +232,8 @@ def home(request: Request, conn=Depends(get_conn)):
     if c is None:
         return _page(request, "me_login.html", error=None, who="", live=rewards.active(conn),
                      events_on=events.on(conn), events_soon=events.upcoming(conn))
+    if badges.award(conn, c["id"]):  # a badge earned since the last look pays its points now
+        conn.commit()
     s = logic.customer_summary(conn, c)
     month, month_me = leaderboard(conn, since=month_start(), me=c["id"])
     alltime, alltime_me = leaderboard(conn, me=c["id"])
@@ -322,18 +324,20 @@ def logout(request: Request):
 REASONS = {
     "purchase": "Purchase", "refund": "Refund", "tab_repaid": "Tab paid off", "tab_refund": "Tab refund",
     "credit_used": "Tab paid from credit", "tab_adjust": "Tab correction", "redeem": "Reward",
-    "redeem_undo": "Reward undone", "manual": "Adjustment", "bonus": "Bonus",
+    "redeem_undo": "Reward undone", "manual": "Adjustment", "bonus": "Bonus", "badge": "Badge",
 }
 
 
 def activity(conn, customer_id, limit=15):
     """Recent points and tab events in plain words. Staff notes and names are left out."""
     rows = []
-    for p in conn.execute("SELECT * FROM points_ledger WHERE customer_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
-                          (customer_id, limit)):
+    for p in conn.execute("SELECT * FROM points_ledger WHERE customer_id = ? AND NOT (reason = 'badge' AND delta = 0) "
+                          "ORDER BY created_at DESC, id DESC LIMIT ?", (customer_id, limit)):
         what = REASONS.get(p["reason"], "Adjustment")
         if p["reason"] in ("redeem", "redeem_undo") and p["note"]:
             what = p["note"]                       # "Redeemed: Free Coke" - written by Fizzy, not staff
+        elif p["reason"] == "badge" and p["note"]:
+            what = p["note"]                       # "Badge: Regular" - written by Fizzy
         elif p["reason"] == "bonus" and p["event_id"] and p["note"]:
             what = f"Bonus: {p['note']}"           # the double points day's public name
         rows.append({"at": p["created_at"], "what": what, "points": p["delta"], "money": None})

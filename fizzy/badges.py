@@ -1,6 +1,8 @@
 """Streaks and badges for the student site. Worked out on the fly from what Fizzy already
 records; nothing is stored.
 
+Badges pay points once each, when first earned (award); that part is recorded in points_ledger.
+
 A streak counts the stall's trading days (days it sold anything) in a row on which the student
 bought something, so weekends, holidays and closed lunches don't break it. Today doesn't break a
 streak until it's over: no purchase yet today just means "keep it going".
@@ -8,6 +10,7 @@ streak until it's over: no purchase yet today just means "keep it going".
 from datetime import timedelta
 
 from . import config, logic, stats
+from .db import get_setting, now_iso, set_setting
 from .logic import parse_ts
 
 
@@ -57,6 +60,42 @@ def _paid_on_time(conn, cid):
                if ch["unpaid_cents"] == 0 and ch["net_cents"] > 0 and not ch["paid_late"])
 
 
+# Points for earning each badge, paid once (see award). Bigger for the harder ones.
+BADGE_POINTS = {"First sip": 50, "Regular": 200, "Legend": 1000, "On a roll": 200, "Unstoppable": 750,
+                "Explorer": 150, "Big spender": 300, "Treat yourself": 100, "Good for it": 200, "Double trouble": 100}
+
+
+def award(conn, cid):
+    """Pay the points for any badge earned and not yet paid. Safe to call any time: each badge pays
+    once (a points_ledger row, reason 'badge', note "Badge: <name>"), and never gets taken back.
+    Returns the names newly paid. The caller commits."""
+    paid = {r[0] for r in conn.execute("SELECT note FROM points_ledger WHERE customer_id = ? AND reason = 'badge'", (cid,))}
+    new = []
+    for b in for_customer(conn, cid)["badges"]:
+        note = f"Badge: {b['name']}"
+        if b["earned"] and b["points"] and note not in paid:
+            conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, note, created_at) VALUES (?, ?, 'badge', ?, ?)",
+                         (cid, b["points"], note, now_iso()))
+            new.append(b["name"])
+    return new
+
+
+def baseline(conn):
+    """The first time badges pay points: badges people already had are marked as paid with 0 points,
+    so switching it on doesn't suddenly hand out a pile of free rewards. Runs once."""
+    if get_setting(conn, "badge_points_baseline"):
+        return
+    for (cid,) in conn.execute("SELECT id FROM customers WHERE merged_into IS NULL").fetchall():
+        paid = {r[0] for r in conn.execute("SELECT note FROM points_ledger WHERE customer_id = ? AND reason = 'badge'", (cid,))}
+        for b in for_customer(conn, cid)["badges"]:
+            note = f"Badge: {b['name']}"
+            if b["earned"] and note not in paid:
+                conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, note, created_at) VALUES (?, 0, 'badge', ?, ?)",
+                             (cid, note, now_iso()))
+    set_setting(conn, "badge_points_baseline", now_iso())
+    conn.commit()
+
+
 def for_customer(conn, cid):
     visits = visit_days(conn, cid)
     current, best, today_done = streaks(visits, trading_days(conn), stats.today())
@@ -66,7 +105,7 @@ def for_customer(conn, cid):
                            "GROUP BY event_id HAVING SUM(delta) > 0", (cid,)).fetchone() is not None
 
     def badge(icon, name, how, have, need, unit=""):
-        return {"icon": icon, "name": name, "how": how, "earned": have >= need,
+        return {"icon": icon, "name": name, "how": how, "earned": have >= need, "points": BADGE_POINTS.get(name, 0),
                 "progress": min(100, round(100 * have / need)) if need else 100,
                 "count": f"{min(have, need):,}{unit} / {need:,}{unit}" if need > 1 else ""}
 

@@ -24,7 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import display, passkeys, pwa, transactions, updater
+from . import badges, display, passkeys, pwa, transactions, updater
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
 log = logging.getLogger("fizzy")
@@ -110,6 +110,7 @@ def trigger_sync():
 async def lifespan(app):
     conn = db.connect()
     db.init(conn)
+    badges.baseline(conn)  # once: badges people already had don't pay out when this is switched on
     conn.close()
     if not config.PASSWORD or not config.SECRET_KEY:
         raise RuntimeError("Set FIZZY_PASSWORD and FIZZY_SECRET_KEY (see .env.example).")
@@ -718,9 +719,12 @@ def register(app):
     @app.get("/customers/{cid:int}", response_class=HTMLResponse)
     def customer_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
         c = load_customer(conn, cid)
+        if badges.award(conn, cid):  # e.g. "Treat yourself" after a redeem, "Good for it" after paying a tab
+            conn.commit()
         s = logic.customer_summary(conn, c)
         points = conn.execute(
-            "SELECT * FROM points_ledger WHERE customer_id = ? ORDER BY created_at DESC, id DESC LIMIT 200", (cid,)
+            "SELECT * FROM points_ledger WHERE customer_id = ? AND NOT (reason = 'badge' AND delta = 0) "
+            "ORDER BY created_at DESC, id DESC LIMIT 200", (cid,)
         ).fetchall()
         payments = conn.execute(
             "SELECT * FROM square_payments WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100", (cid,)

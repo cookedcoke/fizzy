@@ -741,6 +741,7 @@ def sync_catalog(conn, client, force=False):
 
 
 def _sync_once(conn, client, catalog=False):
+    started = now_iso()
     retry = json.loads(get_setting(conn, "square_retry") or "{}")   # "type:id" -> last error
     failed = {}
     result = sync_customers(conn, client.customers())
@@ -808,6 +809,10 @@ def _sync_once(conn, client, catalog=False):
     set_setting(conn, "square_last_error", "")
     set_setting(conn, "square_retry", json.dumps(retry))
     set_setting(conn, "square_item_errors", json.dumps([f"{k}: {v}" for k, v in list(retry.items())[:20]]))
+    from . import badges  # anyone with a new sale or repayment this round may have earned a badge
+    for (cid,) in conn.execute("SELECT DISTINCT customer_id FROM square_payments WHERE processed_at >= ? AND customer_id IS NOT NULL",
+                               (started,)).fetchall():
+        badges.award(conn, cid)
     conn.commit()
     if retry:
         result["skipped_items"] = len(retry)
