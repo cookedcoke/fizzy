@@ -565,8 +565,34 @@ def register(app):
             people=conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
             if unlinked_tabs else [],
             live_rewards=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn, 7),
-            sales=stats.dashboard(conn), backup=backup_health(conn),
+            sales=(sales := stats.dashboard(conn)), backup=backup_health(conn), closed=_closed_today(conn, sales),
         )
+
+    def _closed_today(conn, sales):
+        """When the stall isn't open today (a weekend or a day marked closed) and nothing's sold, the
+        dashboard shows a recap of the last day it traded and when it opens next, not a row of zeros."""
+        if sales["today"]["orders"]:
+            return None
+        d = stats.today()
+        shut = logic.closed_days(conn)
+
+        def why(day):
+            for a, b, label in shut:
+                if a <= day.isoformat() <= b:
+                    return label or "Marked closed"
+            return "Weekend" if day.weekday() >= 5 else None
+        reason = why(d)
+        if reason is None:
+            return None
+        nxt = d + timedelta(days=1)
+        while why(nxt) and nxt < d + timedelta(days=120):
+            nxt += timedelta(days=1)
+        last = next((w for w in reversed(sales["week"][:-1]) if w["orders"]), None)
+        top = []
+        if last:
+            a, b = stats.day_bounds(last["day"])
+            top = stats.top_items(stats.checkouts(conn, a, b), 5)
+        return {"reason": reason, "next": nxt, "next_in": (nxt - d).days, "last": last, "top": top}
 
     PROFIT_RANGES = {"today": ("Today", 0), "7": ("Last 7 days", 6), "30": ("Last 30 days", 29)}
 

@@ -664,3 +664,5 @@ header .clock.squeezed { display: none !important }
 .caret { display: inline-block; width: 7px; height: 1em; vertical-align: text-bottom; background: var(--faint); margin-left: 1px; animation: caret 1s steps(2) infinite }
 @keyframes caret { 50% { opacity: 0 } }
 @media (prefers-reduced-motion: reduce) { .caret { animation: none } }
+.closed-day .big { font-size: 1.35rem; font-weight: 600; margin: .2rem 0 .6rem; }
+.closed-day p { margin: .35rem 0; }

@@ -22,6 +22,14 @@
   <div class="actions" style="margin:0"><a class="btn" href="/money" title="Restocks and payouts - G then M">Money</a>
     <a class="btn" href="/profit" title="Profit and item costs - G then P">Profit</a>
     <a class="btn" href="/tools#takings" title="What came in over any dates">Takings report</a></div></div>
+{% if closed %}{% set l = closed.last %}
+<div class="panel closed-day"><h2>{{ closed.reason }}, so the stall's closed today</h2>
+  <p class="big">Opens {{ 'tomorrow' if closed.next_in == 1 else closed.next.strftime('%A') if closed.next_in < 7 else closed.next.strftime('%A %-d %B') }}{% if closed.next_in > 1 %} <span class="muted">· in {{ closed.next_in }} days</span>{% endif %}</p>
+  {% if l %}<p>Last open {{ l.day.strftime('%A %-d %B') }}: <b>{{ l.sold_cents|money }}</b> sold over {{ l.orders }} order{{ '' if l.orders == 1 else 's' }}, {{ l.taken_cents|money }} taken.</p>
+  {% if closed.top %}<p class="muted">Best sellers that day: {% for i in closed.top %}{{ i.name }} ({{ i.qty }}){{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}{% endif %}
+  <p class="muted">Last 7 school days: {{ sales.week_sold_cents|money }} sold over {{ sales.week_orders }} orders. Anything sold today still shows up here.</p>
+</div>
+{% else %}
 <div class="stats">
   <div class="stat"><div class="k">Sold</div><div class="v">{{ t.sold_cents|money }}</div>
     {% set lw = sales.vs_last_week_cents %}<div class="sub">{% if lw %}{% set pct = ((t.sold_cents - lw) * 100 / lw)|round|int %}{{ '▲' if pct >= 0 else '▼' }} {{ pct|abs }}% vs last {{ t.day.strftime('%A') }} by now{% else %}Nothing last {{ t.day.strftime('%A') }} by now{% endif %}</div></div>
@@ -33,10 +41,11 @@
     {% else %}<div class="v sm"><a href="/profit">Set item costs</a></div><div class="sub">to see profit</div>{% endif %}</div>
   <div class="stat"><div class="k">Put on tabs</div><div class="v">{{ t.tab_cents|money }}</div><div class="sub">{{ t.repaid_cents|money }} repaid today</div></div>
 </div>
+{% endif %}
 
 <div class="cols">
 <div class="col" style="flex-grow:2">
-  <div class="panel"><h2>Sold by hour</h2>
+{% if not closed %}  <div class="panel"><h2>Sold by hour</h2>
     <div class="legend"><span><i class="sw now"></i>Today</span><span><i class="sw then"></i>Last {{ t.day.strftime('%A') }}</span></div>
     <div class="bars hours" role="img" aria-label="Sold by hour today compared with last week">
       {% for h in sales.hours %}<div class="bar" title="{{ '%d:00'|format(h.hour) }} - today {{ h.cents|money }}, last week {{ h.last_week|money }}">
@@ -44,6 +53,7 @@
         <span class="lbl">{{ (h.hour - 1) % 12 + 1 }}{{ 'am' if h.hour < 12 else 'pm' }}</span></div>{% endfor %}
     </div>
   </div>
+{% endif %}
   <div class="panel"><h2>Last 7 school days <span class="count">{{ sales.week_sold_cents|money }} sold · {{ sales.week_orders }} orders</span></h2>
     <div class="bars week" role="img" aria-label="Sold per day, last 7 days">
       {% for w in sales.week %}<div class="bar {{ 'today' if loop.last }}" title="{{ w.day.strftime('%a %-d %b') }} - sold {{ w.sold_cents|money }}, taken {{ w.taken_cents|money }}, {{ w.orders }} orders">

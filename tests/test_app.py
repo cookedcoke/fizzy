@@ -172,3 +172,20 @@ def test_customer_page_shows_only_what_needs_doing(client):
     page = client.get("/customers/1").text
     assert "$4.00 overdue." in page and "Tab score is" in page and "Money overdue right now" in page
     assert "Repayment <kbd>R</kbd></h2>" in page and "Tab charges" in page  # overdue: no approval prompt
+
+
+def test_dashboard_on_a_closed_day_shows_a_recap_not_zeros(client):
+    import json
+    from fizzy import config, db, stats
+    login(client)
+    d = stats.today().isoformat()
+    conn = db.connect(config.DB_PATH)
+    db.set_setting(conn, "closed_dates", json.dumps([[d, d, "Pupil free day"]]))
+    conn.commit()
+    page = client.get("/").text
+    assert "Pupil free day, so the stall's closed today" in page and "Opens" in page
+    assert "Sold by hour" not in page
+    db.set_setting(conn, "closed_dates", "[]")
+    conn.commit()
+    if stats.today().weekday() < 5:
+        assert "Sold by hour" in client.get("/").text
