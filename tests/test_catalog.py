@@ -89,8 +89,8 @@ def test_blanking_an_inherited_cost_removes_it(client):
 
 def test_lines_without_a_catalogue_id_still_match_by_name(conn, cust):
     cust()
-    square.process_payment(conn, pay("p1", 400, order_id="o1"), order(("Custom amount", 400), oid="o1"))
-    stats.set_cost(conn, "custom amount", 100, "Will")
+    square.process_payment(conn, pay("p1", 400, order_id="o1"), order(("Cookies", 400), oid="o1"))
+    stats.set_cost(conn, "cookies", 100, "Will")
     p = stats.profit(stats.summary(conn, stats.today())["checkouts"], stats.costs(conn))
     assert p["profit"] == 300
 
@@ -121,3 +121,12 @@ def test_profit_page_lists_unsold_catalogue_items(client, monkeypatch):
     assert "Coca-Cola (Mini)" in page and "sells for $2.50" in page and "3 items ·" in page
     r = client.post("/profit", data={"name": ["Coca-Cola (Mini)"], "key": ["v:V2"], "base": ["coca-cola"], "cost": ["0.55"]})
     assert "Saved 1 cost" in r.text and "78%" in r.text                    # (2.50 - 0.55) / 2.50
+
+
+def test_custom_amounts_never_ask_for_a_cost():
+    from fizzy import stats
+    order = {"line_items": [{"name": "Custom amount", "quantity": "1", "base_price_money": {"amount": 300}, "gross_sales_money": {"amount": 300}}]}
+    items = stats.line_items(order)
+    assert items[0]["custom"] and items[0]["name"] == "Custom amounts"
+    pr = stats.profit([{"items": items}], {})
+    assert pr["uncosted"] == 0 and pr["uncosted_revenue"] == 0 and pr["custom_revenue"] == items[0]["cents"]

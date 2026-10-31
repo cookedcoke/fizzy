@@ -60,6 +60,9 @@ def line_items(order, cat=None):
         except ValueError:
             qty = 1
         known = (cat or {}).get(li.get("catalog_object_id"))
+        if not li.get("catalog_object_id") and name.lower() == "custom amount":
+            out.append({"qty": qty, "key": "custom", "name": "Custom amounts", "base": "custom", "custom": True, "cents": _line_revenue(order, li)})
+            continue
         if known:
             key, shown, base = f"v:{known['variation_id']}", known["display"], item_key(known["item_name"])
         else:
@@ -236,7 +239,8 @@ def profit(checkouts_, cost_map):
     items = {}
     for c in checkouts_:
         for it in c["items"]:
-            row = items.setdefault(it["key"], {"key": it["key"], "base": it["base"], "name": it["name"], "qty": 0, "revenue": 0})
+            row = items.setdefault(it["key"], {"key": it["key"], "base": it["base"], "name": it["name"], "qty": 0, "revenue": 0,
+                                               "custom": it.get("custom", False)})
             row["qty"] += it["qty"]
             row["revenue"] += it["cents"]
     rev = cost = 0
@@ -244,6 +248,9 @@ def profit(checkouts_, cost_map):
     for k, row in items.items():
         each = cost_of(cost_map, k, row["base"])
         row["cost_each"] = each
+        if row["custom"]:  # typed-in amounts: no item, so no cost to set. Left out of profit, not flagged.
+            row["cost"] = row["profit"] = row["margin"] = None
+            continue
         if each is None:
             row["cost"] = row["profit"] = row["margin"] = None
             missing += row["revenue"]
@@ -256,7 +263,8 @@ def profit(checkouts_, cost_map):
     rows = sorted(items.values(), key=lambda r: (r["profit"] is None, -(r["profit"] or 0), -r["revenue"]))
     return {"items": rows, "revenue": rev, "cost": cost, "profit": rev - cost,
             "margin": round(100 * (rev - cost) / rev) if rev else None,
-            "uncosted_revenue": missing, "uncosted": sum(1 for r in rows if r["cost_each"] is None)}
+            "uncosted_revenue": missing, "uncosted": sum(1 for r in rows if r["cost_each"] is None and not r["custom"]),
+            "custom_revenue": sum(r["revenue"] for r in rows if r["custom"])}
 
 
 def resolve_item(conn, typed):
