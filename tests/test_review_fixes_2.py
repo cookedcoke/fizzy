@@ -335,3 +335,19 @@ def test_display_coming_up_shows_a_weekly_event_once(client):
     login(client)
     soon = client.get("/api/display/idle").json()["soon"]
     assert [s["name"] for s in soon] == ["Double points Friday", "Exam week"] and soon[0]["weekly"]
+
+
+def test_history_sales_dont_count_as_nobody_on_them(client):
+    from fizzy import square
+    from tests.test_custom_rules import at
+    from tests.test_rules import order, pay
+    conn = db.connect()
+    db.set_setting(conn, "history_before", at(2, hour=0))
+    for i in range(3):  # imported history: no customers, as expected
+        square.process_payment(conn, pay(f"h{i}", 300, cust=None, ts=at(4 + i), order_id=f"oh{i}"), order(("Coke", 300), oid=f"oh{i}"))
+    square.process_payment(conn, pay("live", 300, cust=None, ts=at(1), order_id="olive"), order(("Coke", 300), oid="olive"))
+    conn.commit(); conn.close()
+    login(client)
+    assert "1 sale this week with nobody on it" in client.get("/square").text
+    page = client.get("/transactions?start=2020-01-01&show=nobody").text
+    assert page.count('class="assign"') == 1

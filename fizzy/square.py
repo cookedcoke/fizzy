@@ -224,6 +224,12 @@ def _customer_for(conn, square_customer_id):
 MATCH_WINDOW = timedelta(hours=2)
 
 
+def live_from(conn):
+    """When sales started counting (the launch date), or "" if every sale counts. Sales before it are
+    history: nobody expects them to have a customer, so they never show as "nobody on them"."""
+    return get_setting(conn, "history_before", "") or ""
+
+
 def history_only(conn, sp):
     """Sales from before Fizzy's launch date (Tools, Import sales history) are kept for the numbers
     only: no points, tab charges, repayments or refunds come from them, now or later."""
@@ -540,7 +546,7 @@ def _checkout_key(row):
 
 def unclaimed(conn, hours=CLAIM_HOURS, limit=6):
     """Recent checkouts with nobody attached, newest first."""
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
+    since = max((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds"), live_from(conn))
     groups = {}
     for r in conn.execute("SELECT * FROM square_payments WHERE customer_id IS NULL AND created_at >= ? "
                           "ORDER BY created_at DESC", (since,)):

@@ -553,8 +553,8 @@ def register(app):
             "WHERE t.breach IS NOT NULL AND t.breach_ack_by IS NULL ORDER BY t.charged_at DESC"
         ).fetchall()
         unlinked_tabs = conn.execute(
-            "SELECT * FROM square_payments WHERE customer_id IS NULL AND kind != 'sale' ORDER BY created_at DESC"
-        ).fetchall()
+            "SELECT * FROM square_payments WHERE customer_id IS NULL AND kind != 'sale' AND created_at >= ? ORDER BY created_at DESC",
+            (square.live_from(conn),)).fetchall()
         return render(
             request, "dashboard.html", total_owed=total_owed, total_overdue=total_overdue, overdue=overdue,
             due_soon=due_soon, eligible=eligible, top=top, breaches=breaches, unlinked_tabs=unlinked_tabs,
@@ -893,10 +893,10 @@ def register(app):
 
     @app.get("/square", response_class=HTMLResponse)
     def square_page(request: Request, show: str = "", who=Depends(staff), conn=Depends(get_conn)):
-        where = "WHERE customer_id IS NULL" if show == "unlinked" else ""
+        where = "WHERE customer_id IS NULL AND sp.created_at >= ?" if show == "unlinked" else ""
         rows = conn.execute(
             f"SELECT sp.*, c.name FROM square_payments sp LEFT JOIN customers c ON c.id = sp.customer_id {where} "
-            "ORDER BY sp.created_at DESC LIMIT 200"
+            "ORDER BY sp.created_at DESC LIMIT 200", (square.live_from(conn),) if where else ()
         ).fetchall()
         people = conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
         unlinked_customers = conn.execute(
