@@ -560,20 +560,11 @@ def send_stream(request: Request, text: str = Form(""), who=Depends(staff)):
     """The answer as it's written, as server-sent events (one JSON object per event)."""
     def events():
         conn = db.connect()
-        so_far, last = "", 0.0
         try:
             for kind, value in steps(conn, who, text):
-                if kind == "delta":  # the answer so far, formatted, so tables and lists build up properly
-                    so_far += value
-                    if time.monotonic() - last > 0.08:  # at most ~12 updates a second
-                        last = time.monotonic()
-                        yield _sse({"t": "html", "html": str(md(so_far))})
-                    continue
-                if kind != "status" and so_far:
-                    yield _sse({"t": "html", "html": str(md(so_far))})
-                if kind == "reset":
-                    so_far = ""
-                if kind == "status":
+                if kind == "delta":  # raw text: the page reveals it smoothly and formats it as it goes
+                    yield _sse({"t": "delta", "text": value})
+                elif kind == "status":
                     yield _sse({"t": "status", "text": value + "..."})
                 elif kind == "reset":
                     yield _sse({"t": "reset"})

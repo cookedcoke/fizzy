@@ -46,6 +46,7 @@
   <button class="primary" {{ 'disabled' if not enabled }} aria-label="Send">Send</button>
 </form>
 </div>
+<script src="/static/marked.min.js?v={{ V }}"></script>
 <script>
 (function () {
   var f = document.querySelector("[data-ask]"), t = f.querySelector("textarea"), b = f.querySelector("button");
@@ -61,26 +62,48 @@
     if (e.key === "Enter" && !e.shiftKey && !touch) { e.preventDefault(); if (t.value.trim()) f.requestSubmit(); }
   });
   // Send without reloading: show the question and "Thinking" straight away, then swap in the answer.
-  function refresh(html) {
+  function refresh(html, still) {
     var doc = new DOMParser().parseFromString(html, "text/html");
     var fresh = doc.getElementById("chat");
     if (fresh) chat.innerHTML = fresh.innerHTML;
     var msg = doc.querySelector("main > .flash"), old = document.querySelector("main > .flash");
     if (old) old.remove();
     if (msg) document.querySelector("main").prepend(msg);
-    down(true);
+    if (!still) down(true);
   }
   function post(form, extra) {
     return fetch(form.action, { method: "POST", body: extra || new FormData(form), credentials: "same-origin" })
       .then(function (r) { if (r.redirected && /\/login/.test(r.url)) { location.href = r.url; throw 0; } return r.text(); });
   }
-  // Live: steps ("Adding up sales by weekday...") then the answer typing itself out. When it's done,
-  // the chat is reloaded from Fizzy so tables, lists and suggestion cards render properly.
+  // Live: steps ("Adding up sales by weekday...") then the answer revealing itself. Like the open-source
+  // chat apps (Open WebUI, Vercel's chatbot): the text Gemini sends in bursts is buffered and shown at an
+  // even pace, a word at a time, formatted as it goes; the page only follows along if you're at the bottom.
+  var end = document.getElementById("end");
+  function near() { return innerHeight + scrollY >= document.documentElement.scrollHeight - 140; }
+  function bottom() { scrollTo(0, document.documentElement.scrollHeight); }
+  // Stuck to the bottom until you scroll up yourself; scroll back down and it follows again.
+  var stuck = true;
+  addEventListener("scroll", function () { stuck = near(); }, { passive: true });
+  function follow(fn) { fn(); if (stuck) bottom(); }
   function bubble(cls) { var d = document.createElement("div"); d.className = "bubble them " + cls; document.getElementById("end").before(d); return d; }
-  function live(el, text) {  // a quick, safe render while it's still writing
-    var h = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
-    el.innerHTML = h + '<span class="caret"></span>';
+  function render(el, text, caret) {
+    var html = window.marked ? marked.parse(text.replace(/&/g, "&amp;").replace(/</g, "&lt;"), { gfm: true, breaks: false })
+      : text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
+    el.innerHTML = html;
+    el.querySelectorAll("a").forEach(function (a) { if (!/^https?:/i.test(a.getAttribute("href") || "")) a.removeAttribute("href"); else a.target = "_blank"; });
+    el.querySelectorAll("table").forEach(function (t) { var w = document.createElement("div"); w.className = "scroll"; t.before(w); w.appendChild(t); });
+    if (!caret) return;
+    var at = el; while (at.lastElementChild && !/^(BR|HR|IMG)$/.test(at.lastElementChild.tagName)) at = at.lastElementChild;
+    var c = document.createElement("span"); c.className = "caret"; at.appendChild(c);
+  }
+  // Clean up a partial reply so it doesn't flash half-made formatting: an unclosed ** or ` is held back.
+  function tidy(t) {
+    if ((t.match(/\*\*/g) || []).length % 2) t = t.slice(0, t.lastIndexOf("**"));
+    if ((t.match(/`/g) || []).length % 2) t = t.slice(0, t.lastIndexOf("`"));
+    var nl = t.lastIndexOf("\n");   // half a table row shows as stray pipes: wait for the whole row
+    if (/^\s*\|/.test(t.slice(nl + 1))) t = t.slice(0, nl + 1);
+    if (/^\s*([-*+]|\d+\.)\s*$/.test(t.slice(nl + 1))) t = t.slice(0, nl + 1);  // a bullet with no words yet
+    return t;
   }
   f.addEventListener("submit", function (e) {
     e.preventDefault();
@@ -95,27 +118,36 @@
     var me = document.createElement("div"); me.className = "bubble me"; me.textContent = q;
     document.getElementById("end").before(me);
     var wait = bubble("thinking"); wait.innerHTML = "<i></i><i></i><i></i><span class=st></span>";
-    var out = null, text = "", failed = false;
-    down(true);
+    var out = null, target = "", shown = 0, failed = false, ended = false, ticking = false, drained = null;
+    down(false);
+    stuck = true;
     var data = new FormData(f); t.value = ""; grow();
     function finish() { delete f.dataset.busy; b.disabled = false; if (!touch) t.focus(); }
     function fail(msg) {
       failed = true; t.value = q; grow();
       (out || wait).className = "bubble them err"; (out || wait).textContent = msg; if (out) wait.remove();
     }
+    function tick() {  // one animation frame: show a few more words, faster the further behind it is
+      var left = target.length - shown;
+      if (left <= 0) { ticking = false; if (drained) { var d = drained; drained = null; d(); } return; }
+      var step = Math.max(2, Math.ceil(left / 18)), to = Math.min(target.length, shown + step);
+      var sp = target.slice(to).search(/\s/); if (sp >= 0 && sp < 12) to += sp;   // end on a whole word
+      shown = to;
+      follow(function () { render(out, tidy(target.slice(0, shown)), true); });
+      requestAnimationFrame(tick);
+    }
+    function whenShown(fn) { if (!ticking) fn(); else drained = fn; }
+    function settle() { if (out) { render(out, target, false); out.className = "bubble them"; } }
     function handle(ev) {
-      if (ev.t === "status") { wait.querySelector(".st").textContent = ev.text; down(true); }
+      if (ev.t === "status") follow(function () { wait.querySelector(".st").textContent = ev.text; });
       else if (ev.t === "delta") {
         if (!out) { out = bubble("streaming"); wait.remove(); }
-        text += ev.text; live(out, text); down(false);
-      } else if (ev.t === "html") {
-        if (!out) { out = bubble("streaming"); wait.remove(); }
-        out.innerHTML = ev.html; var c = document.createElement("span"); c.className = "caret";
-        (out.lastElementChild && /^(P|LI|TD)$/.test(out.lastElementChild.tagName) ? out.lastElementChild : out).appendChild(c);
-        down(false);
+        target += ev.text;
+        if (!ticking) { ticking = true; requestAnimationFrame(tick); }
       } else if (ev.t === "reset") {  // it wrote a bit, now it's looking things up again
-        if (out) { out.className = "bubble them"; var k = out.querySelector(".caret"); if (k) k.remove(); }
-        out = null; text = ""; wait = bubble("thinking"); wait.innerHTML = "<i></i><i></i><i></i><span class=st></span>";
+        shown = target.length; settle(); ticking = false; drained = null;
+        out = null; target = ""; shown = 0;
+        follow(function () { wait = bubble("thinking"); wait.innerHTML = "<i></i><i></i><i></i><span class=st></span>"; });
       } else if (ev.t === "error") fail(ev.text);
     }
     fetch("/ask/stream", { method: "POST", body: data, credentials: "same-origin" }).then(function (r) {
@@ -140,7 +172,12 @@
           return pump();
         });
       })().then(function () {
-        if (!failed) return fetch("/ask", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.text(); }).then(refresh);
+        if (failed) return;
+        return new Promise(whenShown).then(function () {
+          settle();  // then quietly swap in Fizzy's copy (suggestion cards and all) without moving the page
+          return fetch("/ask", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.text(); })
+            .then(function (html) { var y = scrollY; refresh(html, true); if (stuck) bottom(); else scrollTo(0, y); });
+        });
       });
     }).catch(function (err) { if (err !== 0) fail("Couldn't reach Fizzy. Check the connection and try again."); }).then(finish);
   }

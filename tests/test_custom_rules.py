@@ -255,8 +255,8 @@ def test_ask_streams_steps_then_the_answer(client, monkeypatch):
     body = client.post("/ask/stream", data={"text": "slowest day?"}).text
     events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
     kinds = [e["t"] for e in events]
-    assert kinds[0] == "status" and kinds[-1] == "done" and set(kinds[1:-1]) == {"html"}
-    assert events[0]["text"] == "Adding up sales by weekday..." and "<strong>slowest</strong>" in events[-2]["html"]
+    assert kinds == ["status", "delta", "delta", "done"]
+    assert events[0]["text"] == "Adding up sales by weekday..." and events[1]["text"] + events[2]["text"] == "Mondays are **slowest**."
     assert "<strong>slowest</strong>" in client.get("/ask").text            # saved, and rendered properly after
     monkeypatch.setattr(ask, "_stream", lambda *a, **k: (_ for _ in ()).throw(ask.AskError("Gemini says too many requests")))
     body = client.post("/ask/stream", data={"text": "again"}).text
