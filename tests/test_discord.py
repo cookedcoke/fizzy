@@ -23,7 +23,6 @@ def test_launching_announces(client, monkeypatch):
     monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "https://discord.example/hook")
     monkeypatch.setattr(discord, "announce", lambda title, body: sent.append((title, body)) or True)
     login(client)
-    assert "Announce on Discord" in client.get("/rewards").text
     client.post("/rewards", data={"name": "Free Coke", "points": "1000", "announce": "1"})
     client.post("/events", data={"name": "Double points", "multiplier": "2", "start": stats.today().isoformat(), "announce": "1"})
     client.post("/rewards", data={"name": "Quiet one", "points": "50"})          # box unticked: no post

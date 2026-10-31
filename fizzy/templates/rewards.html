@@ -55,24 +55,5 @@
   </table></div></div>
   {% endif %}
 </div>
-<div class="col">
-  <form class="panel" method="post" action="/rewards"><h2>Start a reward</h2>
-    <label>Name<input type="text" name="name" placeholder="e.g. Free Coke, $2 off" required></label>
-    <label>Points it costs<input type="number" name="points" min="1" max="1000000" step="1" placeholder="e.g. 1000" required></label>
-    <label>What to do in Square<input type="text" name="square_note" placeholder="e.g. Points: Free Coke discount"></label>
-    <label>Limit per customer <span class="muted">(optional)</span><input type="number" name="limit" min="1" max="1000" step="1" placeholder="No limit"></label>
-    {% if discord_on %}<label class="check"><input type="checkbox" name="announce" value="1" checked> Announce on Discord</label>{% endif %}
-    <div class="actions"><button class="primary">Start</button></div>
-  </form>
-  <form class="panel" method="post" action="/events"><h2>Schedule double points</h2>
-    <label>Name<input type="text" name="name" value="Double points" required></label>
-    <div class="row"><div><label for="ev-mult">Multiplier</label><input id="ev-mult" type="number" name="multiplier" value="2" min="1.1" max="5" step="0.1"></div>
-      <div><label for="ev-start">First day</label><input id="ev-start" type="date" name="start" value="{{ today }}" min="{{ today }}" required></div>
-      <div><label for="ev-end">Last day</label><input id="ev-end" type="date" name="end" min="{{ today }}" placeholder="Same day"></div></div>
-    <label class="check"><input type="checkbox" name="weekly" value="1"> Repeat every week (e.g. every Friday)</label>
-    {% if discord_on %}<label class="check"><input type="checkbox" name="announce" value="1" checked> Announce on Discord</label>{% endif %}
-    <div class="actions"><button class="primary">Schedule</button></div>
-  </form>
-</div>
 </div>
 {% endblock %}
