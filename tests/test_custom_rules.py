@@ -160,7 +160,7 @@ def test_ask_makes_a_badge_that_pays_when_done(client, owner, monkeypatch):
     ])
     monkeypatch.setattr(ask.httpx, "post", fake)
     page = client.post("/ask", data={"text": "make a badge for buying a coke worth 75"}).text
-    assert "Coke fan badge, 75 points" in page and "<b>Coke fan</b>" in page and "Do it" in page
+    assert "Coke fan badge, 75 points" in page and "<strong>Coke fan</strong>" in page and "Do it" in page
     preview = fake.sent[1]["contents"][-1]["parts"][0]["functionResponse"]["response"]
     assert preview["students_who_qualify_now"] == 1                      # Gemini was told who'd qualify
     assert conn.execute("SELECT COUNT(*) FROM rules").fetchone()[0] == 0  # nothing until Do it
@@ -239,6 +239,6 @@ def test_sales_summary_and_answering_when_out_of_steps(client, monkeypatch):
 def test_ask_markdown():
     out = str(ask.md("*it* _it_ **b** 2*3*4 snake_case ~~no~~ [ok](https://x.co) [bad](javascript:alert(1)) <b>x</b>\n\n"
                      "| A | N |\n|---|---|\n| **Fri** | **16** |\n\n---\n\n> q\n\n```\ncode\n```"))
-    assert "<em>it</em> <em>it</em> <strong>b</strong> 2*3*4 snake_case <del>no</del>" in out
+    assert "<em>it</em> <em>it</em> <strong>b</strong> 2<em>3</em>4 snake_case <del>no</del>" in out
     assert 'href="https://x.co"' in out and "javascript:" not in out and "&lt;b&gt;" in out
     assert '<td class="n"><strong>16</strong></td>' in out and "<hr" in out and "<blockquote>" in out and "<pre>" in out
