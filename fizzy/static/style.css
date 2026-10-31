@@ -706,7 +706,8 @@ input, select, textarea { transition: border-color .12s, box-shadow .12s, backgr
 a, .nav-menu a, header nav a { transition: color .12s, background-color .12s, text-decoration-color .12s }
 tr { transition: background-color .12s }
 html.quiet .bars .pair i, html.quiet .flash { animation: none }
+html.nofade:not(.quiet) main { animation: rise .22s var(--ease) both }
 @media (prefers-reduced-motion: reduce) {
   @view-transition { navigation: none }
-  dialog[open], dialog[open]::backdrop, .nav-menu, .results, .jobbar, .bars .pair i { animation: none !important }
+  html.nofade main, dialog[open], dialog[open]::backdrop, .nav-menu, .results, .jobbar, .bars .pair i { animation: none !important }
 }
