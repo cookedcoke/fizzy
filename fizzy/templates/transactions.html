@@ -45,7 +45,7 @@
       <td class="n hide-sm">{% if r.points %}{{ '{:+,}'.format(r.points) }}{% elif r.points is not none %}<span class="muted">-</span>{% endif %}</td>
     </tr>{% endfor %}
   </table></div>
-  {% if more %}<p class="hint">Showing the latest {{ rows|length }}. Pick shorter dates to see the other {{ more }}.</p>{% endif %}
+  {% if more %}<p class="hint">Latest {{ rows|length }} shown, {{ more }} more.</p>{% endif %}
   {% else %}<p class="empty">{% if q or show %}Nothing matches. <a href="{{ url(show='', q='') }}">Show everything</a>{% else %}No sales in these dates.{% endif %}</p>{% endif %}
 </div>
 <datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>

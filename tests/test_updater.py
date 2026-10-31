@@ -12,7 +12,7 @@ def test_update_button(client, tmp_path, monkeypatch):
     monkeypatch.setattr(pin, "_fails", {})
     login(client)
     page = client.get("/settings").text
-    assert "The updater isn't running on the home PC" in page
+    assert "Updater isn't running on the home PC" in page
     _unlock(client, "owner-pw", 2)
     assert "isn&#39;t running" in client.post("/settings/update").text
     assert not (tmp_path / "update-requested").exists()
@@ -60,7 +60,7 @@ def test_unreadable_status_isnt_reported_as_not_running(client, tmp_path, monkey
     assert updater.status()["unreadable"] is True
     login(client)
     page = client.get("/settings").text
-    assert "isn't allowed to read it" in page and "The updater isn't running" not in page
+    assert "Can't read the updater's status" in page and "Updater isn't running" not in page
 
 
 def test_interrupted_update_isnt_left_running(tmp_path):

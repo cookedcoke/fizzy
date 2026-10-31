@@ -20,7 +20,6 @@
   <p class="row">{% for e in exports %}<a class="btn sm" href="/tools/export/{{ e }}.csv">{{ e.replace('_', ' ') }}</a>{% endfor %}</p>
 {% elif id == 'download_backup' %}
   <p><a class="btn sm" href="/tools/backup.db">Download fizzy.db</a></p>
-  <p class="muted small">Has students' names and emails in it, so keep it private.</p>
 {% else %}
 <form method="post" action="/tools/{{ id }}">
 {% if id == 'bulk_points' %}
@@ -84,7 +83,6 @@
 {% elif id == 'history' %}
   <label>Fizzy's launch date <span class="muted">(sales before this earn nothing)</span><input type="date" name="launch" value="{{ history_before or today }}" required></label>
   <label>Import from<input type="date" name="start" value="2024-01-01" required></label>
-  <p class="hint">Safe to run again. Takes a minute or two for a lot of history; Fizzy keeps working meanwhile.</p>
 {% elif id == 'find_payment' %}
   <label>Square payment ID<input type="text" name="payment_id" required></label>
 {% elif id == 'notice' %}
@@ -98,7 +96,7 @@
 {% endmacro %}
 
 {% block body %}
-<div class="pagehead"><div><h1>Tools</h1><div class="meta">Hover or tap <span class="tip" style="display:inline-grid;vertical-align:-3px" data-tip="Like this.">i</span> to see what something does. Red ones change a lot at once.</div></div></div>
+<div class="pagehead"><div><h1>Tools</h1></div></div>
 <datalist id="people">{% for p in people %}<option value="{{ p.name }} <{{ p.email }}>">{% endfor %}</datalist>
 <div class="toolgrid">
 {# Fixed columns so tall and short sections pack neatly; stacks in reading order on a phone. #}
@@ -110,7 +108,7 @@
     <details class="tool{{ ' danger' if id in DANGER }}" id="{{ id }}">
       <summary><span>{{ label }}</span>
         <span class="tip" tabindex="0" data-tip="{{ tip }}" aria-label="{{ tip }}" onclick="event.preventDefault()">i</span></summary>
-      <div class="tool-body"><p class="desc">{{ tip }}</p>{{ form(id) }}</div>
+      <div class="tool-body">{{ form(id) }}</div>
     </details>
     {% endfor %}
   </section>

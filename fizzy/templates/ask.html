@@ -3,18 +3,16 @@
 <div class="ask-page">
 <div class="ask-head">
   <h1>Ask</h1>
-  <span class="meta hide-sm">Sales, customers and tabs, or new badges and events in plain words</span>
-  {% if timeline %}<form class="inline" method="post" action="/ask/clear"><button class="sm" data-confirm="Start a new conversation? This one is cleared.">New chat</button></form>{% endif %}
+  {% if timeline %}<form class="inline" method="post" action="/ask/clear"><button class="sm" data-confirm="Clear this chat?">New chat</button></form>{% endif %}
 </div>
 
 {% if not enabled %}
-<div class="notice">Ask isn't set up yet. Add a Gemini API key in <a href="/settings#ask">Settings, Ask</a> (owner password).</div>
+<div class="notice">No Gemini key yet. <a href="/settings#ask">Settings</a></div>
 {% endif %}
 
 <div class="chat" id="chat" aria-live="polite">
   {% if not timeline %}
   <div class="chat-empty">
-    <p>Ask about sales, customers and tabs, or describe a badge or event, however unusual. Nothing changes until you press <b>Do it</b>.</p>
     <div class="chips">{% for e in examples %}<button type="button" class="chip" data-example>{{ e }}</button>{% endfor %}</div>
   </div>
   {% endif %}

@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}Money{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Money</h1>
-  <div class="meta">{{ start.strftime('%-d %b %Y') }} to {{ end.strftime('%-d %b %Y') }} · what we bought and who got paid</div></div>
+  <div class="meta">{{ start.strftime('%-d %b %Y') }} to {{ end.strftime('%-d %b %Y') }}</div></div>
   <form class="actions period" method="get" action="/money" style="margin:0">
     {% for label, (s, e) in quick.items() %}<a class="btn {{ 'primary' if s == start and e == end }}" href="/money?start={{ s }}&end={{ e }}">{{ label }}</a>{% endfor %}
     <input type="date" name="start" value="{{ start }}" aria-label="From"><input type="date" name="end" value="{{ end }}" aria-label="To">
@@ -56,7 +56,6 @@
     <label for="rs-receipt">Receipt photo <span class="muted">(optional)</span></label><input id="rs-receipt" type="file" name="receipt" accept="image/*,application/pdf" capture="environment">
     <label for="rs-note">Note</label><input id="rs-note" type="text" name="note" placeholder="Optional">
     <div class="actions"><button class="primary">Save restock</button></div>
-    <p class="hint">Put the cost of the whole lot, like $18 for 24 Cokes. Profit uses the cost of one ($0.75).</p>
   </form>
 
   <form class="panel" id="payout" method="post" action="/money/payout"><h2>Pay the partners</h2>
@@ -66,7 +65,6 @@
       <div class="split" id="pc-split"></div>
       <button type="button" class="sm" id="pc-use">Use these amounts</button>
     </div>
-    <p class="hint">Splits it evenly between whoever's ticked. Change the amounts to what people actually got.</p>
     {% for n in partners %}<div class="payrow">
       <label class="check"><input type="checkbox" class="pc-who" value="{{ n }}" checked> {{ n }}</label>
       <input type="hidden" name="partner" value="{{ n }}">

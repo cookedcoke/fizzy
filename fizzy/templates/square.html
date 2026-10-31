@@ -13,8 +13,6 @@
 </div>
 {% if conflicts %}
 <div class="panel" style="border-color:var(--warn-line)"><h2>Square profiles not linked <span class="count">{{ conflicts|length }}</span></h2>
-  <p class="small" style="margin-top:0">These have the same email as someone already in Fizzy, so they're probably doubles. Merge them in Square
-    (Customers → select both → Merge), or assign their sales here.</p>
   <div class="scroll"><table><tr><th>Square profile</th><th>Email</th><th>Already in Fizzy as</th></tr>
     {% for c in conflicts %}<tr><td>{{ c.name }}</td><td class="mono small">{{ c.email }}</td><td>{{ c.existing }}</td></tr>{% endfor %}
   </table></div>

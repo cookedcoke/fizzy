@@ -18,7 +18,7 @@
   {% for r in live_rewards %}<b>{{ r.name }}</b> ({{ '{:,}'.format(r.points_cost) }} pts){{ ', ' if not loop.last }}{% endfor %}
   · <a href="/rewards">Manage</a></div>{% endif %}
 {% set t = sales.today %}<span hidden data-autorefresh="60"></span>
-<div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }} · keeps itself up to date</div></div>
+<div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }}</div></div>
   <div class="actions" style="margin:0"><a class="btn" href="/money" title="Restocks and payouts - G then M">Money</a>
     <a class="btn" href="/profit" title="Profit and item costs - G then P">Profit</a>
     <a class="btn" href="/tools#takings" title="What came in over any dates">Takings report</a></div></div>
@@ -27,7 +27,6 @@
   <p class="big">Opens {{ 'tomorrow' if closed.next_in == 1 else closed.next.strftime('%A') if closed.next_in < 7 else closed.next.strftime('%A %-d %B') }}{% if closed.next_in > 1 %} <span class="muted">· in {{ closed.next_in }} days</span>{% endif %}</p>
   {% if l %}<p>Last open {{ l.day.strftime('%A %-d %B') }}: <b>{{ l.sold_cents|money }}</b> sold over {{ l.orders }} order{{ '' if l.orders == 1 else 's' }}, {{ l.taken_cents|money }} taken.</p>
   {% if closed.top %}<p class="muted">Best sellers that day: {% for i in closed.top %}{{ i.name }} ({{ i.qty }}){{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}{% endif %}
-  <p class="muted">Last 7 school days: {{ sales.week_sold_cents|money }} sold over {{ sales.week_orders }} orders. Anything sold today still shows up here.</p>
 </div>
 {% else %}
 <div class="stats">

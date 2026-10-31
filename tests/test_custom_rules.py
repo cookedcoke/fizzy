@@ -176,7 +176,7 @@ def test_ask_makes_a_badge_that_pays_when_done(client, owner, monkeypatch):
 
 def test_ask_without_a_key_says_how(client):
     login(client)
-    assert "Settings, Ask" in client.get("/ask").text
+    assert "No Gemini key yet" in client.get("/ask").text
 
 
 def test_key_from_settings(client, owner, monkeypatch):

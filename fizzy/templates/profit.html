@@ -36,12 +36,10 @@
       <td class="n">{% if r.margin is not none %}<span class="{{ 'red' if r.margin < 20 }}">{{ r.margin }}%</span>{% endif %}</td></tr>{% endfor %}
   </table></div>
   <div class="actions" style="margin-top:var(--s3)"><button class="primary">Save costs <kbd>Ctrl</kbd> <kbd>Enter</kbd></button>
-    <span class="hint" style="margin:0;align-self:center">Clear a cost to remove it. Under 20% margin shows in red.</span></div>
+</div>
   {% else %}<p class="empty">No items sold {{ label|lower }} yet{% if square_on %} - press <b>Get items from Square</b> below to list everything you sell{% endif %}.</p>{% endif %}
 </form>
 {% if square_on %}<form class="inline" method="post" action="/profit/refresh">
   <button title="It also does this by itself every 6 hours">Get items from Square</button>
-  <span class="hint" style="margin-left:8px">{% if catalog_sync %}{{ catalog_count }} item{{ '' if catalog_count == 1 else 's' }} from Square, last updated {{ catalog_sync|local }}.{% else %}Not read from Square yet.{% endif %}
-    Renaming an item in Square keeps its cost.</span></form>{% endif %}
-<p class="hint">Revenue counts discounts like rewards, and counts tab sales at full price. Refunds aren't taken off.</p>
+  <span class="hint" style="margin-left:8px">{% if catalog_sync %}{{ catalog_count }} items · {{ catalog_sync|local }}{% else %}Not read from Square yet{% endif %}</span></form>{% endif %}
 {% endblock %}

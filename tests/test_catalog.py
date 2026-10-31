@@ -118,6 +118,6 @@ def test_profit_page_lists_unsold_catalogue_items(client, monkeypatch):
         conn.close()
     monkeypatch.setattr(config, "SQUARE_TOKEN", "x")
     page = client.get("/profit").text
-    assert "Coca-Cola (Mini)" in page and "sells for $2.50" in page and "3 items from Square" in page
+    assert "Coca-Cola (Mini)" in page and "sells for $2.50" in page and "3 items ·" in page
     r = client.post("/profit", data={"name": ["Coca-Cola (Mini)"], "key": ["v:V2"], "base": ["coca-cola"], "cost": ["0.55"]})
     assert "Saved 1 cost" in r.text and "78%" in r.text                    # (2.50 - 0.55) / 2.50

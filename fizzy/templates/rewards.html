@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}Rewards{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Rewards</h1>
-  <div class="meta">Rewards show on every customer's page until you end them.</div></div></div>
+  </div></div>
 
 <div class="cols stack-md">
 <div class="col" style="flex-grow:2">
@@ -33,7 +33,7 @@
       <div class="actions" style="margin:0;flex:none">
         <form class="inline" method="post" action="/rules/{{ r.id }}/{{ 'resume' if r.paused else 'pause' }}"><button class="sm">{{ 'Restart' if r.paused else 'Pause' }}</button></form>
         <form class="inline" method="post" action="/rules/{{ r.id }}/delete"><button class="sm danger" data-confirm="Delete {{ r.name }}? Points already given stay.">Delete</button></form></div>
-    </div>{% else %}<p class="small muted" style="margin:0">None yet. Describe one on the <a href="/ask">Ask</a> page, however unusual: "every 5th noodles gets 100 bonus points", "a badge for trying every drink this term".</p>{% endfor %}
+    </div>{% else %}<p class="small muted" style="margin:0">None yet. Make one in <a href="/ask">Ask</a>.</p>{% endfor %}
   </div>
   {% if events %}<div class="panel" id="events"><h2>Double points days <span class="count">{{ events|length }}</span></h2>
     {% if events %}<div class="scroll"><table>
@@ -63,8 +63,6 @@
     <label>Limit per customer <span class="muted">(optional)</span><input type="number" name="limit" min="1" max="1000" step="1" placeholder="No limit"></label>
     {% if discord_on %}<label class="check"><input type="checkbox" name="announce" value="1" checked> Announce on Discord</label>{% endif %}
     <div class="actions"><button class="primary">Start</button></div>
-    <p class="hint">Make a matching discount in Square too (Items → Discounts), like “Points: Free Coke” at 100%.
-      Not the Fizzy Tab one. 1000 points is $10 spent.</p>
   </form>
   <form class="panel" method="post" action="/events"><h2>Schedule double points</h2>
     <label>Name<input type="text" name="name" value="Double points" required></label>
@@ -74,7 +72,6 @@
     <label class="check"><input type="checkbox" name="weekly" value="1"> Repeat every week (e.g. every Friday)</label>
     {% if discord_on %}<label class="check"><input type="checkbox" name="announce" value="1" checked> Announce on Discord</label>{% endif %}
     <div class="actions"><button class="primary">Schedule</button></div>
-    <p class="hint">Extra points get added by themselves. Tab buys get theirs once paid off. Leave the last day blank for just one day.</p>
   </form>
 </div>
 </div>

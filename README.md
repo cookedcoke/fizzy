@@ -363,6 +363,34 @@ Pick dates (today by default), filter to sales, tab sales, tab repayments or one
 customer, and search by customer or item. Checkouts with nobody on them have an "Assign to…"
 box right there. Tab money recorded by hand in Fizzy (and write-offs) shows up too.
 
+### What the site no longer spells out
+
+The pages are kept to labels and buttons. What they used to explain:
+
+- **Repayments.** In Square: attach the customer, add the *Tab repayment* item, type the amount and take cash or card. Fizzy records it by itself. The repayment form on a customer page is only for money that didn't go through Square.
+- **Tab limits.** Each person's limit comes from their tab score: 80+ gets the highest limit, 65+ three quarters, 50+ half, below that a quarter. Paying on time raises the score and paying late lowers it. 1 point per cent; tab buys earn their points once paid off.
+- **Account types** (owner only). Admin accounts are protected: by default only the owner can change their points, tab or details. Test accounts are for trying things out, and stay out of leaderboards, reports and streaks.
+- **Student passcodes.** Anything 4+ characters. Students sign in on the student site with their name or student number.
+- **Rewards.** Rewards show on every customer's page until ended. Make a matching discount in Square (Items, Discounts, e.g. "Points: Free Coke" at 100%), not the Fizzy Tab one. 1000 points is $10 spent.
+- **Double points.** Extra points are added by themselves; tab buys get theirs once paid off. Leave the last day blank for one day.
+- **Restocks and payouts.** Restocks take the cost of the whole lot ($18 for 24 Cokes); profit uses the cost of one. Payouts split evenly between whoever's ticked; change the amounts to what people actually got.
+- **Profit.** Clear a cost to remove it; under 20% margin shows red. Renaming an item in Square keeps its cost. Revenue counts discounts such as rewards, counts tab sales at full price, and doesn't take refunds off.
+- **Square profiles not linked.** Profiles with the same email as someone already in Fizzy are probably doubles: merge them in Square (Customers, select both, Merge), or assign their sales on the Square page.
+- **Claiming sales.** Lists sales with nobody on them, newest first. Picked the wrong one? Fix it on the Square page.
+- **History import.** Safe to run again. Takes a minute or two for a lot of history; Fizzy keeps working meanwhile.
+- **Directory import.** Needs a name column (`Cleaned Name` or `Name`) and `Email`; everything else is ignored. Adds new students and fixes names, never deletes anyone.
+- **Backups.** `fizzy.db` has students' names and emails in it, so keep downloads private.
+- **Who can do what.** "Owner only" means the PIN until there's an owner password; with no PIN either, everything's open to anyone signed in. Only the owner can change the table, the PIN and account types.
+- **PIN.** Staff type it for anything set to "PIN". The owner password works anywhere the PIN does. It stays unlocked for 10 minutes, or until someone else is put on the counter. Forgotten: reset it on the home PC.
+- **Owner password.** Set `FIZZY_ADMIN_PASSWORD` in `.env` to lock the dangerous stuff behind it.
+- **Maintenance mode.** Everyone, staff and students, gets a "Back soon" page until it's turned off on that page with the owner password. Square sales still come in.
+- **Updates.** "Update now" restarts Fizzy (down for about a minute) and rolls back by itself if the new version doesn't start. "Can't read the updater's status": update the updater script and restart it, or `chmod 644 update-status/*`. "Updater isn't running": update on the home PC (see Updating).
+- **Customer display.** The message shows between customers. Ticked items show on its menu (up to 12). "Show what they owe" includes anything overdue.
+- **Ask.** Use a paid Gemini key from aistudio.google.com (on the free tier Google may train on the data). Stored encrypted, owner password only, never shown again. Model blank means the default. Nothing changes until you press *Do it*.
+- **Term dates** are for badges and events that work by term. **Closed days** make cookedcoke.co show "Closed" and the dashboard show a recap.
+- **Security keys.** A key or passkey signs in instead of the staff password, so one key can be shared. You still pick who's on the counter, and the PIN and owner password work the same. A key only works on the address it was added on.
+- **Devices.** With `FIZZY_ACCESS_HOST` set, registered devices open the main address directly and everything else goes through Cloudflare Access; both still need the staff password. Device links work once.
+
 ## 5. Profit
 
 **Profit** (dashboard button, or `G` then `P`) needs no Square Retail Plus: type what one of
