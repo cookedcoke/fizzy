@@ -468,8 +468,9 @@ or when a page is opened), never take points back, and show on the student site.
 on the **Rewards** page. Terms come from **Settings, Term dates**. If an idea needs a building block
 that doesn't exist, Gemini says so: ask for it to be added to `fizzy/rules.py`.
 
-Set up: put `GEMINI_API_KEY` in `.env` (a paid key, since sales and student data are sent to Google)
-and restart. `GEMINI_MODEL` picks the model (default `gemini-flash-latest`).
+Set up: paste a key in **Settings, Ask** (owner password; a paid key, since sales and student data are
+sent to Google). It's stored encrypted and never shown again. `GEMINI_API_KEY` in `.env` works too and
+wins if both are set. The model can be changed there as well (default `gemini-flash-latest`).
 
 ### Badges pay points
 

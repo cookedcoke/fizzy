@@ -32,8 +32,39 @@ class AskError(Exception):
     pass
 
 
+def _fernet():
+    import base64, hashlib
+    from cryptography.fernet import Fernet
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(b"fizzy-gemini:" + config.SECRET_KEY.encode()).digest()))
+
+
+def api_key():
+    """GEMINI_API_KEY from .env if set, else the one saved in Settings (encrypted with FIZZY_SECRET_KEY)."""
+    if config.GEMINI_API_KEY:
+        return config.GEMINI_API_KEY
+    stored = db_setting("gemini_key_enc")
+    if not stored:
+        return ""
+    try:
+        return _fernet().decrypt(stored.encode()).decode()
+    except Exception:  # the secret key changed: it has to be entered again
+        return ""
+
+
+def model():
+    return db_setting("gemini_model") or config.GEMINI_MODEL
+
+
+def db_setting(key):
+    conn = db.connect()
+    try:
+        return db.get_setting(conn, key, "") or ""
+    finally:
+        conn.close()
+
+
 def enabled():
-    return bool(config.GEMINI_API_KEY)
+    return bool(api_key())
 
 
 # ---- what Gemini is told ------------------------------------------------------------------------
@@ -228,11 +259,11 @@ def _call(contents, system):
     body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents, "tools": TOOLS,
             "generationConfig": {"temperature": 0.3}}
     try:
-        r = httpx.post(API.format(model=config.GEMINI_MODEL), params={"key": config.GEMINI_API_KEY}, json=body, timeout=90)
+        r = httpx.post(API.format(model=model()), params={"key": api_key()}, json=body, timeout=90)
     except httpx.HTTPError as e:
         raise AskError(f"Couldn't reach Gemini ({e.__class__.__name__}). Try again.")
     if r.status_code in (401, 403):
-        raise AskError("Gemini didn't accept the API key (GEMINI_API_KEY in .env).")
+        raise AskError("Gemini didn't accept the API key. Check it in Settings, Ask.")
     if r.status_code == 429:
         raise AskError("Gemini says too many requests right now. Wait a minute and try again.")
     if r.status_code >= 400:
@@ -271,7 +302,7 @@ def _save(conn, who, role, parts, shown=None):
 
 def ask(conn, who, text):
     if not enabled():
-        raise AskError("Ask isn't set up: put GEMINI_API_KEY in .env on the home PC.")
+        raise AskError("Ask isn't set up: add a Gemini API key in Settings, Ask.")
     text = text.strip()[:4000]
     if not text:
         raise AskError("Type a question first.")
@@ -386,7 +417,7 @@ def page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
                  "html": md(m["shown"]) if m["role"] == "model" else None, "text": m["shown"]} for m in msgs]
     timeline += [{"at": p["created_at"], "n": (1, p["id"]), "kind": "proposal", "p": p} for p in props]
     timeline.sort(key=lambda t: (t["at"], t["n"]))  # oldest first; a card after the words on the same second
-    return render(request, "ask.html", timeline=timeline[-80:], enabled=enabled(), model=config.GEMINI_MODEL,
+    return render(request, "ask.html", timeline=timeline[-80:], enabled=enabled(), model=model(),
                   examples=["How did each item sell this month compared to last month?",
                             "Which day of the week is slowest, and what sells then?",
                             "Make a badge for buying 20 Chi Forest and 10 milk teas in a term, worth 500 points",
@@ -427,6 +458,31 @@ def dismiss(request: Request, pid: int, who=Depends(staff), conn=Depends(get_con
     conn.execute("UPDATE ask_proposals SET status = 'dismissed' WHERE id = ? AND status = 'pending'", (pid,))
     conn.commit()
     return RedirectResponse("/ask#end", status_code=303)
+
+
+# ---- the key, from Settings ---------------------------------------------------------------------------------
+
+@router.post("/settings/ask")
+def save_key(request: Request, key: str = Form(""), model_name: str = Form(""), remove: str = Form(""), who=Depends(staff),
+             conn=Depends(get_conn)):
+    key = key.strip()
+    if remove:
+        db.set_setting(conn, "gemini_key_enc", "")
+        db.audit(conn, who, "settings", None, "Gemini key removed")
+        conn.commit()
+        return back(request, "/settings#ask", "Key removed. Ask is off.")
+    if key:
+        if not re.fullmatch(r"[A-Za-z0-9_\-]{20,100}", key):
+            return back(request, "/settings#ask", "That doesn't look like a Gemini API key (it starts AIza...).", "bad")
+        db.set_setting(conn, "gemini_key_enc", _fernet().encrypt(key.encode()).decode())
+        db.set_setting(conn, "gemini_key_hint", key[-4:])
+    m = model_name.strip()
+    if m and not re.fullmatch(r"[a-z0-9.\-]{3,60}", m):
+        return back(request, "/settings#ask", "That model name doesn't look right, e.g. gemini-flash-latest.", "bad")
+    db.set_setting(conn, "gemini_model", m)
+    db.audit(conn, who, "settings", None, "Gemini key saved" if key else f"Gemini model: {m or 'default'}")
+    conn.commit()
+    return back(request, "/settings#ask", "Saved. Ask is on." if key else "Saved.")
 
 
 # ---- managing rules by hand (Rewards page) ----------------------------------------------------------------

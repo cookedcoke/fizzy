@@ -956,6 +956,8 @@ def register(app):
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         return render(request, "settings.html", cfg=logic.settings(conn), closed=logic.closed_days(conn), terms=rules.terms(conn),
+                      gemini={"env": bool(config.GEMINI_API_KEY), "hint": db.get_setting(conn, "gemini_key_enc", "") and db.get_setting(conn, "gemini_key_hint", ""),
+                              "model": db.get_setting(conn, "gemini_model", "") or "", "default": config.GEMINI_MODEL},
                       display_message=db.get_setting(conn, "display_message", "") or "",
                       display_owing=db.get_setting(conn, "display_owing", "1") == "1",
                       display_menu=display.menu_items(conn), display_hidden=display.hidden_items(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),

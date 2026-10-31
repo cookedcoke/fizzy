@@ -39,7 +39,7 @@ _fails = {}
 # /settings/passkeys/finish only works after the owner-locked start, so it's free itself.
 FREE = [r"^/(login|logout|switch)$", r"^/login/passkey(/options)?$", r"^/settings/passkeys/finish$", r"^/me(/|$)", r"^/enrol/", r"^/square/webhook$", r"^/settings/pin/unlock$"]
 # Always the owner: the locks themselves.
-LOCKED = [r"^/settings/(pin|permissions|maintenance|update)$", r"^/settings/passkeys", r"^/customers/\d+/kind$"]
+LOCKED = [r"^/settings/(pin|permissions|maintenance|update|ask)$", r"^/settings/passkeys", r"^/customers/\d+/kind$"]
 
 # (id, label, [(method, path)], default level). First match wins, so specific ones go first.
 ACTIONS = [
