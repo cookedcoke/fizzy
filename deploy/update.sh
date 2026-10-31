@@ -114,6 +114,8 @@ update() {
     say "Building $TO ($BEHIND new change(s))..."
     BUILD_FAILED=""
     if build && step verify && healthy; then
+        # A new cloudflared version in docker-compose.yml: start it (does nothing if it hasn't changed).
+        docker compose up -d cloudflared >/dev/null 2>&1 || say "(couldn't restart cloudflared; the tunnel keeps its old version)"
         STATE=ok; BEHIND=0; MSG="$FROM to $TO"; step done; say "Updated: $MSG"; return 0
     fi
     git rev-parse @{u} | safe_write "$DIR/bad-version"  # overnight updates skip this one; pressing Update still tries it

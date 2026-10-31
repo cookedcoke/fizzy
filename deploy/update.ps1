@@ -91,7 +91,9 @@ function Update-Inner {
     $S.to = (git rev-parse --short HEAD)
     Say "Building $($S.to) ($($S.behind) new change(s))..."
     $script:BuildFailed = $false
-    if ((Build) -and ((Step "verify") -or $true) -and (Healthy)) { $S.state = "ok"; $S.behind = 0; $S.message = "$($S.from) to $($S.to)"; Step "done"; Say "Updated: $($S.message)"; return }
+    if ((Build) -and ((Step "verify") -or $true) -and (Healthy)) {
+        docker compose up -d cloudflared *> $null  # a new cloudflared version in docker-compose.yml (no-op if unchanged)
+        $S.state = "ok"; $S.behind = 0; $S.message = "$($S.from) to $($S.to)"; Step "done"; Say "Updated: $($S.message)"; return }
     Write-Text (Join-Path $Dir "bad-version") (git rev-parse "@{u}")  # overnight updates skip this one
     if ($script:BuildFailed) {
         # Nothing was swapped: up -d only runs after a good build, so the old one is still serving.
