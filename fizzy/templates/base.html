@@ -81,6 +81,7 @@
 {% endif %}
 <main>
 {% if flash %}<div class="flash {{ flash_kind }}" role="status">{{ flash }}</div>{% endif %}
+{% if staff %}<div class="jobbar" id="jobbar" hidden role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span class="t"></span><button type="button" class="sm" hidden>OK</button></div>{% endif %}
 {% block body %}{% endblock %}
 </main>
 <dialog id="keys" onclick="if(event.target===this)this.close()">

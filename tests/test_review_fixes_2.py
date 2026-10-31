@@ -301,3 +301,24 @@ def test_test_sales_and_closed_days_dont_break_streaks(conn, cust):
     day = (datetime.now(config.TZ).date() - timedelta(days=3)).isoformat()
     db.set_setting(conn, "closed_dates", _json.dumps([[day, day, ""]]))
     assert badges.for_customer(conn, c["id"])["best"] == 3   # marked closed: doesn't count
+
+
+def test_long_jobs_run_in_the_background(client):
+    import time as _t
+    from fizzy import jobs
+    login(client)
+    assert client.get("/api/job").json()["name"] is None
+    assert jobs.start("Testing a slow job", lambda c: (_t.sleep(0.3), "All done, 3 payments.")[1], "Will")
+    assert not jobs.start("Another", lambda c: "x", "Will")                    # one at a time
+    j = client.get("/api/job").json()
+    assert j["running"] and j["name"] == "Testing a slow job"
+    assert 'id="jobbar"' in client.get("/").text
+    for _ in range(50):
+        if not client.get("/api/job").json()["running"]:
+            break
+        _t.sleep(0.05)
+    j = client.get("/api/job").json()
+    assert j["ok"] and j["message"] == "All done, 3 payments."
+    assert jobs.start("Broken", lambda c: 1 / 0, "Will")
+    _t.sleep(0.2)
+    assert client.get("/api/job").json()["ok"] is False                        # a crash is reported, not lost

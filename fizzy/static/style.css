@@ -643,3 +643,11 @@ header .clock.squeezed { display: none !important }
 }
 .rule-row { display: flex; gap: var(--s3); align-items: flex-start; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line) }
 .rule-row:first-of-type { border-top: none } .rule-row.paused { opacity: .6 }
+/* background job bar */
+.jobbar { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-left: 3px solid var(--warn-mark); border-radius: var(--r);
+  background: var(--surface); padding: 8px var(--s3); margin-bottom: var(--s4) }
+.jobbar .t { flex: 1 } .jobbar.ok { border-left-color: var(--ok); background: var(--ok-wash) } .jobbar.bad { border-left-color: var(--red); background: var(--red-wash) }
+.jobbar.ok .spin, .jobbar.bad .spin { display: none }
+.spin { width: 14px; height: 14px; border: 2px solid var(--line-strong); border-top-color: var(--ink); border-radius: 50%; animation: spin .8s linear infinite; flex: none }
+@keyframes spin { to { transform: rotate(360deg) } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s } }

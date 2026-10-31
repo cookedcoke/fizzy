@@ -646,7 +646,7 @@ def h_raffle(request, conn, who, form):
 def h_sync_now(request, conn, who, form):
     if not config.SQUARE_TOKEN:
         raise ToolError("Square isn't configured (SQUARE_ACCESS_TOKEN).")
-    return done(request, "sync_now", square.describe_sync(square.sync(conn, wait=True, catalog=True)))
+    return _background(request, "sync_now", "Syncing with Square", lambda c: square.describe_sync(square.sync(c, wait=True, catalog=True)), who)
 
 
 def h_resync(request, conn, who, form):
@@ -655,7 +655,15 @@ def h_resync(request, conn, who, form):
     square.request_resync(conn, day_start(form.get("start")))
     db.audit(conn, who, "square_resync", None, f"from {form.get('start')}")
     conn.commit()
-    return done(request, "resync", f"Re-sync from {form['start']}: " + square.describe_sync(square.sync(conn, wait=True)))
+    return _background(request, "resync", f"Re-syncing from {form['start']}",
+                       lambda c: f"Re-sync from {form['start']}: " + square.describe_sync(square.sync(c, wait=True)), who)
+
+
+def _background(request, tool, name, fn, who):
+    from . import jobs
+    if not jobs.start(name, fn, who):
+        raise ToolError("Something's already running (see the bar at the top). Wait for it to finish.")
+    return done(request, tool, f"{name}. You can keep using Fizzy; the bar at the top says when it's done.")
 
 
 def h_history(request, conn, who, form):
@@ -669,8 +677,8 @@ def h_history(request, conn, who, form):
     square.request_resync(conn, start)
     db.audit(conn, who, "square_history", None, f"from {form.get('start')}, launch {form.get('launch')}")
     conn.commit()
-    return done(request, "history", f"Sales before {form['launch']} are history only. Importing from {form['start']}: "
-                + square.describe_sync(square.sync(conn, wait=600)))
+    return _background(request, "history", f"Importing sales history from {form['start']}",
+                       lambda c: f"History imported (sales before {form['launch']} earn nothing): " + square.describe_sync(square.sync(c, wait=600)), who)
 
 
 def h_find_payment(request, conn, who, form):

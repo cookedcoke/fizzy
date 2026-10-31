@@ -467,6 +467,27 @@
     dm.auto = true;
     sendDisplay(dm);
   }
+  // Background jobs (Square sync, re-sync, history import): a bar while one runs, and how it went.
+  var jb = $("#jobbar");
+  if (jb) {
+    var seenKey = "fizzy-job-seen", timer = null;
+    function seen() { try { return sessionStorage.getItem(seenKey); } catch (e) { return null; } }
+    function check() {
+      fetch("/api/job", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+        if (!j || !j.name) { jb.hidden = true; return; }
+        var t = $(".t", jb), ok = $("button", jb);
+        if (j.running) {
+          jb.hidden = false; jb.className = "jobbar"; ok.hidden = true;
+          t.textContent = j.name + "... " + (j.seconds > 5 ? j.seconds + "s" : "");
+          timer = setTimeout(check, 2000);
+        } else if (seen() !== String(j.finished)) {
+          jb.hidden = false; jb.className = "jobbar " + (j.ok ? "ok" : "bad"); ok.hidden = false; t.textContent = j.message;
+          ok.onclick = function () { try { sessionStorage.setItem(seenKey, String(j.finished)); } catch (e) {} jb.hidden = true; };
+        }
+      }).catch(function () { timer = setTimeout(check, 5000); });
+    }
+    check();
+  }
   // Warm the index as soon as the page is idle so the first keystroke is instant.
   (window.requestIdleCallback || setTimeout)(function () { if ($("input[data-search]")) loadIndex(); });
 })();

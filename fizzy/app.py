@@ -24,7 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import ask, badges, display, passkeys, pwa, rules, transactions, updater
+from . import ask, badges, display, jobs, passkeys, pwa, rules, transactions, updater
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
 log = logging.getLogger("fizzy")
@@ -226,6 +226,7 @@ def create_app(background=True):
     app.include_router(transactions.router)
     app.include_router(display.router)
     app.include_router(ask.router)
+    app.include_router(jobs.router)
     app.include_router(money_pages.router)
     return app
 
@@ -941,7 +942,9 @@ def register(app):
     def square_sync_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         if not config.SQUARE_TOKEN:
             return back(request, "/square", "Square isn't configured (SQUARE_ACCESS_TOKEN).")
-        return back(request, "/square", square.describe_sync(square.sync(conn, wait=True, catalog=True)))
+        if not jobs.start("Syncing with Square", lambda c: square.describe_sync(square.sync(c, wait=True, catalog=True)), who):
+            return back(request, "/square", "Something's already running. Wait for it to finish.", "bad")
+        return back(request, "/square", "Syncing with Square. You can keep using Fizzy; the bar at the top says when it's done.")
 
     @app.post("/square/webhook")
     async def square_webhook(request: Request):
