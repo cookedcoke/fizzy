@@ -234,3 +234,9 @@ def test_sales_summary_and_answering_when_out_of_steps(client, monkeypatch):
     assert ask.ask(conn, "Will", "slowest day?") == "Mondays are slowest."
     assert fake.sent[-1]["toolConfig"]["functionCallingConfig"]["mode"] == "NONE"
     conn.close()
+
+
+def test_ask_markdown():
+    out = str(ask.md("*it* _it_ **b** 2*3*4 snake_case ~~no~~ [ok](https://x.co) [bad](javascript:alert(1)) <b>x</b>"))
+    assert "<i>it</i> <i>it</i> <b>b</b> 2*3*4 snake_case <s>no</s>" in out
+    assert '<a href="https://x.co"' in out and "javascript" not in out.split("[bad]")[0] and "&lt;b&gt;" in out

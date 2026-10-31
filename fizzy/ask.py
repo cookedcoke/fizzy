@@ -432,8 +432,12 @@ def md(text):
 
     def inline(s):
         s = str(escape(s))
-        s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
         s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+        s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+        s = re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"<i>\1</i>", s)   # *italic*, not 2*3*4
+        s = re.sub(r"(?<![\w])_(?!\s)(.+?)(?<!\s)_(?![\w])", r"<i>\1</i>", s)       # _italic_, not snake_case
+        s = re.sub(r"~~(.+?)~~", r"<s>\1</s>", s)
+        s = re.sub(r"\[([^\]]+)\]\((https?://[^\s)]+|/[^\s)]*)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', s)
         return s
     while i < len(lines):
         ln = lines[i]
