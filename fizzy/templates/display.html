@@ -65,6 +65,10 @@
               text-align: center; font-size: 2.2vh; color: var(--muted) }
   #idle .qr svg { width: 22vh; height: 22vh; background: #fff; border-radius: 2vh; padding: 1.2vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3) }
   #idle .qr b { color: var(--ink) }
+  /* iOS stopwatch style: thin, even-width digits counting down to the next slide */
+  .countdown { font-family: -apple-system, "SF Pro Display", system-ui, sans-serif; font-weight: 200; font-size: 11vh; line-height: 1;
+               letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--ink); margin-bottom: 1vh }
+  .countdown[hidden] { display: none }
 
   /* someone's being served */
   #cust h1 { font-size: 8vh }
@@ -117,7 +121,8 @@
   <div class="slide" data-s="leaders"><h2>Top this <span>month</span></h2><div class="leaders" id="s-leaders"></div></div>
   <div class="slide" data-s="soon"><h2>Coming <span>up</span></h2><div class="big-list" id="s-soon"></div></div>
   <div class="dots" id="dots"></div>
-  {% if student_site %}<div class="qr">{% if qr %}{{ qr|safe }}{% endif %}<p>Scan to see your points<br><b>{{ student_site }}</b></p></div>{% endif %}
+  <div class="qr"><div class="countdown" id="countdown" aria-hidden="true">00:09.00</div>
+    {% if student_site %}{% if qr %}{{ qr|safe }}{% endif %}<p>Scan to see your points<br><b>{{ student_site }}</b></p>{% endif %}</div>
 </section>
 
 <section class="screen" id="cust" aria-live="polite">
@@ -185,7 +190,16 @@
     var dots = $("dots"); dots.textContent = "";
     if (on.length > 1) on.forEach(function (s, i) { var d = document.createElement("i"); if (i === at) d.className = "on"; dots.appendChild(d); });
   }
-  setInterval(function () { if (mode === "idle") rotate(); }, 9000);
+  var SLIDE_MS = 9000, nextAt = performance.now() + SLIDE_MS, cd = $("countdown");
+  function two(n) { return (n < 10 ? "0" : "") + n; }
+  (function frame(now) {  // one clock drives both the slide change and the countdown, so they can't drift apart
+    if (mode !== "idle") nextAt = now + SLIDE_MS;           // starts fresh when the screen goes back to idle
+    else if (now >= nextAt) { rotate(); nextAt = now + SLIDE_MS; }
+    var left = Math.max(0, nextAt - now), cs = Math.floor(left / 10);
+    cd.hidden = slides.filter(function (x) { return have[x.dataset.s]; }).length < 2;
+    cd.textContent = two(Math.floor(cs / 6000)) + ":" + two(Math.floor(cs / 100) % 60) + "." + two(cs % 100);
+    requestAnimationFrame(frame);
+  })(performance.now());
   function clock() { $("clock").textContent = new Date().toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" }); }
   clock(); setInterval(clock, 10000);
   function chip(row, big, small, hot) {
