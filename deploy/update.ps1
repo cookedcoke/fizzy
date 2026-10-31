@@ -19,8 +19,10 @@ function Lock-Held {
     return ($p -match '^\d+$') -and [bool](Get-Process -Id ([int]$p) -ErrorAction SilentlyContinue)
 }
 
-function Say($m) { Write-Host ("{0}  {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) }
-function Now { Get-Date -Format "ddd d MMM HH:mm" }
+# Sydney time whatever the PC's clock is set to, for overnight updates and the times in Settings.
+function Syd { [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, "AUS Eastern Standard Time") }
+function Say($m) { Write-Host ("{0}  {1}" -f (Syd).ToString("yyyy-MM-dd HH:mm:ss"), $m) }
+function Now { (Syd).ToString("ddd d MMM HH:mm") }
 function Now-Unix { [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }   # Get-Date -UFormat %s is local time on Windows PowerShell
 function Write-Text($path, $text) {  # UTF-8 without the BOM Windows PowerShell adds (Python's json can't read that)
     [IO.File]::WriteAllText((Join-Path (Get-Location) $path), $text, (New-Object Text.UTF8Encoding $false))
@@ -47,7 +49,7 @@ function Healthy {  # up to 3 minutes, but give up if the container crashes
     return $false
 }
 function Save-Logs {  # before rolling back throws the failed container (and its logs) away
-    $out = @("Fizzy's last log lines from the failed update ($(Get-Date -Format 'yyyy-MM-dd HH:mm')):")
+    $out = @("Fizzy's last log lines from the failed update ($((Syd).ToString('yyyy-MM-dd HH:mm'))):")
     $out += (docker compose logs --no-color --tail 40 fizzy 2>&1 | ForEach-Object { "$_" })
     Write-Text (Join-Path $Dir "last-failure.log") ($out -join "`n")
 }
@@ -120,7 +122,7 @@ elseif ($Watch) {
         if (Test-Path $Flag) { Remove-Item -Force $Flag; Say "Update requested in Fizzy."; Update }
         elseif ($n % 120 -eq 0) {
             Fetch | Out-Null
-            $h = (Get-Date).Hour
+            $h = (Syd).Hour
             $bad = Get-Content (Join-Path $Dir "bad-version") -ErrorAction SilentlyContinue
             if ($Auto -and $S.behind -gt 0 -and $h -ge 2 -and $h -lt 5 -and (git rev-parse "@{u}") -ne $bad) { Update }
         }

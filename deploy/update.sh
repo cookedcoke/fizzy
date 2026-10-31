@@ -9,6 +9,9 @@
 #
 # Run it from anywhere; it finds the repo it lives in. Needs git and docker compose.
 set -u
+# Overnight updates (2am to 5am) and the times shown in Settings use Sydney time, whatever the
+# machine's own clock is set to (Proxmox containers and many servers run on UTC).
+export TZ="${FIZZY_TZ:-Australia/Sydney}"
 ARGS=("$@")
 cd "$(dirname "$0")/.." || exit 1
 SELF="deploy/update.sh"
