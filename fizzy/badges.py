@@ -26,8 +26,15 @@ def visit_days(conn, cid):
 
 
 def trading_days(conn, since_days=400):
+    """Days the stall really traded. A test account's sale (staff trying things on a Saturday) or a
+    day marked closed in Settings doesn't count, or it would break everyone's streak."""
     since = (stats.today() - timedelta(days=since_days)).isoformat()
-    return {_local_day(r[0]) for r in conn.execute("SELECT created_at FROM square_payments WHERE created_at >= ?", (since,))}
+    days = {_local_day(r[0]) for r in conn.execute(
+        "SELECT p.created_at FROM square_payments p LEFT JOIN customers c ON c.id = p.customer_id "
+        "WHERE p.created_at >= ? AND (c.kind IS NULL OR c.kind != 'test')", (since,))}
+    for a, b, _ in logic.closed_days(conn):
+        days = {d for d in days if not a <= d.isoformat() <= b}
+    return days
 
 
 def streaks(visits, trading, today):

@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 import pytest
 
 from fizzy import config, db, logic, pin
@@ -278,3 +280,24 @@ def test_badges_already_had_dont_pay_when_switched_on(conn, cust):
     conn.execute("DELETE FROM settings WHERE key = 'badge_points_baseline'")
     badges.baseline(conn)
     assert badges.award(conn, c["id"]) == [] and logic.points_balance(conn, c["id"]) == 300
+
+
+def test_test_sales_and_closed_days_dont_break_streaks(conn, cust):
+    import json as _json
+    from fizzy import badges, square
+    from tests.test_custom_rules import at
+    from tests.test_rules import order, pay
+    c = cust()
+    t = cust("Test Acct", "rns00000009@reddamnorthshore.nsw.edu.au", "SQT")
+    conn.execute("UPDATE customers SET kind = 'test' WHERE id = ?", (t["id"],))
+
+    def buy(pid, days, who="SQ1"):
+        square.process_payment(conn, pay(pid, 300, cust=who, ts=at(days), order_id=f"o{pid}"), order(("Coke", 300), oid=f"o{pid}"))
+    buy("a", 6); buy("b", 4)                       # Mia buys 6 and 4 days ago
+    buy("t", 5, "SQT")                             # a staff test sale on the day between
+    assert badges.for_customer(conn, c["id"])["best"] == 2
+    buy("c", 2); buy("x", 3, "SQ2")                # someone else (not linked) buys on the day between
+    assert badges.for_customer(conn, c["id"])["best"] == 2   # a real trading day she missed does break it
+    day = (datetime.now(config.TZ).date() - timedelta(days=3)).isoformat()
+    db.set_setting(conn, "closed_dates", _json.dumps([[day, day, ""]]))
+    assert badges.for_customer(conn, c["id"])["best"] == 3   # marked closed: doesn't count
