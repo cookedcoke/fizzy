@@ -609,7 +609,7 @@ header .clock.squeezed { display: none !important }
 .ask-head { display: flex; align-items: baseline; gap: var(--s3); margin-bottom: var(--s4) }
 .ask-head h1 { margin: 0 } .ask-head .meta { color: var(--muted); font-size: 13px; flex: 1; min-width: 0 }
 .ask-head form { margin-left: auto }
-.chat { display: flex; flex-direction: column; gap: 10px; padding-bottom: var(--s4); min-height: 40vh }
+.chat { display: flex; flex-direction: column; gap: 10px; padding-bottom: 84px }  /* room for the typing box pinned below */
 .bubble { max-width: min(85%, 640px); padding: 10px 14px; border-radius: 16px; line-height: 1.5; overflow-wrap: anywhere }
 .bubble p { margin: 0 0 8px } .bubble p:last-child { margin: 0 } .bubble ul, .bubble ol { margin: 4px 0 8px; padding-left: 20px }
 .bubble .scroll { margin: 8px -4px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto }
@@ -631,8 +631,9 @@ header .clock.squeezed { display: none !important }
 .proposal pre { white-space: pre-wrap; background: var(--hover); padding: 8px; border-radius: 8px; max-height: 300px; overflow: auto; margin: 6px 0 0 }
 .chat-empty { color: var(--muted) } .chat-empty .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px }
 .chat-empty .chip { height: auto; white-space: normal; text-align: left; padding: 10px 14px; font-weight: 500; border-radius: 12px; line-height: 1.35 }
-.ask-box { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: flex-end; gap: 8px; margin: 0 calc(-1 * var(--s2));
-  padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--bg) 14px) }
+.ask-box { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; align-items: flex-end; gap: 8px;
+  padding: 10px max(16px, calc((100vw - 860px) / 2)) calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, var(--bg) 16px) }
 .ask-box textarea { flex: 1; resize: none; height: 44px; min-height: 44px; max-height: 160px; padding: 11px 14px; border-radius: 22px;
   border: 1px solid var(--line-strong); background: var(--surface); line-height: 1.4; font-size: 16px; overflow-y: auto }
 .ask-box button { height: 44px; border-radius: 22px; padding: 0 18px; flex: none }
