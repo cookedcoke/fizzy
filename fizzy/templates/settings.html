@@ -58,7 +58,7 @@
   <p class="small" style="margin-top:0">{% if gemini.hint %}Key saved (ends <code>{{ gemini.hint }}</code>). It's never shown again; paste a new one to replace it.
     {% else %}Paste a <b>paid</b> Gemini API key from aistudio.google.com (on the free tier Google may train on the stall's data).{% endif %}
     Stored encrypted. Owner password only.</p>
-  <label>API key<input type="password" name="key" placeholder="{{ 'Leave blank to keep the saved key' if gemini.hint else 'AIza...' }}" autocomplete="off" spellcheck="false"></label>
+  <label>API key<input type="password" name="key" placeholder="{{ 'Leave blank to keep the saved key' if gemini.hint else 'Paste the key' }}" autocomplete="off" spellcheck="false"></label>
   {% endif %}
   <label>Model <span class="muted">(blank for the default, {{ gemini.default }})</span><input type="text" name="model_name" value="{{ gemini.model }}" placeholder="{{ gemini.default }}" spellcheck="false"></label>
   <div class="actions"><button class="primary">Save</button>{% if gemini.hint and not gemini.env %}<button name="remove" value="1" class="danger" formnovalidate data-confirm="Remove the Gemini key? Ask stops working.">Remove key</button>{% endif %}</div>

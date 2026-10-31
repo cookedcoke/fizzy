@@ -132,7 +132,7 @@ class FakeGemini:
     def __init__(self, script):
         self.script, self.sent = list(script), []
 
-    def __call__(self, url, params=None, json=None, timeout=None):
+    def __call__(self, url, params=None, json=None, timeout=None, headers=None):
         self.sent.append(copy.deepcopy(json))
         parts = self.script.pop(0)
 
@@ -192,5 +192,6 @@ def test_key_from_settings(client, owner, monkeypatch):
     assert "AIza" not in conn.execute("SELECT value FROM settings WHERE key = 'gemini_key_enc'").fetchone()[0]  # encrypted
     conn.close()
     assert "doesn" in client.post("/settings/ask", data={"key": "hello"}).text
+    assert "Ask is on" in client.post("/settings/ask", data={"key": "AQ.Ab8RN6" + "x" * 40}).text   # Google's newer style
     client.post("/settings/ask", data={"remove": "1"})
     assert not ask.enabled()

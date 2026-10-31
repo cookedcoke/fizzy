@@ -259,11 +259,11 @@ def _call(contents, system):
     body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents, "tools": TOOLS,
             "generationConfig": {"temperature": 0.3}}
     try:
-        r = httpx.post(API.format(model=model()), params={"key": api_key()}, json=body, timeout=90)
+        r = httpx.post(API.format(model=model()), headers={"x-goog-api-key": api_key()}, json=body, timeout=90)
     except httpx.HTTPError as e:
         raise AskError(f"Couldn't reach Gemini ({e.__class__.__name__}). Try again.")
-    if r.status_code in (401, 403):
-        raise AskError("Gemini didn't accept the API key. Check it in Settings, Ask.")
+    if r.status_code in (400, 401, 403) and "key" in r.text.lower():
+        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Ask. (Google said: {r.text[:200]})")
     if r.status_code == 429:
         raise AskError("Gemini says too many requests right now. Wait a minute and try again.")
     if r.status_code >= 400:
@@ -472,8 +472,8 @@ def save_key(request: Request, key: str = Form(""), model_name: str = Form(""), 
         conn.commit()
         return back(request, "/settings#ask", "Key removed. Ask is off.")
     if key:
-        if not re.fullmatch(r"[A-Za-z0-9_\-]{20,100}", key):
-            return back(request, "/settings#ask", "That doesn't look like a Gemini API key (it starts AIza...).", "bad")
+        if not re.fullmatch(r"[A-Za-z0-9_.\-]{20,300}", key):  # "AIza..." keys, and Google's newer "AQ." style
+            return back(request, "/settings#ask", "That doesn't look like a Gemini API key. Copy it again from aistudio.google.com.", "bad")
         db.set_setting(conn, "gemini_key_enc", _fernet().encrypt(key.encode()).decode())
         db.set_setting(conn, "gemini_key_hint", key[-4:])
     m = model_name.strip()
