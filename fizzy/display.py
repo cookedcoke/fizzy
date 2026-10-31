@@ -67,13 +67,25 @@ def idle(who=Depends(staff), conn=Depends(get_conn)):
     menu = [m for m in menu_items(conn) if m["item_id"] not in hide][:12]  # the item, not "Coke (Mini)"
     return JSONResponse({
         "events": [{"name": e["name"], "multiplier": e["multiplier"]} for e in events.on(conn)],
-        "soon": [{"name": e["name"], "multiplier": e["multiplier"], "start": e["start_date"]} for e in events.upcoming(conn)][:2],
+        "soon": _soon(conn),
         "rewards": [{"name": r["name"], "points": r["points_cost"]} for r in rewards.active(conn)][:6],
         "leaders": [{"rank": b["rank"], "name": b["name"], "points": b["points"]} for b in board],
         "popular": [i["name"] for i in stats.top_items(stats.checkouts(conn, start, end), 3)],
         "menu": [{"name": m["item_name"], "price": money(m["price"])} for m in menu],
         "message": db.get_setting(conn, "display_message", "") or "",
     }, headers={"Cache-Control": "no-store"})
+
+
+def _soon(conn):
+    """The next couple of double points days, each only once (a weekly one is booked two weeks ahead)."""
+    out, seen = [], set()
+    for e in events.upcoming(conn):
+        key = (e["rule_id"] or e["name"], e["multiplier"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"name": e["name"], "multiplier": e["multiplier"], "start": e["start_date"], "weekly": bool(e["rule_id"])})
+    return out[:3]
 
 
 def _tab_line(st):

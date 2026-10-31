@@ -164,7 +164,9 @@
       d.leaders.forEach(function (x) { var r = document.createElement("div"), e = document.createElement("em"), n = document.createElement("b"), p = document.createElement("span");
         e.textContent = x.rank; n.textContent = x.name; p.textContent = fmt(x.points); r.append(e, n, p); l.appendChild(r); });
       list($("s-soon"), d.soon.map(function (e) {
-        return (e.multiplier === 2 ? "Double points " : e.multiplier + "x points ") + new Date(e.start + "T12:00").toLocaleDateString("en-AU", { weekday: "long" });
+        var day = new Date(e.start + "T12:00"), x = e.multiplier === 2 ? "Double points " : e.multiplier + "x points ";
+        return x + (e.weekly ? "every " + day.toLocaleDateString("en-AU", { weekday: "long" })
+                             : day.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short" }));
       }));
       have = { hello: true, menu: d.menu.length > 0, popular: d.popular.length > 0, leaders: d.leaders.length > 0, soon: d.soon.length > 0 };
       rotate(true);

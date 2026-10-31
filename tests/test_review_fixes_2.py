@@ -322,3 +322,16 @@ def test_long_jobs_run_in_the_background(client):
     assert jobs.start("Broken", lambda c: 1 / 0, "Will")
     _t.sleep(0.2)
     assert client.get("/api/job").json()["ok"] is False                        # a crash is reported, not lost
+
+
+def test_display_coming_up_shows_a_weekly_event_once(client):
+    from datetime import date as _d
+    from fizzy import events, stats
+    conn = db.connect()
+    t = stats.today() + timedelta(days=1)
+    events.create_rule(conn, "Double points Friday", "2", t.isoformat(), "", "Will")  # books two weeks ahead
+    events.create(conn, "Exam week", "3", (t + timedelta(days=3)).isoformat(), "", "Will")
+    conn.commit(); conn.close()
+    login(client)
+    soon = client.get("/api/display/idle").json()["soon"]
+    assert [s["name"] for s in soon] == ["Double points Friday", "Exam week"] and soon[0]["weekly"]
