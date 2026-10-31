@@ -24,7 +24,8 @@ router = APIRouter()
 
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 HISTORY = 40          # messages of context sent each time
-MAX_STEPS = 8         # tool calls in one answer before it has to reply
+MAX_STEPS = 60        # lookups in one answer (a safety net: the time limit below is what normally stops it)
+TIME_LIMIT = 75       # seconds of looking things up, then it answers with what it has (Cloudflare cuts a page off at ~100s)
 ROW_CAP = 300
 
 
@@ -92,7 +93,9 @@ rewards, can have a tab once they've spent ${int(cfg['unlock_spend_cents'] or 30
 {cfg['tab_score_needed']}+ (pay within {cfg['tab_due_days']} days). Double points days multiply points. Built-in badges pay
 points once. Open at recess (11:00-11:15) and lunch (13:10-13:45) on school days, no lunch on Tuesdays.
 
-You can look anything up with the tools: `sales` for purchases with items, `sql` for anything else (read-only SQLite).
+You can look anything up with the tools. Start with `sales_summary` for totals by weekday, hour, day, week, month or item
+(one call answers most questions). `sales` lists individual purchases; `sql` is for anything else (read-only SQLite).
+Use as few lookups as you can.
 Amounts in the database are in cents; times are UTC ISO strings (Sydney is UTC+10/+11). square_payments.raw_json holds
 Square's payment and order JSON. Check numbers with a tool rather than guessing, and say what period you looked at.
 When you show data, a short markdown table or list is good.
@@ -123,6 +126,11 @@ TOOLS = [{"functionDeclarations": [
     {"name": "sales", "description": "Purchases between two Sydney dates (inclusive), oldest first: time, customer, items, total, tab part, how paid. At most 1500.",
      "parameters": {"type": "OBJECT", "properties": {"start": {"type": "STRING", "description": "YYYY-MM-DD"}, "end": {"type": "STRING", "description": "YYYY-MM-DD"}},
                     "required": ["start", "end"]}},
+    {"name": "sales_summary", "description": "Sales added up, ready to compare: total sold, purchases and items, grouped by "
+     "weekday, hour, day, week, month or item, or two of them (e.g. weekday,item). Use this first for 'which day/time/item' questions.",
+     "parameters": {"type": "OBJECT", "properties": {"start": {"type": "STRING", "description": "YYYY-MM-DD"}, "end": {"type": "STRING", "description": "YYYY-MM-DD"},
+                                                     "group_by": {"type": "STRING", "description": "weekday | hour | day | week | month | item, or two joined by a comma"}},
+                    "required": ["start", "end", "group_by"]}},
     {"name": "sql", "description": f"Run one read-only SQLite SELECT. Returns up to {ROW_CAP} rows as JSON.",
      "parameters": {"type": "OBJECT", "properties": {"query": {"type": "STRING"}}, "required": ["query"]}},
     {"name": "list_rules", "description": "The custom badges and events that exist, with their JSON and how many students got them."},
@@ -157,6 +165,40 @@ def _sales(conn, start, end):
                      "total": round(c["sold_cents"] / 100, 2), "on_tab": round(c["tab_cents"] / 100, 2),
                      "tab_repaid": round(c["repay_cents"] / 100, 2), "paid_with": c["tenders"]})
     return {"purchases": rows, "count": len(rows)}
+
+
+def _summary(conn, start, end, group_by):
+    try:
+        a, b = date.fromisoformat(start), date.fromisoformat(end)
+    except ValueError:
+        return {"error": "Dates must be YYYY-MM-DD."}
+    keys = [k.strip() for k in (group_by or "").split(",") if k.strip()]
+    ok = {"weekday", "hour", "day", "week", "month", "item"}
+    if not keys or len(keys) > 2 or not set(keys) <= ok:
+        return {"error": f"group_by must be one or two of {', '.join(sorted(ok))}."}
+    lo, _ = stats.day_bounds(a)
+    _, hi = stats.day_bounds(b)
+    out, days = {}, {}
+    for c in stats.checkouts(conn, lo, hi):
+        if not (c["items"] or c["sold_cents"]):
+            continue
+        t = rules._local(c["at"])
+        when = {"weekday": t.strftime("%a"), "hour": f"{t.hour:02d}:00", "day": t.date().isoformat(),
+                "week": (t.date() - timedelta(days=t.weekday())).isoformat(), "month": t.strftime("%Y-%m")}
+        days.setdefault(when["weekday"], set()).add(t.date())
+        lines = c["items"] if "item" in keys else [{"name": None, "qty": sum(i["qty"] for i in c["items"]), "cents": c["sold_cents"]}]
+        for it in lines:
+            k = tuple(it["name"] if g == "item" else when[g] for g in keys)
+            row = out.setdefault(k, {"sold": 0, "purchases": 0, "items": 0})
+            row["sold"] += it["cents"]
+            row["items"] += it["qty"]
+            row["purchases"] += 1
+    rows = [{**{g: v for g, v in zip(keys, k)}, "sold": round(r["sold"] / 100, 2), "purchases": r["purchases"], "items": r["items"]}
+            for k, r in out.items()]
+    rows.sort(key=lambda r: -r["sold"])
+    return {"rows": rows[:300], "period": f"{a} to {b}",
+            "trading_days_per_weekday": {d: len(s) for d, s in days.items()},
+            "note": "To compare weekdays fairly, divide by trading_days_per_weekday (some weekdays had more trading days)."}
 
 
 def _sql(query):
@@ -243,6 +285,8 @@ def run_tool(conn, who, name, args):
     try:
         if name == "sales":
             return _sales(conn, args.get("start", ""), args.get("end", ""))
+        if name == "sales_summary":
+            return _summary(conn, args.get("start", ""), args.get("end", ""), args.get("group_by", ""))
         if name == "sql":
             return _sql(args.get("query", ""))
         if name == "list_rules":
@@ -258,9 +302,11 @@ def run_tool(conn, who, name, args):
 
 # ---- talking to Gemini ---------------------------------------------------------------------------------
 
-def _call(contents, system):
+def _call(contents, system, tools=True):
     body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents, "tools": TOOLS,
             "generationConfig": {"temperature": 0.3}}
+    if not tools:  # out of steps: answer now with what's been found, no more lookups
+        body["toolConfig"] = {"functionCallingConfig": {"mode": "NONE"}}
     try:
         r = httpx.post(API.format(model=model()), headers={"x-goog-api-key": api_key()}, json=body, timeout=90)
     except httpx.HTTPError as e:
@@ -312,7 +358,10 @@ def ask(conn, who, text):
     system = system_prompt(conn, who)
     _save(conn, who, "user", [{"text": text}], text)
     contents = _history(conn, who)
+    started = time.monotonic()
     for _ in range(MAX_STEPS):
+        if time.monotonic() - started > TIME_LIMIT:
+            break
         content = _call(contents, system)
         parts = content["parts"]
         calls = [p["functionCall"] for p in parts if "functionCall" in p]
@@ -324,9 +373,13 @@ def ask(conn, who, text):
         answers = [{"functionResponse": {"name": c["name"], "response": run_tool(conn, who, c["name"], c.get("args") or {})}} for c in calls]
         _save(conn, who, "tool", answers)
         contents.append({"role": "user", "parts": answers})
-    _save(conn, who, "model", [{"text": "That took too many steps, so I stopped. Try asking something narrower."}],
-          "That took too many steps, so I stopped. Try asking something narrower.")
-    return None
+    # Out of steps: have it answer from what it found rather than give up.
+    contents.append({"role": "user", "parts": [{"text": "(Fizzy: no more lookups. Answer now from what you've found, and say if it's incomplete.)"}]})
+    content = _call(contents, system, tools=False)
+    said = "".join(p.get("text", "") for p in content["parts"] if "text" in p and not p.get("thought")).strip() \
+        or "I couldn't get to an answer. Try asking a narrower question."
+    _save(conn, who, "model", [{"text": said}], said)
+    return said
 
 
 # ---- doing a suggestion -----------------------------------------------------------------------------------

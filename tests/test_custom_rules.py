@@ -214,3 +214,23 @@ def test_history_import_earns_nothing(conn, cust):
     make(conn, {"kind": "badge", "name": "Two Cokes", "summary": "2 Cokes", "points": 10,
                 "need": {"metric": "units", "value": 2, "where": {"items": ["coke"]}}})
     assert rules.award(conn, c["id"]) == []                        # and custom badges don't count it
+
+
+def test_sales_summary_and_answering_when_out_of_steps(client, monkeypatch):
+    conn = db.connect()
+    conn.execute("INSERT INTO customers(name, email, square_customer_id, created_at) VALUES ('Mia Patel', 'rns1@x', 'SQ1', ?)", (db.now_iso(),))
+    sale(conn, "s1", ("Coke", 300), ("Chips", 250), ts=at(3)); sale(conn, "s2", ("Coke", 300), ts=at(2))
+    conn.commit()
+    today = datetime.now(config.TZ).date()
+    r = ask._summary(conn, (today - timedelta(days=7)).isoformat(), today.isoformat(), "weekday,item")
+    assert sum(x["items"] for x in r["rows"] if x["item"] == "Coke") == 2 and r["trading_days_per_weekday"]
+    assert "error" in ask._summary(conn, "x", "y", "weekday") and "error" in ask._summary(conn, "2026-01-01", "2026-01-02", "vibes")
+    # Out of steps: it's asked to answer from what it has instead of giving up.
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(ask, "MAX_STEPS", 2)
+    fake = FakeGemini([[{"functionCall": {"name": "sales_summary", "args": {"start": "2026-01-01", "end": "2026-12-31", "group_by": "weekday"}}}]] * 2
+                      + [[{"text": "Mondays are slowest."}]])
+    monkeypatch.setattr(ask.httpx, "post", fake)
+    assert ask.ask(conn, "Will", "slowest day?") == "Mondays are slowest."
+    assert fake.sent[-1]["toolConfig"]["functionCallingConfig"]["mode"] == "NONE"
+    conn.close()
