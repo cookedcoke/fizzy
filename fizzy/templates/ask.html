@@ -85,6 +85,11 @@
   f.addEventListener("submit", function (e) {
     e.preventDefault();
     if (f.dataset.busy || !t.value.trim()) return;
+    // Ask for the passcode first if it's needed (this handler runs before the site-wide one).
+    if (window.fizzyPin) window.fizzyPin("POST", "/ask/stream", send); else send();
+  });
+  function send() {
+    if (f.dataset.busy || !t.value.trim()) return;
     f.dataset.busy = 1; b.disabled = true;
     var q = t.value, empty = chat.querySelector(".chat-empty"); if (empty) empty.remove();
     var me = document.createElement("div"); me.className = "bubble me"; me.textContent = q;
@@ -116,7 +121,12 @@
     fetch("/ask/stream", { method: "POST", body: data, credentials: "same-origin" }).then(function (r) {
       var type = r.headers.get("content-type") || "";
       if (r.redirected && /\/login/.test(r.url)) { location.href = r.url; throw 0; }
-      if (type.indexOf("event-stream") < 0) return r.text().then(refresh);  // e.g. needs the passcode: show what Fizzy said
+      if (type.indexOf("event-stream") < 0) {  // e.g. still needs the passcode: keep the question, say what Fizzy said
+        return r.text().then(function (html) {
+          var m = new DOMParser().parseFromString(html, "text/html").querySelector(".flash.bad, .err, main > .flash");
+          me.remove(); fail(m ? m.textContent.trim() : "Fizzy didn't take that. Try again.");
+        });
+      }
       var reader = r.body.getReader(), dec = new TextDecoder(), buf = "";
       return (function pump() {
         return reader.read().then(function (res) {
@@ -133,7 +143,7 @@
         if (!failed) return fetch("/ask", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.text(); }).then(refresh);
       });
     }).catch(function (err) { if (err !== 0) fail("Couldn't reach Fizzy. Check the connection and try again."); }).then(finish);
-  });
+  }
   // "No thanks" without a reload too. "Do it" goes the normal way so the passcode box can ask first.
   chat.addEventListener("submit", function (e) {
     var form = e.target; if (!form.matches("[data-quiet]")) return;
