@@ -605,24 +605,40 @@ header .clock.squeezed { display: none !important }
 .menu-pick label.check { margin: 0; padding: 4px 0; font-weight: 500 }
 
 /* ---- Ask ---- */
-.chat { display: flex; flex-direction: column; gap: var(--s3); padding-bottom: 110px; max-width: 900px }
-.bubble { max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5 }
+.ask-page { max-width: 860px; margin: 0 auto }
+.ask-head { display: flex; align-items: baseline; gap: var(--s3); margin-bottom: var(--s4) }
+.ask-head h1 { margin: 0 } .ask-head .meta { color: var(--muted); font-size: 13px; flex: 1; min-width: 0 }
+.ask-head form { margin-left: auto }
+.chat { display: flex; flex-direction: column; gap: 10px; padding-bottom: var(--s4); min-height: 40vh }
+.bubble { max-width: min(85%, 640px); padding: 10px 14px; border-radius: 16px; line-height: 1.5; overflow-wrap: anywhere }
 .bubble p { margin: 0 0 8px } .bubble p:last-child { margin: 0 } .bubble ul, .bubble ol { margin: 4px 0 8px; padding-left: 20px }
-.bubble .scroll { margin: 8px 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r) }
-.bubble table { font-size: 13px }
-.bubble.me { align-self: flex-end; background: var(--ink); color: var(--on-ink); white-space: pre-wrap }
-.bubble.them { align-self: flex-start; background: var(--surface); border: 1px solid var(--line) }
-.bubble.thinking::after { content: "..."; display: inline-block; width: 1.2em; animation: dots 1.2s steps(4) infinite; overflow: hidden; vertical-align: bottom }
-@keyframes dots { from { width: 0 } to { width: 1.2em } }
-.proposal { align-self: flex-start; max-width: 85%; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--warn-mark);
-  border-radius: var(--r); padding: 12px 14px }
+.bubble .scroll { margin: 8px -4px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto }
+.bubble table { font-size: 13px; min-width: 100% } .bubble td, .bubble th { white-space: nowrap }
+.bubble.me { align-self: flex-end; background: var(--ink); color: var(--on-ink); white-space: pre-wrap; border-bottom-right-radius: 4px }
+.bubble.them { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; max-width: min(92%, 720px) }
+.bubble.err { border-color: var(--red-line); background: var(--red-wash); color: var(--red-ink) }
+.bubble.thinking { display: flex; gap: 5px; padding: 14px 16px }
+.bubble.thinking i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); animation: think 1.2s infinite ease-in-out }
+.bubble.thinking i:nth-child(2) { animation-delay: .15s } .bubble.thinking i:nth-child(3) { animation-delay: .3s }
+@keyframes think { 0%, 80%, 100% { opacity: .3; transform: none } 40% { opacity: 1; transform: translateY(-3px) } }
+@media (prefers-reduced-motion: reduce) { .bubble.thinking i { animation: none; opacity: .6 } }
+.chat > .bubble, .chat > .proposal { animation: flash-in .2s ease-out }
+.proposal { align-self: flex-start; width: min(100%, 560px); background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--warn-mark);
+  border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; justify-items: start }
+.proposal .summary { font-size: 15px; line-height: 1.35 }
+.proposal .actions { margin: 4px 0 0 } .proposal details { width: 100% }
 .proposal.done { border-left-color: var(--ok) } .proposal.dismissed { opacity: .6; border-left-color: var(--line-strong) }
-.proposal pre { white-space: pre-wrap; background: var(--hover); padding: 8px; border-radius: var(--r); max-height: 300px; overflow: auto }
+.proposal pre { white-space: pre-wrap; background: var(--hover); padding: 8px; border-radius: 8px; max-height: 300px; overflow: auto; margin: 6px 0 0 }
 .chat-empty { color: var(--muted) } .chat-empty .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px }
-.chat-empty .chip { height: auto; white-space: normal; text-align: left; padding: 8px 12px; font-weight: 500 }
-.ask-box { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(900px, calc(100vw - 32px)); display: flex; gap: 8px;
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; padding: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .12); z-index: 10 }
-.ask-box textarea { flex: 1; border: none; resize: none; min-height: 40px; box-shadow: none !important }
-.ask-box button { align-self: flex-end }
+.chat-empty .chip { height: auto; white-space: normal; text-align: left; padding: 10px 14px; font-weight: 500; border-radius: 12px; line-height: 1.35 }
+.ask-box { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: flex-end; gap: 8px; margin: 0 calc(-1 * var(--s2));
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--bg) 14px) }
+.ask-box textarea { flex: 1; resize: none; height: 44px; min-height: 44px; max-height: 160px; padding: 11px 14px; border-radius: 22px;
+  border: 1px solid var(--line-strong); background: var(--surface); line-height: 1.4; font-size: 16px; overflow-y: auto }
+.ask-box button { height: 44px; border-radius: 22px; padding: 0 18px; flex: none }
+@media (max-width: 720px) {
+  .ask-head { margin-bottom: var(--s3) }
+  .bubble { max-width: 90% } .bubble.them { max-width: 100% }
+}
 .rule-row { display: flex; gap: var(--s3); align-items: flex-start; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line) }
 .rule-row:first-of-type { border-top: none } .rule-row.paused { opacity: .6 }

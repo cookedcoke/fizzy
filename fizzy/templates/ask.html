@@ -1,15 +1,17 @@
 {% extends "base.html" %}{% block title %}Ask{% endblock %}
 {% block body %}
-<div class="pagehead"><div><h1>Ask</h1>
-  <div class="meta">Questions about the stall, and new badges, events and rewards in plain words · {{ model }}</div></div>
-  {% if timeline %}<form class="inline" method="post" action="/ask/clear"><button data-confirm="Start a new conversation? This one is cleared.">New conversation</button></form>{% endif %}
+<div class="ask-page">
+<div class="ask-head">
+  <h1>Ask</h1>
+  <span class="meta hide-sm">Sales, customers and tabs, or new badges and events in plain words</span>
+  {% if timeline %}<form class="inline" method="post" action="/ask/clear"><button class="sm" data-confirm="Start a new conversation? This one is cleared.">New chat</button></form>{% endif %}
 </div>
 
 {% if not enabled %}
 <div class="notice">Ask isn't set up yet. Add a Gemini API key in <a href="/settings#ask">Settings, Ask</a> (owner password).</div>
 {% endif %}
 
-<div class="chat">
+<div class="chat" id="chat" aria-live="polite">
   {% if not timeline %}
   <div class="chat-empty">
     <p>Ask about sales, customers and tabs, or describe a badge or event, however unusual. Nothing changes until you press <b>Do it</b>.</p>
@@ -21,16 +23,17 @@
     {% elif t.kind == 'msg' %}<div class="bubble them">{{ t.html }}</div>
     {% else %}{% set p = t.p %}
     <div class="proposal {{ p.status }}">
-      <div class="what"><span class="tag {{ 'approved' if p.status == 'done' else '' }}">{{ {'create_rule': 'New badge or event', 'update_rule': 'Change a rule', 'pause_rule': 'Pause a rule',
+      <span class="tag {{ 'approved' if p.status == 'done' else '' }}">{{ {'create_rule': 'New badge or event', 'update_rule': 'Change a rule', 'pause_rule': 'Pause a rule',
         'resume_rule': 'Restart a rule', 'delete_rule': 'Delete a rule', 'double_points': 'Double points', 'reward': 'New reward',
-        'display_message': 'Display message'}.get(p.action, p.action) }}</span> <b>{{ p.summary }}</b></div>
+        'display_message': 'Display message'}.get(p.action, p.action) }}</span>
+      <b class="summary">{{ p.summary }}</b>
       {% if p.action in ('create_rule', 'update_rule') %}<details><summary>The rule</summary><pre class="mono small">{{ (p.payload|fromjson).rule|noicon|tojson(indent=2) }}</pre></details>{% endif %}
       {% if p.status == 'pending' %}
-      <div class="actions" style="margin-top:8px">
+      <div class="actions">
         <form class="inline" method="post" action="/ask/apply/{{ p.id }}"><button class="primary">Do it</button></form>
-        <form class="inline" method="post" action="/ask/dismiss/{{ p.id }}"><button>No thanks</button></form>
+        <form class="inline" method="post" action="/ask/dismiss/{{ p.id }}" data-quiet><button>No thanks</button></form>
       </div>
-      {% else %}<div class="small muted" style="margin-top:6px">{{ 'Done' if p.status == 'done' else 'Not done' }}{% if p.done_at %} · {{ p.done_at|local }}{% endif %}</div>{% endif %}
+      {% else %}<div class="small muted">{{ 'Done' if p.status == 'done' else 'Not done' }}{% if p.done_at %} · {{ p.done_at|local }}{% endif %}</div>{% endif %}
     </div>
     {% endif %}
   {% endfor %}
@@ -38,23 +41,59 @@
 </div>
 
 <form class="ask-box" method="post" action="/ask" data-ask>
-  <textarea name="text" rows="2" placeholder="e.g. What sold best at lunch this week?" required {{ 'disabled' if not enabled }} data-key="/" data-key-label="Type a question"></textarea>
-  <button class="primary" {{ 'disabled' if not enabled }}>Send</button>
+  <textarea name="text" rows="1" placeholder="Ask anything about the stall" required {{ 'disabled' if not enabled }} enterkeyhint="send"
+    aria-label="Your question" data-key="/" data-key-label="Type a question"></textarea>
+  <button class="primary" {{ 'disabled' if not enabled }} aria-label="Send">Send</button>
 </form>
+</div>
 <script>
 (function () {
   var f = document.querySelector("[data-ask]"), t = f.querySelector("textarea"), b = f.querySelector("button");
-  document.querySelectorAll("[data-example]").forEach(function (c) { c.addEventListener("click", function () { t.value = c.textContent; t.focus(); }); });
-  t.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (t.value.trim()) f.requestSubmit(); } });
-  f.addEventListener("submit", function (e) {
-    if (f.dataset.busy) { e.preventDefault(); return; }
-    f.dataset.busy = 1; b.disabled = true; b.textContent = "Thinking...";
-    var me = document.createElement("div"); me.className = "bubble me"; me.textContent = t.value;
-    var wait = document.createElement("div"); wait.className = "bubble them thinking"; wait.textContent = "Thinking";
-    var end = document.getElementById("end"); end.before(me, wait); end.scrollIntoView();
+  var chat = document.getElementById("chat"), touch = matchMedia("(pointer: coarse)").matches;
+  function down(smooth) { var e = document.getElementById("end"); if (e) e.scrollIntoView({ block: "end", behavior: smooth ? "smooth" : "auto" }); }
+  function grow() { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 160) + "px"; }
+  t.addEventListener("input", grow);
+  document.addEventListener("click", function (e) {
+    var c = e.target.closest("[data-example]"); if (c) { t.value = c.textContent; grow(); t.focus(); }
   });
-  document.getElementById("end").scrollIntoView();
-  if (!document.querySelector(".chat-empty")) t.focus();
+  // Desktop: Enter sends, Shift+Enter is a new line. Phone: Enter is a new line, the button sends.
+  t.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey && !touch) { e.preventDefault(); if (t.value.trim()) f.requestSubmit(); }
+  });
+  // Send without reloading: show the question and "Thinking" straight away, then swap in the answer.
+  function refresh(html) {
+    var doc = new DOMParser().parseFromString(html, "text/html");
+    var fresh = doc.getElementById("chat");
+    if (fresh) chat.innerHTML = fresh.innerHTML;
+    var msg = doc.querySelector("main > .flash"), old = document.querySelector("main > .flash");
+    if (old) old.remove();
+    if (msg) document.querySelector("main").prepend(msg);
+    down(true);
+  }
+  function post(form, extra) {
+    return fetch(form.action, { method: "POST", body: extra || new FormData(form), credentials: "same-origin" })
+      .then(function (r) { if (r.redirected && /\/login/.test(r.url)) { location.href = r.url; throw 0; } return r.text(); });
+  }
+  f.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (f.dataset.busy || !t.value.trim()) return;
+    f.dataset.busy = 1; b.disabled = true;
+    var q = t.value, empty = chat.querySelector(".chat-empty"); if (empty) empty.remove();
+    var me = document.createElement("div"); me.className = "bubble me"; me.textContent = q;
+    var wait = document.createElement("div"); wait.className = "bubble them thinking"; wait.innerHTML = "<i></i><i></i><i></i>";
+    document.getElementById("end").before(me, wait); down(true);
+    var data = new FormData(f); t.value = ""; grow();
+    post(f, data).then(refresh)
+      .catch(function (err) { if (err !== 0) { t.value = q; grow(); wait.className = "bubble them err"; wait.textContent = "Couldn't reach Fizzy. Check the connection and try again."; } })
+      .then(function () { delete f.dataset.busy; b.disabled = false; if (!touch) t.focus(); });
+  });
+  // "No thanks" without a reload too. "Do it" goes the normal way so the passcode box can ask first.
+  chat.addEventListener("submit", function (e) {
+    var form = e.target; if (!form.matches("[data-quiet]")) return;
+    e.preventDefault(); post(form).then(refresh).catch(function () {});
+  });
+  down(false);
+  if (!document.querySelector(".chat-empty") && !touch) t.focus();
 })();
 </script>
 {% endblock %}
