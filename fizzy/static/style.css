@@ -603,3 +603,26 @@ header .clock.squeezed { display: none !important }
 .menu-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 2px var(--s3); max-height: 260px; overflow: auto;
   border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3) }
 .menu-pick label.check { margin: 0; padding: 4px 0; font-weight: 500 }
+
+/* ---- Ask ---- */
+.chat { display: flex; flex-direction: column; gap: var(--s3); padding-bottom: 110px; max-width: 900px }
+.bubble { max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.5 }
+.bubble p { margin: 0 0 8px } .bubble p:last-child { margin: 0 } .bubble ul, .bubble ol { margin: 4px 0 8px; padding-left: 20px }
+.bubble .scroll { margin: 8px 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r) }
+.bubble table { font-size: 13px }
+.bubble.me { align-self: flex-end; background: var(--ink); color: var(--on-ink); white-space: pre-wrap }
+.bubble.them { align-self: flex-start; background: var(--surface); border: 1px solid var(--line) }
+.bubble.thinking::after { content: "..."; display: inline-block; width: 1.2em; animation: dots 1.2s steps(4) infinite; overflow: hidden; vertical-align: bottom }
+@keyframes dots { from { width: 0 } to { width: 1.2em } }
+.proposal { align-self: flex-start; max-width: 85%; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--warn-mark);
+  border-radius: var(--r); padding: 12px 14px }
+.proposal.done { border-left-color: var(--ok) } .proposal.dismissed { opacity: .6; border-left-color: var(--line-strong) }
+.proposal pre { white-space: pre-wrap; background: var(--hover); padding: 8px; border-radius: var(--r); max-height: 300px; overflow: auto }
+.chat-empty { color: var(--muted) } .chat-empty .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px }
+.chat-empty .chip { height: auto; white-space: normal; text-align: left; padding: 8px 12px; font-weight: 500 }
+.ask-box { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(900px, calc(100vw - 32px)); display: flex; gap: 8px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; padding: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .12); z-index: 10 }
+.ask-box textarea { flex: 1; border: none; resize: none; min-height: 40px; box-shadow: none !important }
+.ask-box button { align-self: flex-end }
+.rule-row { display: flex; gap: var(--s3); align-items: flex-start; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line) }
+.rule-row:first-of-type { border-top: none } .rule-row.paused { opacity: .6 }

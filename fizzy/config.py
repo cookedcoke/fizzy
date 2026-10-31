@@ -18,6 +18,9 @@ TZ = ZoneInfo(_env("FIZZY_TZ", "Australia/Sydney"))
 BACKUP_DIR = _env("FIZZY_BACKUP_DIR")
 BACKUP_KEEP = int(_env("FIZZY_BACKUP_KEEP", "30"))
 SECURE_COOKIES = _env("FIZZY_SECURE_COOKIES", "1") == "1"
+# The Ask page (ask.py). Use a paid key: on the free tier Google may use what's sent to train its models.
+GEMINI_API_KEY = _env("GEMINI_API_KEY")
+GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-flash-latest")
 
 # Registered devices + Cloudflare Access (see devices.py). Off unless FIZZY_ACCESS_HOST is set.
 HOST = _env("FIZZY_HOST", "fizzy.cookedcoke.co")                 # counter: registered devices only

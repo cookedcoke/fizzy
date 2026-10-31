@@ -118,6 +118,38 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at TEXT NOT NULL
 );
 
+-- Custom badges and events (rules.py), usually made on the Ask page. spec is the rule's JSON.
+CREATE TABLE IF NOT EXISTS rules (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    spec TEXT NOT NULL,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    paused_at TEXT,
+    deleted_at TEXT
+);
+
+-- The Ask page: each staff member's conversation with Gemini, and changes it has suggested.
+CREATE TABLE IF NOT EXISTS ask_messages (
+    id INTEGER PRIMARY KEY,
+    staff TEXT NOT NULL,
+    role TEXT NOT NULL,            -- user | model | tool
+    content TEXT NOT NULL,         -- JSON parts, as Gemini takes them
+    shown TEXT,                    -- what the page shows (plain text / markdown), NULL for tool turns
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ask_proposals (
+    id INTEGER PRIMARY KEY,
+    staff TEXT NOT NULL,
+    action TEXT NOT NULL,          -- create_rule | update_rule | pause_rule | resume_rule | delete_rule | double_points | reward | display_message
+    payload TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',   -- pending | done | dismissed
+    created_at TEXT NOT NULL,
+    done_at TEXT
+);
+
 -- One-time sign-in codes for the student site, shown as a QR code on the customer display.
 CREATE TABLE IF NOT EXISTS qr_logins (
     id INTEGER PRIMARY KEY,
@@ -301,7 +333,8 @@ MIGRATIONS = [
     ("points_events", "ended_at", "TEXT"),
     ("points_events", "rule_id", "INTEGER"),
     ("customers", "kind", "TEXT"),  # NULL (a normal customer), admin (staff themselves) or test
-    ("customers", "me_gen", "INTEGER"),  # bumped by "Sign out their phones" on the customer page
+    ("customers", "me_gen", "INTEGER"),
+    ("points_ledger", "rule_key", "TEXT"),  # rules.py: one grant per key, paid once  # bumped by "Sign out their phones" on the customer page
 ]
 
 
@@ -311,6 +344,7 @@ def init(conn):
         cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_points_rule_key ON points_ledger(customer_id, rule_key) WHERE rule_key IS NOT NULL")
     # Passcodes were briefly stored as one-way hashes (column passcode_hash), which can't be read
     # back: those students show as "not set" so staff know to set a new one.
     if "passcode_hash" in {r["name"] for r in conn.execute("PRAGMA table_info(customers)")}:

@@ -3,3 +3,4 @@
 {% endfor %}{% elif events_soon %}{% set e = events_soon[0] %}
 <div class="event">📅 Coming up: <b>{{ e.name }}</b> on {{ e.start_date|ymd('%A %-d %b') }}{% if e.end_date != e.start_date %} to {{ e.end_date|ymd('%a %-d %b') }}{% endif %} - {{ '%g'|format(e.multiplier) }}× points.</div>
 {% endif %}
+{% for e in custom_events or [] %}<div class="event{{ '' if e.soon else ' on' }}">{{ '📅 From ' ~ e.start.strftime('%a %-d %b') ~ ': ' if e.soon else '⚡ ' }}<b>{{ e.name }}</b> - {{ e.summary }}</div>{% endfor %}

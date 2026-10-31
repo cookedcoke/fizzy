@@ -1,5 +1,6 @@
 """Shared web helpers: templates, auth dependency, form parsing."""
 import hashlib
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -43,7 +44,9 @@ ACTION_LABELS = {
     "download_backup": "Downloaded a backup", "export": "Exported", "export_square_csv": "Exported for Square",
     "extend_due": "Gave more time to pay", "import": "Imported the school list", "item_costs": "Changed item costs",
     "login": "Signed in", "merge": "Merged customers", "notice": "Changed the noticeboard", "owner_unlock": "Owner unlocked",
-    "qr_login": "Showed a sign-in code", "qr_login_used": "Signed in with a code", "me_signout": "Signed out their phones",
+    "rule_add": "Added a custom badge or event", "rule_change": "Changed a custom badge or event",
+    "rule_pause": "Paused a custom badge or event", "rule_resume": "Restarted a custom badge or event",
+    "rule_delete": "Deleted a custom badge or event", "qr_login": "Showed a sign-in code", "qr_login_used": "Signed in with a code", "me_signout": "Signed out their phones",
     "passkey_add": "Added a security key", "passkey_remove": "Removed a security key",
     "passcode_removed": "Removed a passcode", "passcode_set": "Set a passcode", "passcode_viewed": "Read a passcode",
     "passcode_wrong": "Wrong passcode", "pin_wrong": "Wrong passcode", "admin_wrong": "Wrong passcode",
@@ -59,6 +62,8 @@ ACTION_LABELS = {
 }
 templates.env.filters["action"] = lambda a: ACTION_LABELS.get(a) or (a or "").replace("_", " ").capitalize()
 templates.env.filters["money"] = money
+templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else {}
+templates.env.filters["noicon"] = lambda d: {k: v for k, v in (d or {}).items() if k != "icon"}
 templates.env.filters["local"] = local
 templates.env.filters["ymd"] = lambda d, fmt="%a %d %b": datetime.strptime(d, "%Y-%m-%d").strftime(fmt) if d else ""
 templates.env.globals["STATUS_LABELS"] = logic.STATUS_LABELS

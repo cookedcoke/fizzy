@@ -23,7 +23,7 @@
   <a class="brand" href="/">{% include "_logo.html" %}<span>Fizzy</span><small>Cooked Coke Co.</small></a>
   {% set p = request.url.path %}
   <nav>
-    {% for href, label, key in [('/', 'Dashboard', 'D'), ('/customers', 'Customers', 'C'), ('/transactions', 'Transactions', 'X'), ('/square', 'Square', 'S'), ('/rewards', 'Rewards', 'R'), ('/profit', 'Profit', 'P'), ('/money', 'Money', 'M'), ('/tools', 'Tools', 'T'), ('/import', 'Import', 'I'), ('/settings', 'Settings', ','), ('/audit', 'Log', 'L')] %}
+    {% for href, label, key in [('/', 'Dashboard', 'D'), ('/customers', 'Customers', 'C'), ('/transactions', 'Transactions', 'X'), ('/square', 'Square', 'S'), ('/rewards', 'Rewards', 'R'), ('/profit', 'Profit', 'P'), ('/money', 'Money', 'M'), ('/tools', 'Tools', 'T'), ('/ask', 'Ask', 'A'), ('/import', 'Import', 'I'), ('/settings', 'Settings', ','), ('/audit', 'Log', 'L')] %}
     <a href="{{ href }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}" title="{{ label }} - press G then {{ key }}">{{ label }}</a>
     {% endfor %}
   </nav>

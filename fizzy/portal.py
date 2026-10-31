@@ -21,7 +21,7 @@ import anyio
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from . import badges, config, events, logic, rewards, stats
+from . import badges, config, events, logic, rewards, rules, stats
 from .db import audit, now_iso
 from .web import get_conn, staff, templates
 
@@ -239,7 +239,16 @@ def home(request: Request, conn=Depends(get_conn)):
     alltime, alltime_me = leaderboard(conn, me=c["id"])
     return _page(request, "me.html", c=c, s=s, offers=rewards.offers_for(conn, c["id"], s["points"]),
                  activity=activity(conn, c["id"]), boards=[("This month", month, month_me), ("All time", alltime, alltime_me)],
-                 me=badges.for_customer(conn, c["id"]), events_on=events.on(conn), events_soon=events.upcoming(conn))
+                 me=_with_custom(conn, badges.for_customer(conn, c["id"]), c["id"]), events_on=events.on(conn), events_soon=events.upcoming(conn),
+                 custom_events=rules.student_events(conn))
+
+
+def _with_custom(conn, me, cid):
+    """The built-in badges plus custom ones from the Ask page."""
+    extra = rules.student_badges(conn, cid)
+    me["badges"] = sorted(me["badges"] + extra, key=lambda b: (not b["earned"], -b["progress"]))
+    me["earned"] = sum(b["earned"] for b in me["badges"])
+    return me
 
 
 @router.post("/me/login")
@@ -336,8 +345,8 @@ def activity(conn, customer_id, limit=15):
         what = REASONS.get(p["reason"], "Adjustment")
         if p["reason"] in ("redeem", "redeem_undo") and p["note"]:
             what = p["note"]                       # "Redeemed: Free Coke" - written by Fizzy, not staff
-        elif p["reason"] == "badge" and p["note"]:
-            what = p["note"]                       # "Badge: Regular" - written by Fizzy
+        elif p["reason"] in ("badge", "rule") and p["note"]:
+            what = p["note"]                       # "Badge: Regular" / a custom rule's name - written by Fizzy
         elif p["reason"] == "bonus" and p["event_id"] and p["note"]:
             what = f"Bonus: {p['note']}"           # the double points day's public name
         rows.append({"at": p["created_at"], "what": what, "points": p["delta"], "money": None})

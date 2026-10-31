@@ -6,7 +6,7 @@
 <form class="panel" id="permissions" method="post" action="/settings/permissions"><h2>Who can do what</h2>
   {% if not admin_on %}<p class="hint" style="margin-top:0">"Owner only" means the PIN until there's an owner password.{% if not pin_on %} With no PIN either, everything's open to anyone signed in.{% endif %}</p>{% endif %}
   <table class="perms">
-    {% set groups = {'claim': 'Everyday', 'points': 'Points and rewards', 'tab_decisions': 'Tabs', 'customers': 'Customers',
+    {% set groups = {'claim': 'Everyday', 'points': 'Points and rewards', 'tab_decisions': 'Tabs', 'customers': 'Customers', 'ask': 'Ask (Gemini)', 'qr_login': 'Customers',
                      'money': 'Money', 'school_tools': 'Big stuff', 'admin_accounts': 'Special accounts'} %}
     {% for aid, label, _, _ in actions %}{% if aid in groups %}<tr class="group"><th colspan="2">{{ groups[aid] }}</th></tr>{% endif %}<tr><td>{{ label }}</td><td class="n"><select name="{{ aid }}" aria-label="{{ label }}">
       {% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms[aid] == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>{% endfor %}
@@ -51,6 +51,12 @@
   {% endif %}
   <label class="check" style="margin-top:12px"><input type="checkbox" name="owing" value="1" {{ 'checked' if display_owing }}> Show what each customer owes on their tab, including anything overdue</label>
   <div class="actions"><button class="primary">Save</button> <a class="btn" href="/display" target="_blank">Open the display</a></div>
+</form>
+<form class="panel" id="terms" method="post" action="/settings/terms"><h2>Term dates</h2>
+  <p class="small" style="margin-top:0">For badges and events that work by term ("this term", "each term"). One per line.</p>
+  <textarea name="terms" rows="4" placeholder="2026-10-13 to 2026-12-11 Term 4&#10;2027-02-02 to 2027-04-09 Term 1">{% for a, b, label in terms %}{{ a }} to {{ b }}{% if label %} {{ label }}{% endif %}
+{% endfor %}</textarea>
+  <div class="actions"><button class="primary">Save</button></div>
 </form>
 <form class="panel" id="closed" method="post" action="/settings/closed"><h2>Closed days</h2>
   <p class="small" style="margin-top:0">Holidays and days off. cookedcoke.co shows "Closed" on these instead of the usual hours. One per line.</p>

@@ -24,6 +24,17 @@
       <td class="n"><form class="inline" method="post" action="/events/rules/{{ r.id }}/stop">
         <button class="sm danger" data-confirm="Stop {{ r.name }} repeating? Any coming up go; one running now carries on.">Stop</button></form></td></tr>{% endfor %}
     </table></div></div>{% endif %}
+  <div class="panel" id="rules"><h2>Custom badges and events <span class="count">{{ custom|length }}</span></h2>
+    {% for r in custom %}<div class="rule-row {{ 'paused' if r.paused }}">
+      <div><b>{{ r.name }}</b> <span class="tag">{{ 'Badge' if r.kind == 'badge' else 'Event' }}</span>{% if r.paused %} <span class="tag">Paused</span>{% endif %}
+        <div class="small">{{ r.summary }}{% if r.kind == 'badge' %} · {{ r.spec.points }} points{% if r.spec.repeat and r.spec.repeat != 'once' %} each {{ r.spec.repeat }}{% endif %}{% endif %}</div>
+        <div class="small muted">{{ r.students }} student{{ '' if r.students == 1 else 's' }} · {{ '{:,}'.format(r.points) }} points given · made by {{ r.created_by }} {{ r.created_at|local('%-d %b') }}</div>
+        <details class="small"><summary>The rule</summary><pre class="mono">{{ r.spec|tojson(indent=2) }}</pre></details></div>
+      <div class="actions" style="margin:0;flex:none">
+        <form class="inline" method="post" action="/rules/{{ r.id }}/{{ 'resume' if r.paused else 'pause' }}"><button class="sm">{{ 'Restart' if r.paused else 'Pause' }}</button></form>
+        <form class="inline" method="post" action="/rules/{{ r.id }}/delete"><button class="sm danger" data-confirm="Delete {{ r.name }}? Points already given stay.">Delete</button></form></div>
+    </div>{% else %}<p class="small muted" style="margin:0">None yet. Describe one on the <a href="/ask">Ask</a> page, however unusual: "every 5th noodles gets 100 bonus points", "a badge for trying every drink this term".</p>{% endfor %}
+  </div>
   {% if events %}<div class="panel" id="events"><h2>Double points days <span class="count">{{ events|length }}</span></h2>
     {% if events %}<div class="scroll"><table>
       <tr><th>Event</th><th>When</th><th class="n">Bonus given</th><th></th></tr>

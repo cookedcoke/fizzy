@@ -77,7 +77,8 @@ def award(conn, cid):
             conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, note, created_at) VALUES (?, ?, 'badge', ?, ?)",
                          (cid, b["points"], note, now_iso()))
             new.append(b["name"])
-    return new
+    from . import rules  # custom badges and events from the Ask page pay at the same moments
+    return new + rules.award(conn, cid)
 
 
 def baseline(conn):

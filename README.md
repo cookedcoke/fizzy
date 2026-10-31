@@ -449,6 +449,28 @@ as `<@&ROLE_ID>`). Starting a reward or scheduling double points then shows an *
 Discord* box, ticked by default. The post is sent by Fizzy on the home PC, never by the counter
 device's browser, so it works even where the school wifi blocks Discord.
 
+### Ask (Gemini)
+
+The **Ask** tab is a chat with Gemini that knows the stall. Ask it anything about sales, customers
+and tabs ("what sells best at lunch on Fridays?", "who used to come every week but stopped?"); it
+looks things up itself (read-only: it can't change the database). It can also set things up:
+custom badges and events, double points days, rewards and the display message. Those come back as a
+card with **Do it**, which needs the owner password by default (Who can do what, Ask) and is logged.
+
+**Custom badges and events** are how weird ideas happen without anyone writing code: describe it
+("a badge for 20 Chi Forest and 10 milk teas in a term, 500 points", "every 5th noodles gets 100
+bonus points", "triple points on anything before 11:05 at recess") and Gemini builds a rule out of
+building blocks (items, counts, spend, days, weeks, streaks, time of day, weekdays, terms, first
+buyers of the day, how they paid, double points days; all/any/at least N of; once, or again each
+day/week/month/term). Fizzy checks the rule, shows who'd qualify right now, and runs it itself, so a
+rule can't do anything the building blocks don't allow. Rules pay points like badges (as sales sync,
+or when a page is opened), never take points back, and show on the student site. Pause or delete them
+on the **Rewards** page. Terms come from **Settings, Term dates**. If an idea needs a building block
+that doesn't exist, Gemini says so: ask for it to be added to `fizzy/rules.py`.
+
+Set up: put `GEMINI_API_KEY` in `.env` (a paid key, since sales and student data are sent to Google)
+and restart. `GEMINI_MODEL` picks the model (default `gemini-flash-latest`).
+
 ### Badges pay points
 
 Each badge on the student site pays points once, the first time it's earned: First sip 50,

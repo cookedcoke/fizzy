@@ -24,7 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import badges, display, passkeys, pwa, transactions, updater
+from . import ask, badges, display, passkeys, pwa, rules, transactions, updater
 from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
 
 log = logging.getLogger("fizzy")
@@ -225,6 +225,7 @@ def create_app(background=True):
     app.include_router(updater.router)
     app.include_router(transactions.router)
     app.include_router(display.router)
+    app.include_router(ask.router)
     app.include_router(money_pages.router)
     return app
 
@@ -954,7 +955,7 @@ def register(app):
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
-        return render(request, "settings.html", cfg=logic.settings(conn), closed=logic.closed_days(conn),
+        return render(request, "settings.html", cfg=logic.settings(conn), closed=logic.closed_days(conn), terms=rules.terms(conn),
                       display_message=db.get_setting(conn, "display_message", "") or "",
                       display_owing=db.get_setting(conn, "display_owing", "1") == "1",
                       display_menu=display.menu_items(conn), display_hidden=display.hidden_items(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
@@ -987,6 +988,17 @@ def register(app):
         db.audit(conn, who, "settings", None, json.dumps(new))
         conn.commit()
         return back(request, "/settings", "Saved.")
+
+    @app.post("/settings/terms")
+    def save_terms(request: Request, terms: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+        found, bad = logic.parse_closed(terms[:5000])
+        if bad:
+            return back(request, "/settings#terms", f"Couldn't read: {bad[0][:60]}. Use lines like 2026-10-13 to 2026-12-11 Term 4.", "bad")
+        found = [(a, b, label or f"Term {i}") for i, (a, b, label) in enumerate(found, 1)]
+        db.set_setting(conn, "terms", json.dumps(found))
+        db.audit(conn, who, "settings", None, f"term dates: {len(found)}")
+        conn.commit()
+        return back(request, "/settings#terms", "Saved.")
 
     @app.post("/settings/closed")
     def save_closed(request: Request, days: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
