@@ -224,7 +224,16 @@ def _customer_for(conn, square_customer_id):
 MATCH_WINDOW = timedelta(hours=2)
 
 
+def history_only(conn, sp):
+    """Sales from before Fizzy's launch date (Tools, Import sales history) are kept for the numbers
+    only: no points, tab charges, repayments or refunds come from them, now or later."""
+    before = get_setting(conn, "history_before")
+    return bool(before) and sp["created_at"] < before
+
+
 def apply_payment_effects(conn, sp):
+    if history_only(conn, sp):
+        return
     customer = conn.execute("SELECT * FROM customers WHERE id = ?", (sp["customer_id"],)).fetchone()
     if customer is None:
         return
@@ -296,7 +305,7 @@ def undo_payment_effects(conn, sp):
 
 
 def apply_refund_effects(conn, sp, amount, created_at):
-    if sp["customer_id"] is None:
+    if sp["customer_id"] is None or history_only(conn, sp):
         return
     pid, cid = sp["square_payment_id"], sp["customer_id"]
     if sp["kind"] == "sale":

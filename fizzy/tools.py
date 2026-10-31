@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from . import config, customers, db, logic, square
-from .web import back, cents, get_conn, money, render, staff
+from .web import back, cents, get_conn, local, money, render, staff
 
 router = APIRouter(prefix="/tools")
 
@@ -57,6 +57,7 @@ TOOLS = [
     ("Square", [
         ("sync_now", "Sync now", "Get the latest from Square now instead of waiting."),
         ("resync", "Re-sync from a date", "Go back over Square from a date, e.g. after Fizzy was down. Nothing gets counted twice."),
+        ("history", "Import sales history", "Bring in Square sales from before Fizzy started, for reports and Ask only. Nobody gets points, tabs or badges for them."),
         ("find_payment", "Find a Square payment", "Paste a Square payment ID to see what Fizzy did with it."),
     ]),
     ("Data", [
@@ -198,7 +199,8 @@ def tools_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
     week_ago = (datetime.now(config.TZ).date() - timedelta(days=7)).isoformat()
     return render(request, "tools.html", tools=TOOLS, people=[p for p in people if not p["archived_at"]],
                   archived=archived, cfg=logic.settings(conn), notice=db.get_setting(conn, "notice", ""),
-                  exports=list(EXPORTS), today=today, week_ago=week_ago, square_on=bool(config.SQUARE_TOKEN))
+                  exports=list(EXPORTS), today=today, week_ago=week_ago, square_on=bool(config.SQUARE_TOKEN),
+                  history_before=local(db.get_setting(conn, "history_before", ""), "%Y-%m-%d") if db.get_setting(conn, "history_before", "") else "")
 
 
 @router.post("/{tool}")
@@ -654,6 +656,21 @@ def h_resync(request, conn, who, form):
     db.audit(conn, who, "square_resync", None, f"from {form.get('start')}")
     conn.commit()
     return done(request, "resync", f"Re-sync from {form['start']}: " + square.describe_sync(square.sync(conn, wait=True)))
+
+
+def h_history(request, conn, who, form):
+    if not config.SQUARE_TOKEN:
+        raise ToolError("Square isn't configured (SQUARE_ACCESS_TOKEN).")
+    launch = day_start(form.get("launch"))
+    start = day_start(form.get("start"))
+    if start >= launch:
+        raise ToolError("Import from a date before the launch date.")
+    db.set_setting(conn, "history_before", launch)
+    square.request_resync(conn, start)
+    db.audit(conn, who, "square_history", None, f"from {form.get('start')}, launch {form.get('launch')}")
+    conn.commit()
+    return done(request, "history", f"Sales before {form['launch']} are history only. Importing from {form['start']}: "
+                + square.describe_sync(square.sync(conn, wait=600)))
 
 
 def h_find_payment(request, conn, who, form):

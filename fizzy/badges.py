@@ -56,7 +56,8 @@ def streaks(visits, trading, today):
 
 def _items_tried(conn, cid):
     keys, cat = set(), stats.catalog(conn)
-    for r in conn.execute("SELECT raw_json FROM square_payments WHERE customer_id = ? AND raw_json IS NOT NULL", (cid,)):
+    for r in conn.execute("SELECT raw_json FROM square_payments WHERE customer_id = ? AND raw_json IS NOT NULL AND created_at >= ?",
+                          (cid, get_setting(conn, "history_before", "") or "")):  # history-only sales don't count
         for it in stats.line_items(stats._order_of(r), cat):
             keys.add(it["key"])
     return len(keys)

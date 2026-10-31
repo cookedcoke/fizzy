@@ -44,7 +44,7 @@ ACTION_LABELS = {
     "download_backup": "Downloaded a backup", "export": "Exported", "export_square_csv": "Exported for Square",
     "extend_due": "Gave more time to pay", "import": "Imported the school list", "item_costs": "Changed item costs",
     "login": "Signed in", "merge": "Merged customers", "notice": "Changed the noticeboard", "owner_unlock": "Owner unlocked",
-    "rule_add": "Added a custom badge or event", "rule_change": "Changed a custom badge or event",
+    "square_history": "Imported sales history", "rule_add": "Added a custom badge or event", "rule_change": "Changed a custom badge or event",
     "rule_pause": "Paused a custom badge or event", "rule_resume": "Restarted a custom badge or event",
     "rule_delete": "Deleted a custom badge or event", "qr_login": "Showed a sign-in code", "qr_login_used": "Signed in with a code", "me_signout": "Signed out their phones",
     "passkey_add": "Added a security key", "passkey_remove": "Removed a security key",

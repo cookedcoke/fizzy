@@ -81,6 +81,10 @@
   {% if not square_on %}<p class="red small">Square isn't configured.</p>{% endif %}
 {% elif id == 'resync' %}
   <label>From<input type="date" name="start" value="{{ week_ago }}" required></label>
+{% elif id == 'history' %}
+  <label>Fizzy's launch date <span class="muted">(sales before this earn nothing)</span><input type="date" name="launch" value="{{ history_before or today }}" required></label>
+  <label>Import from<input type="date" name="start" value="2024-01-01" required></label>
+  <p class="hint">Safe to run again. Takes a minute or two for a lot of history; Fizzy keeps working meanwhile.</p>
 {% elif id == 'find_payment' %}
   <label>Square payment ID<input type="text" name="payment_id" required></label>
 {% elif id == 'notice' %}

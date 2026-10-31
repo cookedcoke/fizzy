@@ -315,7 +315,8 @@ def purchases(conn, cid=None, since=None):
 
 def _all_purchases(conn, since=None):
     rows = []
-    for c in stats.checkouts(conn, since or "", "9999"):
+    since = max(since or "", get_setting(conn, "history_before", "") or "")  # history-only sales never count
+    for c in stats.checkouts(conn, since, "9999"):
         if not (c["items"] or c["sold_cents"]):
             continue
         at = _local(c["at"])

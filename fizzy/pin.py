@@ -68,7 +68,7 @@ ACTIONS = [
     ("school_tools", "Whole-school tools: reset points, revoke all, approve all, pause tabs, bonus for a period, "
                      "archive/restore many, merge, re-sync, sign everyone out",
      [("POST", r"^/tools/(reset_points|revoke_all|approve_eligible|pause_tabs|bonus_points|bulk_archive|restore|merge"
-               r"|resync|sign_out_all|delete_test_accounts)$")], "owner"),
+               r"|resync|history|sign_out_all|delete_test_accounts)$")], "owner"),
     ("downloads", "Download exports and backups",
      [("GET", r"^/tools/(export/|backup\.db)"), ("GET", r"^/export/"), ("POST", r"^/tools/download_backup$")], "owner"),
     ("other_tools", "Other tools: reports, raffle, noticeboard, find a payment", [("POST", r"^/tools/")], "pin"),

@@ -195,3 +195,22 @@ def test_key_from_settings(client, owner, monkeypatch):
     assert "Ask is on" in client.post("/settings/ask", data={"key": "AQ.Ab8RN6" + "x" * 40}).text   # Google's newer style
     client.post("/settings/ask", data={"remove": "1"})
     assert not ask.enabled()
+
+
+def test_history_import_earns_nothing(conn, cust):
+    from fizzy import badges, stats
+    c = cust()
+    db.set_setting(conn, "history_before", at(5, hour=0))
+    sale(conn, "old", ("Coke", 300), ts=at(10))                  # before launch, with the student attached
+    square.process_order(conn, {"id": "tabold", "state": "COMPLETED", "customer_id": "SQ1", "closed_at": at(9), "created_at": at(9),
+                                "line_items": [{"name": "Chips", "quantity": "1", "total_money": {"amount": 250}}],
+                                "discounts": [{"name": "Fizzy Tab", "percentage": "100", "applied_money": {"amount": 250}}]})
+    assert logic.points_balance(conn, c["id"]) == 0                # no points
+    assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 0      # no tab charge
+    sale(conn, "new", ("Coke", 300), ts=at(1))
+    assert logic.points_balance(conn, c["id"]) == 300              # after launch: as normal
+    lo, hi = stats.day_bounds(stats.today() - timedelta(days=12))[0], "9999"
+    assert len([x for x in stats.checkouts(conn, lo, hi) if x["items"]]) == 3   # but history is in the numbers
+    make(conn, {"kind": "badge", "name": "Two Cokes", "summary": "2 Cokes", "points": 10,
+                "need": {"metric": "units", "value": 2, "where": {"items": ["coke"]}}})
+    assert rules.award(conn, c["id"]) == []                        # and custom badges don't count it

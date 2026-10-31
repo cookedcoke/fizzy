@@ -107,6 +107,9 @@ thing that is possible. Item names must match the menu below (partial names are 
 
 {rules.SPEC}
 
+Fizzy launched {db.get_setting(conn, "history_before", "") or "(no launch date set: every sale counts)"} (UTC): sales before that were
+imported as history only, with no points or tabs, so use them for sales trends but not for anything about points.
+
 Menu items in Square: {', '.join(items) if items else '(none synced yet)'}
 Term dates: {'; '.join(f'{n}: {a} to {b}' for a, b, n in terms) if terms else 'none set (Settings, Term dates)'}
 Existing custom rules: use `list_rules`.
