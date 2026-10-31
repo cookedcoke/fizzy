@@ -25,7 +25,6 @@ router = APIRouter()
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 HISTORY = 40          # messages of context sent each time
 MAX_STEPS = 60        # lookups in one answer (a safety net: the time limit below is what normally stops it)
-TIME_LIMIT = 75       # seconds of looking things up, then it answers with what it has (Cloudflare cuts a page off at ~100s)
 ROW_CAP = 300
 
 
@@ -325,6 +324,56 @@ def _call(contents, system, tools=True):
     return cands[0]["content"]
 
 
+STREAM = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent"
+
+
+def _stream(contents, system, tools=True):
+    """Like _call, but yields ("delta", text) as Gemini writes, then ("content", the whole reply)."""
+    body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents, "tools": TOOLS,
+            "generationConfig": {"temperature": 0.3}}
+    if not tools:
+        body["toolConfig"] = {"functionCallingConfig": {"mode": "NONE"}}
+    texts, others, signature, finish, blocked = [], [], None, None, None
+    try:
+        with httpx.stream("POST", STREAM.format(model=model()), params={"alt": "sse"}, headers={"x-goog-api-key": api_key()},
+                          json=body, timeout=httpx.Timeout(90, read=120)) as r:
+            if r.status_code >= 400:
+                r.read()
+                _raise_for(r.status_code, r.text)
+            for line in r.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                try:
+                    chunk = json.loads(line[5:].strip())
+                except ValueError:
+                    continue
+                blocked = (chunk.get("promptFeedback") or {}).get("blockReason") or blocked
+                for cand in chunk.get("candidates") or []:
+                    finish = cand.get("finishReason") or finish
+                    for part in (cand.get("content") or {}).get("parts") or []:
+                        if "text" in part and not part.get("thought"):
+                            texts.append(part["text"])
+                            signature = part.get("thoughtSignature") or signature
+                            if part["text"]:
+                                yield "delta", part["text"]
+                        elif "text" not in part:
+                            others.append(part)  # function calls (whole, with their signature)
+    except httpx.HTTPError as e:
+        raise AskError(f"Couldn't reach Gemini ({e.__class__.__name__}). Try again.")
+    parts = ([{"text": "".join(texts), **({"thoughtSignature": signature} if signature else {})}] if texts else []) + others
+    if not parts:
+        raise AskError(f"Gemini didn't answer ({blocked or finish or 'no answer'}). Try rewording it.")
+    yield "content", {"role": "model", "parts": parts}
+
+
+def _raise_for(status, text):
+    if status in (400, 401, 403) and "key" in text.lower():
+        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Ask. (Google said: {text[:200]})")
+    if status == 429:
+        raise AskError("Gemini says too many requests right now. Wait a minute and try again.")
+    raise AskError(f"Gemini returned an error ({status}): {text[:300]}")
+
+
 def _history(conn, who):
     rows = conn.execute("SELECT role, content FROM ask_messages WHERE staff = ? ORDER BY id DESC LIMIT ?", (who, HISTORY)).fetchall()
     rows = list(reversed(rows))
@@ -349,7 +398,18 @@ def _save(conn, who, role, parts, shown=None):
     conn.commit()
 
 
-def ask(conn, who, text):
+STATUS = {"sales_summary": lambda a: f"Adding up sales by {a.get('group_by', '...')}",
+          "sales": lambda a: f"Looking through sales from {a.get('start', '?')} to {a.get('end', '?')}",
+          "sql": lambda a: "Checking the database",
+          "list_rules": lambda a: "Looking at your custom badges and events",
+          "preview_rule": lambda a: "Checking the rule and who'd qualify",
+          "propose": lambda a: "Writing up a suggestion"}
+
+
+def steps(conn, who, text, stream=True):
+    """Answer a question, yielding what's happening: ("status", "Adding up sales by weekday"),
+    ("delta", next bit of the answer), ("reset", None) when a draft turns into lookups, and
+    finally ("done", whole answer). Everything is saved as it goes."""
     if not enabled():
         raise AskError("Ask isn't set up: add a Gemini API key in Settings, Ask.")
     text = text.strip()[:4000]
@@ -358,28 +418,48 @@ def ask(conn, who, text):
     system = system_prompt(conn, who)
     _save(conn, who, "user", [{"text": text}], text)
     contents = _history(conn, who)
-    started = time.monotonic()
+
     for _ in range(MAX_STEPS):
-        if time.monotonic() - started > TIME_LIMIT:
-            break
-        content = _call(contents, system)
+        if stream:  # pass the words through as they arrive
+            content = None
+            for kind, value in _stream(contents, system):
+                if kind == "delta":
+                    yield "delta", value
+                else:
+                    content = value
+        else:
+            content = _call(contents, system)
         parts = content["parts"]
         calls = [p["functionCall"] for p in parts if "functionCall" in p]
         said = "".join(p.get("text", "") for p in parts if "text" in p and not p.get("thought")).strip()
         _save(conn, who, "model", parts, said or None)
         contents.append({"role": "model", "parts": parts})
         if not calls:
-            return said
-        answers = [{"functionResponse": {"name": c["name"], "response": run_tool(conn, who, c["name"], c.get("args") or {})}} for c in calls]
+            yield "done", said
+            return
+        if said:  # it wrote a bit, then went to look things up: that text stays as its own message
+            yield "reset", None
+        answers = []
+        for c in calls:
+            yield "status", STATUS.get(c["name"], lambda a: "Looking things up")(c.get("args") or {})
+            answers.append({"functionResponse": {"name": c["name"], "response": run_tool(conn, who, c["name"], c.get("args") or {})}})
         _save(conn, who, "tool", answers)
         contents.append({"role": "user", "parts": answers})
     # Out of steps: have it answer from what it found rather than give up.
     contents.append({"role": "user", "parts": [{"text": "(Fizzy: no more lookups. Answer now from what you've found, and say if it's incomplete.)"}]})
+    yield "status", "Putting it together"
     content = _call(contents, system, tools=False)
     said = "".join(p.get("text", "") for p in content["parts"] if "text" in p and not p.get("thought")).strip() \
         or "I couldn't get to an answer. Try asking a narrower question."
     _save(conn, who, "model", [{"text": said}], said)
-    return said
+    yield "done", said
+
+
+def ask(conn, who, text):
+    """The whole answer at once (no streaming): for the plain form post and tests."""
+    for kind, value in steps(conn, who, text, stream=False):
+        if kind == "done":
+            return value
 
 
 # ---- doing a suggestion -----------------------------------------------------------------------------------
@@ -473,6 +553,45 @@ def send(request: Request, text: str = Form(""), who=Depends(staff), conn=Depend
     except AskError as e:
         return back(request, "/ask#end", str(e), "bad")
     return RedirectResponse("/ask#end", status_code=303)
+
+
+@router.post("/ask/stream")
+def send_stream(request: Request, text: str = Form(""), who=Depends(staff)):
+    """The answer as it's written, as server-sent events (one JSON object per event)."""
+    def events():
+        conn = db.connect()
+        so_far, last = "", 0.0
+        try:
+            for kind, value in steps(conn, who, text):
+                if kind == "delta":  # the answer so far, formatted, so tables and lists build up properly
+                    so_far += value
+                    if time.monotonic() - last > 0.08:  # at most ~12 updates a second
+                        last = time.monotonic()
+                        yield _sse({"t": "html", "html": str(md(so_far))})
+                    continue
+                if kind != "status" and so_far:
+                    yield _sse({"t": "html", "html": str(md(so_far))})
+                if kind == "reset":
+                    so_far = ""
+                if kind == "status":
+                    yield _sse({"t": "status", "text": value + "..."})
+                elif kind == "reset":
+                    yield _sse({"t": "reset"})
+                else:
+                    yield _sse({"t": "done"})
+        except AskError as e:
+            yield _sse({"t": "error", "text": str(e)})
+        except Exception as e:  # never leave the page hanging
+            yield _sse({"t": "error", "text": f"Something went wrong ({e.__class__.__name__}). Try again."})
+        finally:
+            conn.close()
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _sse(obj):
+    return f"data: {json.dumps(obj)}\n\n"
 
 
 @router.post("/ask/clear")

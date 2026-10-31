@@ -242,3 +242,22 @@ def test_ask_markdown():
     assert "<em>it</em> <em>it</em> <strong>b</strong> 2<em>3</em>4 snake_case <del>no</del>" in out
     assert 'href="https://x.co"' in out and "javascript:" not in out and "&lt;b&gt;" in out
     assert '<td class="n"><strong>16</strong></td>' in out and "<hr" in out and "<blockquote>" in out and "<pre>" in out
+
+
+def test_ask_streams_steps_then_the_answer(client, monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    calls = iter([
+        [("content", {"role": "model", "parts": [{"functionCall": {"name": "sales_summary", "args": {"start": "2026-01-01", "end": "2026-01-02", "group_by": "weekday"}}}]})],
+        [("delta", "Mondays "), ("delta", "are **slowest**."), ("content", {"role": "model", "parts": [{"text": "Mondays are **slowest**."}]})],
+    ])
+    monkeypatch.setattr(ask, "_stream", lambda contents, system, tools=True: iter(next(calls)))
+    login(client)
+    body = client.post("/ask/stream", data={"text": "slowest day?"}).text
+    events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
+    kinds = [e["t"] for e in events]
+    assert kinds[0] == "status" and kinds[-1] == "done" and set(kinds[1:-1]) == {"html"}
+    assert events[0]["text"] == "Adding up sales by weekday..." and "<strong>slowest</strong>" in events[-2]["html"]
+    assert "<strong>slowest</strong>" in client.get("/ask").text            # saved, and rendered properly after
+    monkeypatch.setattr(ask, "_stream", lambda *a, **k: (_ for _ in ()).throw(ask.AskError("Gemini says too many requests")))
+    body = client.post("/ask/stream", data={"text": "again"}).text
+    assert '"t": "error"' in body and "too many requests" in body             # errors arrive as an event, never a hang

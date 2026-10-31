@@ -74,18 +74,65 @@
     return fetch(form.action, { method: "POST", body: extra || new FormData(form), credentials: "same-origin" })
       .then(function (r) { if (r.redirected && /\/login/.test(r.url)) { location.href = r.url; throw 0; } return r.text(); });
   }
+  // Live: steps ("Adding up sales by weekday...") then the answer typing itself out. When it's done,
+  // the chat is reloaded from Fizzy so tables, lists and suggestion cards render properly.
+  function bubble(cls) { var d = document.createElement("div"); d.className = "bubble them " + cls; document.getElementById("end").before(d); return d; }
+  function live(el, text) {  // a quick, safe render while it's still writing
+    var h = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+    el.innerHTML = h + '<span class="caret"></span>';
+  }
   f.addEventListener("submit", function (e) {
     e.preventDefault();
     if (f.dataset.busy || !t.value.trim()) return;
     f.dataset.busy = 1; b.disabled = true;
     var q = t.value, empty = chat.querySelector(".chat-empty"); if (empty) empty.remove();
     var me = document.createElement("div"); me.className = "bubble me"; me.textContent = q;
-    var wait = document.createElement("div"); wait.className = "bubble them thinking"; wait.innerHTML = "<i></i><i></i><i></i>";
-    document.getElementById("end").before(me, wait); down(true);
+    document.getElementById("end").before(me);
+    var wait = bubble("thinking"); wait.innerHTML = "<i></i><i></i><i></i><span class=st></span>";
+    var out = null, text = "", failed = false;
+    down(true);
     var data = new FormData(f); t.value = ""; grow();
-    post(f, data).then(refresh)
-      .catch(function (err) { if (err !== 0) { t.value = q; grow(); wait.className = "bubble them err"; wait.textContent = "Couldn't reach Fizzy. Check the connection and try again."; } })
-      .then(function () { delete f.dataset.busy; b.disabled = false; if (!touch) t.focus(); });
+    function finish() { delete f.dataset.busy; b.disabled = false; if (!touch) t.focus(); }
+    function fail(msg) {
+      failed = true; t.value = q; grow();
+      (out || wait).className = "bubble them err"; (out || wait).textContent = msg; if (out) wait.remove();
+    }
+    function handle(ev) {
+      if (ev.t === "status") { wait.querySelector(".st").textContent = ev.text; down(true); }
+      else if (ev.t === "delta") {
+        if (!out) { out = bubble("streaming"); wait.remove(); }
+        text += ev.text; live(out, text); down(false);
+      } else if (ev.t === "html") {
+        if (!out) { out = bubble("streaming"); wait.remove(); }
+        out.innerHTML = ev.html; var c = document.createElement("span"); c.className = "caret";
+        (out.lastElementChild && /^(P|LI|TD)$/.test(out.lastElementChild.tagName) ? out.lastElementChild : out).appendChild(c);
+        down(false);
+      } else if (ev.t === "reset") {  // it wrote a bit, now it's looking things up again
+        if (out) { out.className = "bubble them"; var k = out.querySelector(".caret"); if (k) k.remove(); }
+        out = null; text = ""; wait = bubble("thinking"); wait.innerHTML = "<i></i><i></i><i></i><span class=st></span>";
+      } else if (ev.t === "error") fail(ev.text);
+    }
+    fetch("/ask/stream", { method: "POST", body: data, credentials: "same-origin" }).then(function (r) {
+      var type = r.headers.get("content-type") || "";
+      if (r.redirected && /\/login/.test(r.url)) { location.href = r.url; throw 0; }
+      if (type.indexOf("event-stream") < 0) return r.text().then(refresh);  // e.g. needs the passcode: show what Fizzy said
+      var reader = r.body.getReader(), dec = new TextDecoder(), buf = "";
+      return (function pump() {
+        return reader.read().then(function (res) {
+          if (res.done) return;
+          buf += dec.decode(res.value, { stream: true });
+          var parts = buf.split("\n\n"); buf = parts.pop();
+          parts.forEach(function (chunk) {
+            var line = chunk.split("\n").filter(function (l) { return l.indexOf("data:") === 0; })[0];
+            if (line) { try { handle(JSON.parse(line.slice(5))); } catch (err) {} }
+          });
+          return pump();
+        });
+      })().then(function () {
+        if (!failed) return fetch("/ask", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.text(); }).then(refresh);
+      });
+    }).catch(function (err) { if (err !== 0) fail("Couldn't reach Fizzy. Check the connection and try again."); }).then(finish);
   });
   // "No thanks" without a reload too. "Do it" goes the normal way so the passcode box can ask first.
   chat.addEventListener("submit", function (e) {
