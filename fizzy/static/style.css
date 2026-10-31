@@ -683,12 +683,8 @@ header .clock.squeezed { display: none !important }
 @keyframes rise { from { opacity: 0; transform: translateY(4px) } }
 @keyframes drop { from { opacity: 0; transform: translateY(-4px) } }
 @keyframes grow { from { transform: scaleY(0) } }
-/* Page to page: the page fades across, the header stays put (browsers without it just change page). */
-@view-transition { navigation: auto }
-header { view-transition-name: site-header }
-::view-transition-group(site-header) { animation-duration: 0s }
-::view-transition-old(root) { animation: .1s ease-in both reverse fade }
-::view-transition-new(root) { animation: .22s var(--ease) both rise }
+/* Each page fades in under a header that stays put (the same in every browser and the Mac app) */
+html:not(.quiet) main { animation: rise .22s var(--ease) both }
 /* Things that open */
 dialog[open] { animation: rise .18s var(--ease) }
 dialog[open]::backdrop { animation: fade .18s ease }
@@ -706,8 +702,6 @@ input, select, textarea { transition: border-color .12s, box-shadow .12s, backgr
 a, .nav-menu a, header nav a { transition: color .12s, background-color .12s, text-decoration-color .12s }
 tr { transition: background-color .12s }
 html.quiet .bars .pair i, html.quiet .flash { animation: none }
-html.nofade:not(.quiet) main { animation: rise .22s var(--ease) both }
 @media (prefers-reduced-motion: reduce) {
-  @view-transition { navigation: none }
-  html.nofade main, dialog[open], dialog[open]::backdrop, .nav-menu, .results, .jobbar, .bars .pair i { animation: none !important }
+  main, dialog[open], dialog[open]::backdrop, .nav-menu, .results, .jobbar, .bars .pair i { animation: none !important }
 }
