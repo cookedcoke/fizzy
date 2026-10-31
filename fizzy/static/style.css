@@ -676,3 +676,37 @@ header .clock.squeezed { display: none !important }
 .closed-day p { margin: .35rem 0; }
 [data-ask] button { transition: transform .12s ease, opacity .2s ease } [data-ask] button:active:not(:disabled) { transform: scale(.94) }
 [data-ask] button:disabled { opacity: .55 }
+
+/* ---- motion: quick and quiet. Everything settles in under a quarter of a second. ---- */
+:root { --ease: cubic-bezier(.2, .8, .2, 1) }
+@keyframes fade { from { opacity: 0 } }
+@keyframes rise { from { opacity: 0; transform: translateY(4px) } }
+@keyframes drop { from { opacity: 0; transform: translateY(-4px) } }
+@keyframes grow { from { transform: scaleY(0) } }
+/* Page to page: the page fades across, the header stays put (browsers without it just change page). */
+@view-transition { navigation: auto }
+header { view-transition-name: site-header }
+::view-transition-group(site-header) { animation-duration: 0s }
+::view-transition-old(root) { animation: .1s ease-in both reverse fade }
+::view-transition-new(root) { animation: .22s var(--ease) both rise }
+/* Things that open */
+dialog[open] { animation: rise .18s var(--ease) }
+dialog[open]::backdrop { animation: fade .18s ease }
+.nav-more[open] .nav-menu { animation: drop .14s var(--ease) }
+.nav-more > summary::after { transition: transform .15s var(--ease) }
+.nav-more[open] > summary::after { transform: translateY(1px) rotate(225deg) }
+.results:not(:empty) { animation: drop .12s var(--ease) }
+.jobbar:not([hidden]) { animation: rise .2s var(--ease) }
+/* Charts grow up once when the page opens (not on the dashboard's quiet refresh) */
+.bars .pair i { transform-origin: 50% 100%; animation: grow .45s var(--ease) both }
+.bars .bar:nth-child(n+4) .pair i { animation-delay: 20ms } .bars .bar:nth-child(n+8) .pair i { animation-delay: 40ms }
+.bars .bar:nth-child(n+12) .pair i { animation-delay: 60ms }
+/* Small feedback */
+input, select, textarea { transition: border-color .12s, box-shadow .12s, background-color .12s }
+a, .nav-menu a, header nav a { transition: color .12s, background-color .12s, text-decoration-color .12s }
+tr { transition: background-color .12s }
+html.quiet .bars .pair i, html.quiet .flash { animation: none }
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none }
+  dialog[open], dialog[open]::backdrop, .nav-menu, .results, .jobbar, .bars .pair i { animation: none !important }
+}

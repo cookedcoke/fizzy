@@ -318,7 +318,7 @@
     var busy = function () { var el = document.activeElement; return typing() && !(el.matches("[data-search]") && !el.value); };
     try {  // keep the scroll position across the reload
       var y = sessionStorage.getItem("fizzy-autorefresh-y");
-      if (y) { sessionStorage.removeItem("fizzy-autorefresh-y"); scrollTo(0, Number(y)); }
+      if (y) { sessionStorage.removeItem("fizzy-autorefresh-y"); scrollTo(0, Number(y)); document.documentElement.classList.add("quiet"); }
     } catch (e) { /* private mode */ }
     ["keydown", "pointerdown", "pointermove", "input", "scroll", "wheel"].forEach(function (ev) {
       addEventListener(ev, function () { last = Date.now(); }, { passive: true, capture: true });
