@@ -530,7 +530,7 @@ def h_takings(request, conn, who, form):
     rows = []
     for r in conn.execute(
         "SELECT kind, tender, COUNT(*) AS n, SUM(amount_cents) AS total FROM square_payments "
-        "WHERE created_at >= ? AND created_at < ? GROUP BY kind, tender ORDER BY kind, total DESC", (start, end)
+        "WHERE created_at >= ? AND created_at < ? AND kind != 'void' GROUP BY kind, tender ORDER BY kind, total DESC", (start, end)
     ):
         label = {"sale": "Square: sales", "tab_charge": "Put on tabs (not money)", "tab_repayment": "Square: tab repayments"}[r["kind"]]
         rows.append([label, r["tender"], r["n"], money(r["total"])])
@@ -698,7 +698,7 @@ def h_integrity(request, conn, who, form):
         n = conn.execute(sql).fetchone()[0]
         checks.append([label, n, "ok" if n == 0 else fix])
 
-    count("Square payments with no customer", "SELECT COUNT(*) FROM square_payments WHERE customer_id IS NULL",
+    count("Square payments with no customer", "SELECT COUNT(*) FROM square_payments WHERE customer_id IS NULL AND kind != 'void'",
           link("Attach customers in Square, or link their Square IDs", "/square?show=unlinked"))
     count("Customers with negative points",
           "SELECT COUNT(*) FROM (SELECT customer_id FROM points_ledger GROUP BY customer_id HAVING SUM(delta) < 0)",

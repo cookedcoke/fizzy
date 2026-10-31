@@ -31,7 +31,7 @@ def trading_days(conn, since_days=400):
     since = (stats.today() - timedelta(days=since_days)).isoformat()
     days = {_local_day(r[0]) for r in conn.execute(
         "SELECT p.created_at FROM square_payments p LEFT JOIN customers c ON c.id = p.customer_id "
-        "WHERE p.created_at >= ? AND (c.kind IS NULL OR c.kind != 'test')", (since,))}
+        "WHERE p.created_at >= ? AND p.kind != 'void' AND (c.kind IS NULL OR c.kind != 'test')", (since,))}
     for a, b, _ in logic.closed_days(conn):
         days = {d for d in days if not a <= d.isoformat() <= b}
     return days

@@ -351,3 +351,40 @@ def test_history_sales_dont_count_as_nobody_on_them(client):
     assert "1 sale this week with nobody on it" in client.get("/square").text
     page = client.get("/transactions?start=2020-01-01&show=nobody").text
     assert page.count('class="assign"') == 1
+
+
+def test_not_a_real_sale_drops_out_of_everything(client, owner):
+    from fizzy import square, stats
+    from tests.test_custom_rules import at
+    from tests.test_rules import order, pay
+    conn = db.connect()
+    cid = _customer()
+    conn.execute("UPDATE customers SET square_customer_id = 'SQ1' WHERE id = ?", (cid,))
+    square.process_payment(conn, pay("big", 6000, ts=at(1), order_id="ob"), order(("Custom amount", 6000), oid="ob"))
+    square.process_payment(conn, pay("ok", 300, ts=at(1), order_id="oo"), order(("Coke", 300), oid="oo"))
+    conn.commit()
+    lo, hi = stats.day_bounds(stats.today() - timedelta(days=1))
+    assert sum(c["sold_cents"] for c in stats.checkouts(conn, lo, hi)) == 6300
+    login(client)
+    assert "Enter the passcode" in client.post("/square/payments/big/kind", data={"kind": "void"}).text   # big money: owner
+    _unlock(client, "owner-pw", 2)
+    client.post("/square/payments/big/kind", data={"kind": "void"})
+    assert sum(c["sold_cents"] for c in stats.checkouts(conn, lo, hi)) == 300                          # gone from the numbers
+    assert logic.points_balance(conn, cid) == 300                                                       # and its points with it
+    conn.close()
+
+
+def test_payments_over_100_dollars_are_not_real_sales(conn, cust):
+    from fizzy import square, stats
+    from tests.test_custom_rules import at
+    from tests.test_rules import order, pay
+    c = cust()
+    square.process_payment(conn, pay("huge", 100000000, ts=at(1), order_id="oh"), order(("Custom amount", 100000000), oid="oh"))
+    square.process_payment(conn, pay("fine", 9900, ts=at(1), order_id="of"), order(("Lots of Coke", 9900), oid="of"))
+    lo, hi = stats.day_bounds(stats.today() - timedelta(days=1))
+    assert sum(x["sold_cents"] for x in stats.checkouts(conn, lo, hi)) == 9900
+    assert logic.points_balance(conn, c["id"]) == 9900
+    assert conn.execute("SELECT kind FROM square_payments WHERE square_payment_id = 'huge'").fetchone()[0] == "void"
+    # one that came in before the limit existed gets fixed at start-up
+    conn.execute("UPDATE square_payments SET kind = 'sale' WHERE square_payment_id = 'huge'")
+    assert square.void_huge(conn) == 1 and sum(x["sold_cents"] for x in stats.checkouts(conn, lo, hi)) == 9900

@@ -46,7 +46,7 @@
       <td class="n">{{ p.amount_cents|money }}</td><td class="small hide-md">{{ p.tender }}</td><td class="small hide-sm items">{{ p['items'] }}</td>
       <td><form class="inline" method="post" action="/square/payments/{{ p.square_payment_id }}/kind">
         <select name="kind" style="height:28px;width:auto" data-was="{{ p.kind }}" onchange="var s=this,v=s.value;s.value=s.dataset.was;fizzyAsk('Change how this payment is counted?',function(){s.value=v;s.form.requestSubmit()})">
-          {% for k, l in [('sale','Sale'),('tab_charge','Tab charge'),('tab_repayment','Tab repayment')] %}<option value="{{ k }}" {{ 'selected' if k == p.kind }}>{{ l }}</option>{% endfor %}
+          {% for k, l in [('sale','Sale'),('tab_charge','Tab charge'),('tab_repayment','Tab repayment'),('void','Not a real sale')] %}<option value="{{ k }}" {{ 'selected' if k == p.kind }}>{{ l }}</option>{% endfor %}
         </select></form></td>
       <td class="n"><a class="small" href="/square/payments/{{ p.square_payment_id }}" target="_blank" title="What Square sent">Raw</a></td></tr>
     {% else %}<tr><td colspan="7" class="empty">No payments yet.</td></tr>{% endfor %}

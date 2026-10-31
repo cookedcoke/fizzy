@@ -111,6 +111,7 @@ async def lifespan(app):
     conn = db.connect()
     db.init(conn)
     badges.baseline(conn)  # once: badges people already had don't pay out when this is switched on
+    square.void_huge(conn)  # payments over $100 are mistakes or tests, not sales
     conn.close()
     if not config.PASSWORD or not config.SECRET_KEY:
         raise RuntimeError("Set FIZZY_PASSWORD and FIZZY_SECRET_KEY (see .env.example).")
@@ -553,7 +554,7 @@ def register(app):
             "WHERE t.breach IS NOT NULL AND t.breach_ack_by IS NULL ORDER BY t.charged_at DESC"
         ).fetchall()
         unlinked_tabs = conn.execute(
-            "SELECT * FROM square_payments WHERE customer_id IS NULL AND kind != 'sale' AND created_at >= ? ORDER BY created_at DESC",
+            "SELECT * FROM square_payments WHERE customer_id IS NULL AND kind NOT IN ('sale', 'void') AND created_at >= ? ORDER BY created_at DESC",
             (square.live_from(conn),)).fetchall()
         return render(
             request, "dashboard.html", total_owed=total_owed, total_overdue=total_overdue, overdue=overdue,
@@ -893,7 +894,7 @@ def register(app):
 
     @app.get("/square", response_class=HTMLResponse)
     def square_page(request: Request, show: str = "", who=Depends(staff), conn=Depends(get_conn)):
-        where = "WHERE customer_id IS NULL AND sp.created_at >= ?" if show == "unlinked" else ""
+        where = "WHERE customer_id IS NULL AND sp.kind != 'void' AND sp.created_at >= ?" if show == "unlinked" else ""
         rows = conn.execute(
             f"SELECT sp.*, c.name FROM square_payments sp LEFT JOIN customers c ON c.id = sp.customer_id {where} "
             "ORDER BY sp.created_at DESC LIMIT 200", (square.live_from(conn),) if where else ()
@@ -926,7 +927,7 @@ def register(app):
                           conn=Depends(get_conn)):
         square.reclassify(conn, pid, kind, who)
         conn.commit()
-        return back(request, request.headers.get("referer") or "/square", f"Payment marked as {kind}.")
+        return back(request, request.headers.get("referer") or "/square", {'void': 'Marked as not a real sale: it no longer counts anywhere. Refund it in Square too if it was really charged.', 'sale': 'Now counted as a sale.', 'tab_charge': 'Now counted as a tab charge.', 'tab_repayment': 'Now counted as a tab repayment.'}.get(kind, 'Saved.'))
 
     @app.post("/square/payments/{pid}/assign")
     def square_assign(request: Request, pid: str, customer: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):

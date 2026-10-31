@@ -232,7 +232,10 @@ def live_from(conn):
 
 def history_only(conn, sp):
     """Sales from before Fizzy's launch date (Tools, Import sales history) are kept for the numbers
-    only: no points, tab charges, repayments or refunds come from them, now or later."""
+    only: no points, tab charges, repayments or refunds come from them, now or later. A payment
+    marked "Not a real sale" (kind 'void': a mistake or test) does nothing at all."""
+    if sp["kind"] == "void":
+        return True
     before = get_setting(conn, "history_before")
     return bool(before) and sp["created_at"] < before
 
@@ -345,7 +348,13 @@ def apply_refund_effects(conn, sp, amount, created_at):
         logic.reconcile_tab_points(conn, cid, created_at)
 
 
+MAX_SALE_CENTS = 10000  # nobody spends $100 at a tuck shop: anything bigger is a mistake or a test
+
+
 def _insert_sp(conn, sp):
+    if sp["amount_cents"] > MAX_SALE_CENTS:  # e.g. a $1,000,000 custom amount: kept, but counts for nothing
+        sp = {**sp, "kind": "void"}
+        audit(conn, "square", "reclassify", sp["customer_id"], f"{sp['square_payment_id']} -> void (over ${MAX_SALE_CENTS // 100})")
     conn.execute(
         "INSERT INTO square_payments VALUES (:square_payment_id, :square_order_id, :square_customer_id, :customer_id, "
         ":kind, :amount_cents, :tender, :items, :raw_json, :created_at, :processed_at)",
@@ -495,10 +504,22 @@ def process_refund(conn, refund, return_order=None):
     return True
 
 
+def void_huge(conn):
+    """Payments over the limit that arrived before it existed: mark them "Not a real sale". Runs at start-up."""
+    n = 0
+    for sp in conn.execute("SELECT * FROM square_payments WHERE amount_cents > ? AND kind != 'void'", (MAX_SALE_CENTS,)).fetchall():
+        undo_payment_effects(conn, sp)
+        conn.execute("UPDATE square_payments SET kind = 'void' WHERE square_payment_id = ?", (sp["square_payment_id"],))
+        audit(conn, "square", "reclassify", sp["customer_id"], f"{sp['square_payment_id']} -> void (over ${MAX_SALE_CENTS // 100})")
+        n += 1
+    conn.commit()
+    return n
+
+
 def reclassify(conn, square_payment_id, kind, staff):
     """Staff override when Square detection got a payment wrong."""
     sp = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (square_payment_id,)).fetchone()
-    if sp is None or kind not in ("sale", "tab_charge", "tab_repayment") or sp["kind"] == kind:
+    if sp is None or kind not in ("sale", "tab_charge", "tab_repayment", "void") or sp["kind"] == kind:
         return
     undo_payment_effects(conn, sp)
     conn.execute("UPDATE square_payments SET kind = ? WHERE square_payment_id = ?", (kind, square_payment_id))
@@ -548,7 +569,7 @@ def unclaimed(conn, hours=CLAIM_HOURS, limit=6):
     """Recent checkouts with nobody attached, newest first."""
     since = max((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds"), live_from(conn))
     groups = {}
-    for r in conn.execute("SELECT * FROM square_payments WHERE customer_id IS NULL AND created_at >= ? "
+    for r in conn.execute("SELECT * FROM square_payments WHERE customer_id IS NULL AND kind != 'void' AND created_at >= ? "
                           "ORDER BY created_at DESC", (since,)):
         g = groups.setdefault(_checkout_key(r), {"key": _checkout_key(r), "at": r["created_at"], "items": "",
                                                  "sale_cents": 0, "tab_cents": 0, "repay_cents": 0, "tenders": []})

@@ -99,7 +99,8 @@ def checkouts(conn, start, end):
     cat = catalog(conn)
     for r in conn.execute("SELECT sp.*, c.name AS customer_name FROM square_payments sp "
                           "LEFT JOIN customers c ON c.id = sp.customer_id "
-                          "WHERE sp.created_at >= ? AND sp.created_at < ? ORDER BY sp.created_at, sp.square_payment_id",
+                          "WHERE sp.created_at >= ? AND sp.created_at < ? AND sp.kind != 'void' "  # "Not a real sale"
+                          "ORDER BY sp.created_at, sp.square_payment_id",
                           (start, end)):
         k = _key(r)
         g = groups.get(k)
@@ -121,7 +122,8 @@ def checkouts(conn, start, end):
 
 def refunds_cents(conn, start, end):
     return conn.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM square_refunds WHERE created_at >= ? AND created_at < ? "
-                        "AND square_refund_id NOT LIKE 'return:%'", (start, end)).fetchone()[0]
+                        "AND square_refund_id NOT LIKE 'return:%' AND square_payment_id NOT IN "
+                        "(SELECT square_payment_id FROM square_payments WHERE kind = 'void')", (start, end)).fetchone()[0]
 
 
 def hand_repayments_cents(conn, start, end):
