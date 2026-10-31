@@ -237,6 +237,8 @@ def test_sales_summary_and_answering_when_out_of_steps(client, monkeypatch):
 
 
 def test_ask_markdown():
-    out = str(ask.md("*it* _it_ **b** 2*3*4 snake_case ~~no~~ [ok](https://x.co) [bad](javascript:alert(1)) <b>x</b>"))
-    assert "<i>it</i> <i>it</i> <b>b</b> 2*3*4 snake_case <s>no</s>" in out
-    assert '<a href="https://x.co"' in out and "javascript" not in out.split("[bad]")[0] and "&lt;b&gt;" in out
+    out = str(ask.md("*it* _it_ **b** 2*3*4 snake_case ~~no~~ [ok](https://x.co) [bad](javascript:alert(1)) <b>x</b>\n\n"
+                     "| A | N |\n|---|---|\n| **Fri** | **16** |\n\n---\n\n> q\n\n```\ncode\n```"))
+    assert "<em>it</em> <em>it</em> <strong>b</strong> 2*3*4 snake_case <del>no</del>" in out
+    assert 'href="https://x.co"' in out and "javascript:" not in out and "&lt;b&gt;" in out
+    assert '<td class="n"><strong>16</strong></td>' in out and "<hr" in out and "<blockquote>" in out and "<pre>" in out

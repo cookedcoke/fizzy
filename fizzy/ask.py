@@ -425,48 +425,29 @@ def _pay_everyone(conn):
 EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\u2300-\u23FF\uFE0F]")
 
 
-def md(text):
-    """Just enough markdown for Gemini's answers: paragraphs, lists, **bold**, `code`, tables.
-    Emojis are dropped: the staff site has none."""
-    out, lines, i = [], EMOJI.sub("", text or "").splitlines(), 0
+_md = None
 
-    def inline(s):
-        s = str(escape(s))
-        s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
-        s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
-        s = re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"<i>\1</i>", s)   # *italic*, not 2*3*4
-        s = re.sub(r"(?<![\w])_(?!\s)(.+?)(?<!\s)_(?![\w])", r"<i>\1</i>", s)       # _italic_, not snake_case
-        s = re.sub(r"~~(.+?)~~", r"<s>\1</s>", s)
-        s = re.sub(r"\[([^\]]+)\]\((https?://[^\s)]+|/[^\s)]*)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', s)
-        return s
-    while i < len(lines):
-        ln = lines[i]
-        if ln.strip().startswith("|") and i + 1 < len(lines) and re.match(r"^\s*\|?\s*:?-{2,}", lines[i + 1]):
-            head = [c.strip() for c in ln.strip().strip("|").split("|")]
-            i += 2
-            body = []
-            while i < len(lines) and lines[i].strip().startswith("|"):
-                body.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
-                i += 1
-            num = lambda c: re.fullmatch(r"[-+$]?[\d,.]+%?", c or "") is not None
-            out.append('<div class="scroll"><table><tr>' + "".join(f"<th>{inline(h)}</th>" for h in head) + "</tr>" +
-                       "".join("<tr>" + "".join(f'<td class="{"n" if num(c) else ""}">{inline(c)}</td>' for c in r) + "</tr>" for r in body) +
-                       "</table></div>")
-            continue
-        if re.match(r"^\s*([-*]|\d+\.)\s+", ln):
-            tag = "ol" if re.match(r"^\s*\d+\.", ln) else "ul"
-            items = []
-            while i < len(lines) and re.match(r"^\s*([-*]|\d+\.)\s+", lines[i]):
-                items.append(f"<li>{inline(re.sub(r'^\s*([-*]|\d+\.)\s+', '', lines[i]))}</li>")
-                i += 1
-            out.append(f"<{tag}>{''.join(items)}</{tag}>")
-            continue
-        if re.match(r"^#{1,4}\s", ln):
-            out.append(f"<p><b>{inline(ln.lstrip('#').strip())}</b></p>")
-        elif ln.strip():
-            out.append(f"<p>{inline(ln)}</p>")
-        i += 1
-    return Markup("".join(out))
+
+def md(text):
+    """Gemini's markdown as HTML (mistune: tables, lists, quotes, code, links...). Raw HTML is escaped
+    and javascript: links are blocked, so an answer can't put anything live on the page. Number
+    columns line up on the right, wide tables scroll, and emojis are dropped (the staff site has none)."""
+    global _md
+    if _md is None:
+        import mistune
+        _md = mistune.create_markdown(escape=True, plugins=["table", "strikethrough", "url", "task_lists"])
+    html = _md(EMOJI.sub("", text or ""))
+    html = html.replace("<table>", '<div class="scroll"><table>').replace("</table>", "</table></div>")
+    html = re.sub(r'<a href="(?!#harmful)', '<a target="_blank" rel="noopener" href="', html)
+
+    def cell(m):  # numbers (even bold ones) on the right, like every other table in Fizzy
+        tag, attrs, inner = m.group(1), m.group(2), m.group(3)
+        plain = re.sub(r"<[^>]+>", "", inner).strip()
+        if "text-align" not in attrs and re.fullmatch(r"[-+]?\$?[\d,]+(\.\d+)?%?", plain):
+            attrs += ' class="n"'
+        return f"<{tag}{attrs}>{inner}</{tag}>"
+    html = re.sub(r"<(td|th)([^>]*)>(.*?)</\1>", cell, html, flags=re.S)
+    return Markup(html)
 
 
 @router.get("/ask", response_class=HTMLResponse)

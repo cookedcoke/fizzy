@@ -7,3 +7,4 @@ httpx==0.28.1
 pyjwt[crypto]==2.10.1
 webauthn==2.5.2
 segno==1.6.6
+mistune==3.0.2

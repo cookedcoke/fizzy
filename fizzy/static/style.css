@@ -651,3 +651,11 @@ header .clock.squeezed { display: none !important }
 .spin { width: 14px; height: 14px; border: 2px solid var(--line-strong); border-top-color: var(--ink); border-radius: 50%; animation: spin .8s linear infinite; flex: none }
 @keyframes spin { to { transform: rotate(360deg) } }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s } }
+.bubble h1, .bubble h2, .bubble h3, .bubble h4 { font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--fg); margin: 12px 0 6px }
+.bubble h1:first-child, .bubble h2:first-child, .bubble h3:first-child { margin-top: 0 }
+.bubble hr { border: none; border-top: 1px solid var(--line); margin: 12px 0 }
+.bubble blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid var(--line-strong); color: var(--muted) }
+.bubble pre { background: var(--hover); border-radius: 8px; padding: 10px; overflow-x: auto; font-size: 12.5px; margin: 8px 0 }
+.bubble pre code { background: none; border: none; padding: 0 }
+.bubble li > ul, .bubble li > ol { margin: 2px 0 }
+.bubble table th { white-space: nowrap }
