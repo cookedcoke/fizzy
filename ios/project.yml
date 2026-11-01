@@ -23,6 +23,8 @@ targets:
         INFOPLIST_FILE: Fizzy/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Fizzy
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "To save a receipt photo from Fizzy to your photos."
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "To reach a test Fizzy server on the local network, if you set one in This app."
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

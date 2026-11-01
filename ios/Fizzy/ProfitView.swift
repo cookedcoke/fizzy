@@ -14,7 +14,7 @@ struct ProfitView: View {
                     ForEach(["today", "7", "30"], id: \.self) { Text(d.ranges[$0][0].string).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: range) { Task { page.query = ["range": range]; await page.load(); fill() } }
+                .onChange(of: range) { Task { page.query = ["range": range]; await page.load() } }
                 StatGrid(stats: [
                     Stat(title: "Revenue", value: Fmt.money(d.pr.revenue.int), sub: "\(d.label.string.lowercased()), items with a cost"),
                     Stat(title: "Cost of goods", value: Fmt.money(d.pr.cost.int)),
@@ -54,19 +54,25 @@ struct ProfitView: View {
                 }
             }
         }
-        .task { await page.load(); fill() }
+        .onChange(of: page.data) { fill(keepTyped: true) }   // every load, or a Square refresh re-keys the rows and Save would blank them
     }
 
     private var hasChanges: Bool { costs != original }
 
-    private func fill() {
+    /// The server's costs; what's been typed and not yet saved stays.
+    private func fill(keepTyped: Bool) {
         var m: [String: String] = [:]
         for r in page.data.pr["items"].array + page.data.idle.array where !r.custom.bool {
             m[r.key.string] = r.cost_each.isNull ? "" : dollars(r.cost_each.int)
         }
-        costs = m
+        var kept = m
+        if keepTyped {
+            for (key, typed) in costs where typed != original[key] && m[key] != nil { kept[key] = typed }
+        }
+        costs = kept
         original = m
-        range = page.data.range.string
+        let serverRange = page.data.range.string
+        if !serverRange.isEmpty, serverRange != range { range = serverRange }
     }
 
     private func costRow(_ r: J, sold: Bool) -> some View {
@@ -95,13 +101,16 @@ struct ProfitView: View {
         }
     }
 
+    /// Only the costs that were changed go: a row that wasn't touched keeps whatever the server has.
     private func save() async {
         var form: Params = []
         for r in page.data.pr["items"].array + page.data.idle.array where !r.custom.bool {
-            form.append(("name", r.name.string)); form.append(("key", r.key.string)); form.append(("base", r.base.string))
-            form.append(("cost", costs[r.key.string] ?? ""))
+            let key = r.key.string
+            guard let typed = costs[key], typed != original[key] else { continue }
+            form += [("name", r.name.string), ("key", key), ("base", r.base.string), ("cost", Fmt.normalised(typed))]
         }
+        guard !form.isEmpty else { return }
         let o = await page.submit("profit", form)
-        if o.ok { fill() }
+        if o.ok { fill(keepTyped: false) }   // refused: what was typed stays, with the server's reason on top
     }
 }

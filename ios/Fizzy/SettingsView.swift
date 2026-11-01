@@ -67,13 +67,20 @@ struct AppSettingsView: View {
     }
 
     private func save() {
-        if address.trimmingCharacters(in: .whitespaces).isEmpty { baseURL = ""; return }
+        let before = API.shared.baseURL
+        if address.trimmingCharacters(in: .whitespaces).isEmpty { baseURL = ""; moved(from: before); return }
         if let url = API.normalise(address) {
             baseURL = url == API.defaultBaseURL ? "" : url
             address = baseURL
+            moved(from: before)
         } else {
             message = ("That doesn't look like a web address.", false)
         }
+    }
+
+    /// Pointed at another Fizzy: the sign-in with the old one is forgotten here, rather than staying live for 30 days.
+    private func moved(from before: URL) {
+        if API.shared.baseURL != before { API.shared.forgetSession(at: before) }
     }
 
     private func register() {

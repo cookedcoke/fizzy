@@ -144,7 +144,8 @@ final class API: NSObject, URLSessionTaskDelegate {
         let request = URLRequest(url: url(path, query))
         let (temp, response) = try await session.download(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.server(0) }
-        try check(http, Data(), for: request)
+        let body = http.statusCode >= 400 ? ((try? Data(contentsOf: temp)) ?? Data()) : Data()   // a refusal says which passcode
+        try check(http, body, for: request)
         var name = (path as NSString).lastPathComponent
         if let cd = http.value(forHTTPHeaderField: "Content-Disposition"),
            let r = cd.range(of: #"filename="?([^";]+)"#, options: .regularExpression) {
@@ -218,7 +219,17 @@ final class API: NSObject, URLSessionTaskDelegate {
         throw APIError.message("Couldn't sign in.")
     }
 
-    func signOut() async { _ = try? await post("logout") }
+    func signOut() async {
+        _ = try? await post("logout")
+        forgetSession()   // whether or not Fizzy could be told: Lock means locked
+    }
+
+    /// Forgets the signed-in session with a Fizzy (its `fizzy` cookie, which would otherwise live for
+    /// 30 days). The device-registration and login-throttle cookies are meant to outlive a sign-out.
+    func forgetSession(at base: URL? = nil) {
+        let jar = HTTPCookieStorage.shared
+        for c in jar.cookies(for: base ?? baseURL) ?? [] where c.name == "fizzy" { jar.deleteCookie(c) }
+    }
 
     /// Student card barcode -> customer id, or nil if no one has that number.
     func scan(_ code: String) async throws -> Int? {

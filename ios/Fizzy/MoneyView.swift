@@ -20,7 +20,7 @@ struct MoneyView: View {
     }
 
     var body: some View {
-        PageList(page: page, title: "Money") { d in
+        PageList(page: page, title: "Money", above: { WaitingSection(page: page) }) { d in
             Section {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack {
@@ -49,7 +49,6 @@ struct MoneyView: View {
                 Button { sheet = .restock } label: { Label("Add a restock", systemImage: "cart.badge.plus") }
                 Button { sheet = .payout } label: { Label("Pay the partners", systemImage: "banknote") }
             }
-            WaitingSection(page: page)
             if d.restocks.array.isEmpty && d.payouts.array.isEmpty {
                 Text("No restocks or payouts in these dates.").foregroundStyle(.secondary)
             }
@@ -64,6 +63,7 @@ struct MoneyView: View {
                             }
                             if let receipt = r.receipt.optString {
                                 DownloadButton(title: "Receipt", path: "money/receipts/\(receipt)", systemImage: "doc.text.image").font(.footnote)
+                                    .buttonStyle(.borderless)   // just the label, not the whole row
                             }
                         }
                         .swipeActions(edge: .trailing) {
@@ -93,7 +93,7 @@ struct MoneyView: View {
                 }
             }
         }
-        .task { await page.load(); start = page.data.start.string; end = page.data.end.string }
+        .task { if !page.loaded { await page.load() }; start = page.data.start.string; end = page.data.end.string }
         .confirmationDialog(confirmDelete?.message ?? "", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) { if let c = confirmDelete { page.act(c.path) } }
             Button("Cancel", role: .cancel) {}
@@ -126,7 +126,7 @@ struct RestockSheet: View {
     @State private var photo: PhotosPickerItem?
     @State private var photoData: Data?
 
-    private var total: Int { lines.reduce(0) { $0 + Int((parse($1.cost) * 100).rounded()) } }
+    private var total: Int { lines.reduce(0) { $0 + Fmt.cents($1.cost) } }
 
     private func fill() {
         guard let r = editing, lines.count == 1, lines[0].item.isEmpty else { return }
@@ -186,13 +186,6 @@ struct RestockSheet: View {
         }
         .onAppear(perform: fill)
     }
-
-    /// "12,50" is $12.50 (a comma before two digits at the end is a decimal point).
-    private func parse(_ s: String) -> Double {
-        var v = s.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "$", with: "")
-        if let r = v.range(of: #",\d{1,2}$"#, options: .regularExpression) { v.replaceSubrange(r, with: "." + v[r].dropFirst()) }
-        return Double(v.replacingOccurrences(of: ",", with: "")) ?? 0
-    }
 }
 
 struct PayoutSheet: View {
@@ -209,7 +202,7 @@ struct PayoutSheet: View {
     /// An even split of (pool - keep) between whoever's ticked, to the cent.
     private var split: [String: Int] {
         let names = partners.filter { included.contains($0) }
-        let cents = max(0, Int(((Double(pool) ?? 0) - (Double(keep) ?? 0)) * 100 + 0.5))
+        let cents = max(0, Fmt.cents(pool) - Fmt.cents(keep))
         var res: [String: Int] = [:]
         for (i, n) in names.enumerated() { res[n] = cents / names.count + (i < cents % names.count ? 1 : 0) }
         return res
@@ -277,6 +270,7 @@ struct ItemSuggestions: View {
 struct WaitingSection: View {
     let page: Page
     @State private var queue = OfflineQueue.shared
+    @State private var deleting: Pending?
 
     var body: some View {
         if let sent = queue.lastSent {
@@ -288,15 +282,24 @@ struct WaitingSection: View {
                 ForEach(queue.items) { p in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(p.title)
-                        Text("Saved \(p.created.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+                        Text("Saved \(p.created.formatted(date: .abbreviated, time: .shortened))" + (p.staff.map { " by \($0)" } ?? ""))
+                            .font(.caption).foregroundStyle(.secondary)
                         if let problem = p.problem {
                             Text("Fizzy said no: \(problem) Delete it and add it again.").font(.caption).foregroundStyle(.red)
+                        } else if let h = p.host, h != API.shared.baseURL.host {
+                            Text("Saved for \(h). It sends when the Fizzy address is that again.").font(.caption).foregroundStyle(.orange)
                         } else if p.needsPasscode {
                             Text("Needs the passcode. Tap Send now.").font(.caption).foregroundStyle(.orange)
+                        } else if let s = p.staff, s != AppModel.shared.staff {
+                            Text("Saved by \(s): it sends when they're on the counter, or tap Send now to send it as you.").font(.caption).foregroundStyle(.orange)
+                        } else if let e = p.lastError {
+                            Text("Couldn't send: \(e) It'll try again.").font(.caption).foregroundStyle(.orange)
+                        } else if queue.sendingID == p.id {
+                            Text("Sending…").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     .swipeActions {
-                        Button("Delete", role: .destructive) { queue.remove(p) }
+                        Button("Delete", role: .destructive) { deleting = p }.disabled(queue.sendingID == p.id)
                     }
                 }
                 Button {
@@ -305,6 +308,11 @@ struct WaitingSection: View {
                     HStack { Label("Send now", systemImage: "arrow.up.circle"); if queue.sending { Spacer(); ProgressView() } }
                 }
                 .disabled(queue.sending)
+                .confirmationDialog("Delete \(deleting?.title ?? "this")? It hasn't been sent, so it's gone for good" + ((deleting?.files.isEmpty ?? true) ? "." : ", receipt photo included."),
+                                    isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+                    Button("Delete", role: .destructive) { if let d = deleting { queue.remove(d) } }
+                    Button("Cancel", role: .cancel) {}
+                }
             } header: {
                 Text("Waiting to send · \(queue.items.count)")
             } footer: {

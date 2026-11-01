@@ -50,7 +50,7 @@ struct CustomerView: View {
         .sheet(item: $sheet) { which in sheetContent(which) }
         .sheet(item: $qr) { QRSheet(code: $0) }
         .alert("New sale", isPresented: Binding(get: { newSale != nil }, set: { if !$0 { newSale = nil } }), presenting: newSale) { sale in
-            Button("Claim for \(first)") { claim(sale) }
+            Button("Claim for \(first)") { dismissedSales.insert(sale.key.string); claim(sale) }   // not offered again while it goes through
             Button("Not theirs", role: .cancel) { dismissedSales.insert(sale.key.string) }
         } message: { sale in
             Text("\(sale.at.string) · \(sale["items"].string)\n\(amounts(sale))" + (sale.tab_warning.bool ? "\n\n\(first) can't put this on a tab - it'll be flagged." : ""))
@@ -431,10 +431,12 @@ struct ClaimSheet: View {
             }
             .navigationTitle("Claim for \(name)")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) } }
             .refreshable { await claimable.load() }
             .task { await claimable.load() }
         }
+        .interactiveDismissDisabled(busy)
+        .passcodeHost()
     }
 
     private func canTab(_ k: J) -> Bool {
@@ -488,7 +490,7 @@ struct RepaySheet: View {
 
     var body: some View {
         FormSheet(title: "Repayment", action: "Record", ready: !amount.isEmpty, page: page, send: {
-            var form: Params = [("amount", amount), ("method", method), ("note", note)]
+            var form: Params = [("amount", Fmt.normalised(amount)), ("method", method), ("note", note)]
             if separate { form.append(("confirm_dup", "1")) }
             return await page.submit("customers/\(id)/repay", form)
         }) {
@@ -547,8 +549,10 @@ struct TabSheet: View {
             .disabled(busy)
             .navigationTitle("Tab approval")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) } }
         }
+        .interactiveDismissDisabled(busy)
+        .passcodeHost()
     }
 
     private func send(_ decision: String) {

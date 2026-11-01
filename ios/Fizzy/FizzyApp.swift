@@ -35,6 +35,8 @@ final class AppModel {
     var staffNames: [String] = []
     var problem: String?
     var passcodeAsk: PasscodeAsk?
+    var sheetDepth = 0                 // sheets up right now: the passcode prompt shows from the top one
+    private var alsoWaiting: [CheckedContinuation<Bool, Never>] = []
 
     /// Works out whether the saved cookies still sign us in.
     func start() async {
@@ -54,7 +56,7 @@ final class AppModel {
             phase = .signedIn
         } catch {
             phase = .signedOut
-            if case APIError.signedOut = error {} else { problem = error.localizedDescription }
+            if case APIError.signedOut = error { PageCache.clear() } else { problem = error.localizedDescription }
             staffNames = (try? await API.shared.staffNames()) ?? staffNames
         }
     }
@@ -73,10 +75,17 @@ final class AppModel {
         phase = .signedOut
     }
 
+    /// Someone else on the counter. Only once Fizzy knows: what's recorded is whoever its session says.
     func switchTo(_ who: String) async {
+        guard who != staff else { return }
+        do {
+            _ = try await call { try await API.shared.post("switch", [("who", who)]) }
+        } catch {
+            return
+        }
         AskLive.shared.reset()
-        _ = try? await API.shared.post("switch", [("who", who)])
         staff = who
+        UserDefaults.standard.set(who, forKey: "signedInAs")
     }
 
     /// Runs a request. Signed out sends us to sign in; "enter the passcode first" asks for it and
@@ -89,6 +98,7 @@ final class AppModel {
                 if !(await askPasscode(need)) { throw APIError.message("Cancelled. Nothing was changed.") }
             } catch APIError.signedOut {
                 phase = .signedOut
+                PageCache.clear()
                 UserDefaults.standard.removeObject(forKey: "signedInAs")
                 throw APIError.signedOut
             }
@@ -96,9 +106,16 @@ final class AppModel {
     }
 
     private func askPasscode(_ need: String) async -> Bool {
-        await withCheckedContinuation { continuation in
+        if passcodeAsk != nil {   // a second change needing it while the prompt is up: one answer does for both
+            return await withCheckedContinuation { alsoWaiting.append($0) }
+        }
+        let ok = await withCheckedContinuation { continuation in
             passcodeAsk = PasscodeAsk(need: need, continuation: continuation)
         }
+        let others = alsoWaiting
+        alsoWaiting = []
+        for c in others { c.resume(returning: ok) }
+        return ok
     }
 }
 
@@ -115,7 +132,8 @@ struct RootView: View {
             }
         }
         .animation(.default, value: model.phase)
-        .sheet(item: $model.passcodeAsk, onDismiss: nil) { ask in
+        // The passcode prompt, unless a sheet is up: only one sheet per presenter, so the sheet hosts it then.
+        .sheet(item: Binding(get: { model.sheetDepth == 0 ? model.passcodeAsk : nil }, set: { if $0 == nil { model.passcodeAsk = nil } })) { ask in
             PasscodeSheet(ask: ask)
         }
     }
