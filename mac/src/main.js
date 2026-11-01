@@ -51,7 +51,9 @@ powerMonitorReady(() => powerMonitor.on('shutdown', () => {
 }));
 
 app.on('before-quit', (event) => {
-  if (quitting.now) {
+  // Quitting before the app has started (e.g. Cmd+Q while it opens) has nothing to ask about.
+  if (quitting.now || !app.isReady()) {
+    quitting.now = true;
     display.destroy();
     return;
   }
