@@ -80,3 +80,22 @@ def test_huge_or_silly_amounts_get_a_message(client):
     assert "isn&#39;t a dollar amount" in client.post("/profit", data={"name": ["Coke"], "cost": ["inf"]}).text
     r = client.post("/money/payout", data={"partner": ["Will", "Mike"], "amount": ["10", "0"]})
     assert "Recorded 1 payout." in r.text
+
+
+def test_editing_a_restock_for_substitutions(client):
+    login(client)
+    client.post("/money/restock", data={"day": stats.today().isoformat(), "shop": "Coles",
+                                        "item": ["Coke", "Chips"], "qty": ["24", "10"], "cost": ["18", "12"]},
+                files={"receipt": ("r.jpg", b"\xff\xd8\xff fake jpeg", "image/jpeg")})
+    page = client.get("/money?edit=1").text
+    assert "Edit restock" in page and 'value="Chips"' in page and 'value="18.00"' in page
+    # Chips weren't there; Pepsi came instead of some of the Coke
+    r = client.post("/money/restock/1", data={"day": stats.today().isoformat(), "shop": "Coles",
+                                              "item": ["Coke", "Pepsi"], "qty": ["12", "12"], "cost": ["9", "10"]})
+    assert "Restock updated" in r.text and "12× Pepsi" in r.text and "× Chips" not in r.text and "$19.00" in r.text
+    conn = db.connect(config.DB_PATH)
+    assert conn.execute("SELECT receipt FROM restocks WHERE id = 1").fetchone()[0]          # receipt kept
+    assert stats.costs(conn)                                                                # costs refreshed
+    assert conn.execute("SELECT 1 FROM audit_log WHERE action = 'restock_edit'").fetchone()
+    assert "Add at least one item" in client.post("/money/restock/1", data={"item": [""], "qty": ["1"], "cost": [""]}).text
+    assert "That restock" in client.post("/money/restock/99", data={"item": ["A"], "qty": ["1"], "cost": ["1"]}).text
