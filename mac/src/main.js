@@ -93,11 +93,18 @@ ipcMain.on('fizzy-display', (event, json) => {
     log('bridge', `Ignored a message from ${host || 'an unknown page'}`);
     return;
   }
-  if (typeof json !== 'string') {
+  // Read it and write it out again, so only real JSON ever reaches the display page.
+  let clean;
+  try {
+    clean = JSON.stringify(JSON.parse(json));
+  } catch {
+    clean = undefined;
+  }
+  if (typeof clean !== 'string') {
     log('bridge', "Ignored a message that isn't plain JSON");
     return;
   }
-  display.send(json);
+  display.send(clean);
 });
 
 // MARK: Settings and Open Link windows
