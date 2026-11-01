@@ -261,3 +261,45 @@ def test_ask_streams_steps_then_the_answer(client, monkeypatch):
     monkeypatch.setattr(ask, "_stream", lambda *a, **k: (_ for _ in ()).throw(ask.AskError("Gemini says too many requests")))
     body = client.post("/ask/stream", data={"text": "again"}).text
     assert '"t": "error"' in body and "too many requests" in body             # errors arrive as an event, never a hang
+
+
+def test_ask_answers_in_the_background(client, monkeypatch):
+    """Leaving the page or losing the connection doesn't lose the answer: it's written in the background,
+    the page says what's still pending, and the stream can be joined again from the start."""
+    import threading
+    import time as _time
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    ask._jobs.clear()
+    gate = threading.Event()
+
+    def slow(contents, system, tools=True):
+        yield "delta", "Mondays "
+        gate.wait(5)
+        yield "delta", "are slow."
+        yield "content", {"role": "model", "parts": [{"text": "Mondays are slow."}]}
+    monkeypatch.setattr(ask, "_stream", slow)
+    login(client)
+    job = ask.start("Mike", "slowest day?")                      # what POST /ask/stream does, with nobody listening
+    for _ in range(100):
+        if job.answer:
+            break
+        _time.sleep(0.05)
+    page = client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()
+    assert page["pending"] == {"text": "slowest day?", "answer": "Mondays ", "status": None, "at": job.started}
+    body = client.post("/ask/stream", data={"text": "another"}).text   # one at a time
+    assert '"t": "error"' in body and "Still answering" in body
+    gate.set()
+    body = client.get("/ask/stream").text                          # joining replays from the start, then follows
+    events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
+    assert [e["t"] for e in events] == ["delta", "delta", "done"]
+    assert "".join(e.get("text", "") for e in events) == "Mondays are slow."
+    page = client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()
+    assert page["pending"] is None
+    assert [m["text"] for m in page["timeline"] if m["kind"] == "msg"] == ["slowest day?", "Mondays are slow."]
+
+
+def test_ask_join_with_nothing_pending(client):
+    ask._jobs.clear()
+    login(client)
+    body = client.get("/ask/stream").text
+    assert [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")] == [{"t": "none"}]

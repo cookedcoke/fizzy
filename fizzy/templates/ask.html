@@ -10,7 +10,7 @@
 <div class="notice">No Gemini key yet. <a href="/settings#ask">Settings</a></div>
 {% endif %}
 
-<div class="chat" id="chat" aria-live="polite">
+<div class="chat" id="chat" aria-live="polite"{% if pending %} data-pending="{{ pending.text }}"{% endif %}>
   {% if not timeline %}
   <div class="chat-empty">
     <div class="chips">{% for e in examples %}<button type="button" class="chip" data-example>{{ e }}</button>{% endfor %}</div>
@@ -152,19 +152,24 @@
   });
   function send() {
     if (f.dataset.busy || !t.value.trim()) return;
-    f.dataset.busy = 1; b.disabled = true;
     var q = t.value, empty = chat.querySelector(".chat-empty"); if (empty) empty.remove();
     var me = document.createElement("div"); me.className = "bubble me enter"; me.textContent = q;
     document.getElementById("end").before(me);
+    var data = new FormData(f); t.value = ""; grow();
+    run(q, me, fetch("/ask/stream", { method: "POST", body: data, credentials: "same-origin" }));
+  }
+  // Fizzy writes the answer in the background, so leaving the page or losing the connection doesn't lose it:
+  // this request only follows along. Opened while an answer is under way (data-pending), the page joins it.
+  function run(q, me, request) {
+    f.dataset.busy = 1; b.disabled = true;
     var wait = bubble("thinking"); wait.innerHTML = "<i></i><i></i><i></i><span class=st></span>";
     var out = null, target = "", shown = 0, failed = false, ticking = false, drained = null, st = { len: 0, fades: [] };
     var before = chat.querySelectorAll(".proposal").length;
     follow(function () {});
     stuck = true;
-    var data = new FormData(f); t.value = ""; grow();
     function finish() { delete f.dataset.busy; b.disabled = false; if (!touch) t.focus(); }
     function fail(msg) {
-      failed = true; t.value = q; grow();
+      failed = true; if (me) { t.value = q; grow(); }
       (out || wait).className = "bubble them err"; (out || wait).textContent = msg; if (out) wait.remove();
     }
     function tick() {  // one animation frame: show a few more words, faster the further behind it is
@@ -193,14 +198,15 @@
         out = null; target = ""; shown = 0; st = { len: 0, fades: [] };
         follow(function () { wait = bubble("thinking"); wait.innerHTML = "<i></i><i></i><i></i><span class=st></span>"; });
       } else if (ev.t === "error") fail(ev.text);
+      else if (ev.t === "none") fail("Fizzy was restarted before it finished. Ask again.");
     }
-    fetch("/ask/stream", { method: "POST", body: data, credentials: "same-origin" }).then(function (r) {
+    request.then(function (r) {
       var type = r.headers.get("content-type") || "";
       if (r.redirected && /\/login/.test(r.url)) { location.href = r.url; throw 0; }
       if (type.indexOf("event-stream") < 0) {  // e.g. still needs the passcode: keep the question, say what Fizzy said
         return r.text().then(function (html) {
           var m = new DOMParser().parseFromString(html, "text/html").querySelector(".flash.bad, .err, main > .flash");
-          me.remove(); fail(m ? m.textContent.trim() : "Fizzy didn't take that. Try again.");
+          if (me) me.remove(); fail(m ? m.textContent.trim() : "Fizzy didn't take that. Try again.");
         });
       }
       var reader = r.body.getReader(), dec = new TextDecoder(), buf = "";
@@ -236,7 +242,8 @@
     e.preventDefault(); post(form).then(refresh).catch(function () {});
   });
   down(false);
-  if (!document.querySelector(".chat-empty") && !touch) t.focus();
+  if (chat.dataset.pending) run(chat.dataset.pending, null, fetch("/ask/stream", { credentials: "same-origin", cache: "no-store" }));
+  else if (!document.querySelector(".chat-empty") && !touch) t.focus();
 })();
 </script>
 {% endblock %}
