@@ -69,6 +69,22 @@ def _paid_on_time(conn, cid):
 
 
 # Points for earning each badge, paid once (see award). Bigger for the harder ones.
+# What each built-in badge is for (the same words students see), so Ask can describe them too.
+BUILT_IN = {"First sip": "Buy something at the stall", "Regular": "Visit on 10 different days",
+            "Legend": "Visit on 50 different days", "On a roll": "A 5-day streak", "Unstoppable": "A 15-day streak",
+            "Explorer": "Try 5 different things", "Big spender": "Spend $50 in total", "Treat yourself": "Redeem a reward",
+            "Good for it": "Pay off a tab on time", "Double trouble": "Buy something on a double points day"}
+
+
+def built_in(conn):
+    """The built-in badges with their points and how many students have been paid for each."""
+    have = {r[0]: r[1] for r in conn.execute(
+        "SELECT p.note, COUNT(DISTINCT p.customer_id) FROM points_ledger p JOIN customers c ON c.id = p.customer_id "
+        "WHERE p.reason = 'badge' AND c.kind IS NOT 'test' GROUP BY p.note")}
+    return [{"name": n, "how": how, "points": BADGE_POINTS.get(n, 0), "students": have.get(f"Badge: {n}", 0)}
+            for n, how in BUILT_IN.items()]
+
+
 BADGE_POINTS = {"First sip": 50, "Regular": 200, "Legend": 1000, "On a roll": 200, "Unstoppable": 750,
                 "Explorer": 150, "Big spender": 300, "Treat yourself": 100, "Good for it": 200, "Double trouble": 100}
 

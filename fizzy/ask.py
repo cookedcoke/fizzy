@@ -116,7 +116,7 @@ imported as history only, with no points or tabs, so use them for sales trends b
 
 Menu items in Square: {', '.join(items) if items else '(none synced yet)'}
 Term dates: {'; '.join(f'{n}: {a} to {b}' for a, b, n in terms) if terms else 'none set (Settings, Term dates)'}
-Existing custom rules: use `list_rules`.
+Badges: there are always the built-in ones (fixed, can't be changed here) plus any custom ones; `list_rules` lists both.
 
 Database tables:
 {_schema(conn)}
@@ -134,7 +134,7 @@ TOOLS = [{"functionDeclarations": [
                     "required": ["start", "end", "group_by"]}},
     {"name": "sql", "description": f"Run one read-only SQLite SELECT. Returns up to {ROW_CAP} rows as JSON.",
      "parameters": {"type": "OBJECT", "properties": {"query": {"type": "STRING"}}, "required": ["query"]}},
-    {"name": "list_rules", "description": "The custom badges and events that exist, with their JSON and how many students got them."},
+    {"name": "list_rules", "description": "Every badge and event: the built-in badges (fixed) and the custom badges and events, with their JSON, points and how many students got them."},
     {"name": "preview_rule", "description": "Check a RULE (JSON string) and see who would qualify right now / what an event would pay. Returns an error to fix if it's not valid.",
      "parameters": {"type": "OBJECT", "properties": {"rule_json": {"type": "STRING"}}, "required": ["rule_json"]}},
     {"name": "propose", "description": "Suggest a change; the owner confirms it with a button. Actions and payload_json: "
@@ -291,7 +291,9 @@ def run_tool(conn, who, name, args):
         if name == "sql":
             return _sql(args.get("query", ""))
         if name == "list_rules":
-            return {"rules": [{k: r[k] for k in ("id", "kind", "name", "summary", "paused", "students", "points", "spec")} for r in rules.listing(conn)]}
+            from . import badges
+            return {"built_in_badges": badges.built_in(conn),   # always on, can't be changed from here
+                    "custom_rules": [{k: r[k] for k in ("id", "kind", "name", "summary", "paused", "students", "points", "spec")} for r in rules.listing(conn)]}
         if name == "preview_rule":
             return _preview(conn, args.get("rule_json", ""))
         if name == "propose":
