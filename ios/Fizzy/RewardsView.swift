@@ -3,6 +3,7 @@ import SwiftUI
 /// Rewards the stall is running, repeating double-points days, and custom badges and events.
 struct RewardsView: View {
     @State private var page = Page("rewards")
+    @State private var ask: ConfirmAsk?
 
     var body: some View {
         PageList(page: page, title: "Rewards") { d in
@@ -19,11 +20,11 @@ struct RewardsView: View {
                             Text("Since \(Fmt.when(r.created_at.string, "EEE d MMM")) · \(r.created_by.string) · redeemed \(r.used.int)"
                                  + (r.used.int > 0 ? " by \(r.people.int) \(r.people.int == 1 ? "person" : "people")" : "")).font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        ConfirmButton(title: "End", message: "End “\(r.name.string)”? It stops showing on customer pages.", confirmLabel: "End") {
-                            page.act("rewards/\(r.id.int)/end")
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("End", role: .destructive) {
+                            ask = ConfirmAsk(message: "End “\(r.name.string)”? It stops showing on customer pages.", confirmLabel: "End") { page.act("rewards/\(r.id.int)/end") }
                         }
-                        .buttonStyle(.bordered).controlSize(.small)
                     }
                 }
                 if d.live.array.isEmpty { Text("No rewards running.").foregroundStyle(.secondary) }
@@ -36,11 +37,11 @@ struct RewardsView: View {
                                 Text(r.name.string).bold() + Text(" · ×\(Fmt.g(r.multiplier.double))").foregroundStyle(.secondary)
                                 Text("Every \(d.day_names[r.weekday.int].string)" + (r.days.int > 1 ? " for \(r.days.int) days" : "")).font(.caption).foregroundStyle(.secondary)
                             }
-                            Spacer()
-                            ConfirmButton(title: "Stop", message: "Stop \(r.name.string) repeating? Any coming up go; one running now carries on.", confirmLabel: "Stop") {
-                                page.act("events/rules/\(r.id.int)/stop")
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button("Stop", role: .destructive) {
+                                ask = ConfirmAsk(message: "Stop \(r.name.string) repeating? Any coming up go; one running now carries on.", confirmLabel: "Stop") { page.act("events/rules/\(r.id.int)/stop") }
                             }
-                            .buttonStyle(.bordered).controlSize(.small)
                         }
                     }
                 }
@@ -57,14 +58,12 @@ struct RewardsView: View {
                             .font(.footnote)
                         Text("\(r.students.int) student\(r.students.int == 1 ? "" : "s") · \(Fmt.number(r.points.int)) points given · made by \(r.created_by.string) \(Fmt.when(r.created_at.string, "d MMM"))")
                             .font(.caption).foregroundStyle(.secondary)
-                        HStack {
-                            Button(r.paused.bool ? "Restart" : "Pause") { page.act("rules/\(r.id.int)/\(r.paused.bool ? "resume" : "pause")") }
-                                .buttonStyle(.bordered).controlSize(.small)
-                            ConfirmButton(title: "Delete", message: "Delete \(r.name.string)? Points already given stay.", confirmLabel: "Delete") {
-                                page.act("rules/\(r.id.int)/delete")
-                            }
-                            .buttonStyle(.bordered).controlSize(.small)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Delete", role: .destructive) {
+                            ask = ConfirmAsk(message: "Delete \(r.name.string)? Points already given stay.") { page.act("rules/\(r.id.int)/delete") }
                         }
+                        Button(r.paused.bool ? "Restart" : "Pause") { page.act("rules/\(r.id.int)/\(r.paused.bool ? "resume" : "pause")") }.tint(.orange)
                     }
                 }
                 if d.custom.array.isEmpty { Text("None yet. Make one in Ask.").font(.footnote).foregroundStyle(.secondary) }
@@ -84,11 +83,13 @@ struct RewardsView: View {
                                 Text(Fmt.when(e.start_date.string, "EEE d MMM") + (e.end_date.string != e.start_date.string ? " to \(Fmt.when(e.end_date.string, "EEE d MMM"))" : "")
                                      + " · \(Fmt.number(e.given.int)) bonus given").font(.caption).foregroundStyle(.secondary)
                             }
-                            Spacer()
+                        }
+                        .swipeActions(edge: .trailing) {
                             if on || soon {
-                                ConfirmButton(title: soon ? "Delete" : "End", message: "\(soon ? "Delete" : "End") “\(e.name.string)”?" + (soon ? "" : " It stops now; bonus already earned stays."),
-                                              confirmLabel: soon ? "Delete" : "End") { page.act("events/\(e.id.int)/cancel") }
-                                    .buttonStyle(.bordered).controlSize(.small)
+                                Button(soon ? "Delete" : "End", role: .destructive) {
+                                    ask = ConfirmAsk(message: "\(soon ? "Delete" : "End") “\(e.name.string)”?" + (soon ? "" : " It stops now; bonus already earned stays."),
+                                                     confirmLabel: soon ? "Delete" : "End") { page.act("events/\(e.id.int)/cancel") }
+                                }
                             }
                         }
                     }
@@ -103,5 +104,6 @@ struct RewardsView: View {
                 }
             }
         }
+        .confirmAsk($ask)
     }
 }

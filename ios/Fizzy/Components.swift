@@ -496,6 +496,26 @@ struct DownloadButton: View {
     }
 }
 
+/// A swipe action that has to be confirmed first, like the website's confirm boxes. The dialog
+/// belongs to the whole screen (not the row, which closes as soon as the swipe button is tapped).
+struct ConfirmAsk: Identifiable {
+    let id = UUID()
+    let message: String
+    var confirmLabel = "Delete"
+    var role: ButtonRole? = .destructive
+    let action: () -> Void
+}
+
+extension View {
+    func confirmAsk(_ ask: Binding<ConfirmAsk?>) -> some View {
+        confirmationDialog(ask.wrappedValue?.message ?? "", isPresented: Binding(get: { ask.wrappedValue != nil }, set: { if !$0 { ask.wrappedValue = nil } }),
+                           titleVisibility: .visible) {
+            Button(ask.wrappedValue?.confirmLabel ?? "Do it", role: ask.wrappedValue?.role) { ask.wrappedValue?.action() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+}
+
 /// Asks before a destructive change, like the website's confirm boxes.
 struct ConfirmButton: View {
     let title: String

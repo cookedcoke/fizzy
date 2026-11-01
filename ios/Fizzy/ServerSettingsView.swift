@@ -375,6 +375,7 @@ struct MaintenanceForm: View {
 
 struct SecurityKeysView: View {
     let page: Page
+    @State private var ask: ConfirmAsk?
 
     var body: some View {
         let d = page.data
@@ -392,9 +393,11 @@ struct SecurityKeysView: View {
                             Text("Added \(Fmt.when(k.created_at.string, "d MMM yyyy")) · \(k.created_by.string) · last used \(k.last_used_at.optString.map { Fmt.when($0) } ?? "never")")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        ConfirmButton(title: "Remove", message: "Remove \(k.name.string)?", confirmLabel: "Remove") { page.act("settings/passkeys/\(k.id.int)/remove") }
-                            .buttonStyle(.bordered).controlSize(.small)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Remove", role: .destructive) {
+                            ask = ConfirmAsk(message: "Remove \(k.name.string)?", confirmLabel: "Remove") { page.act("settings/passkeys/\(k.id.int)/remove") }
+                        }
                     }
                 }
                 if d.passkey_list.array.isEmpty { Text("None yet.").foregroundStyle(.secondary) }
@@ -402,11 +405,13 @@ struct SecurityKeysView: View {
         }
         .navigationTitle("Security keys")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmAsk($ask)
     }
 }
 
 struct DevicesView: View {
     let page: Page
+    @State private var ask: ConfirmAsk?
     @State private var name = ""
 
     var body: some View {
@@ -437,10 +442,12 @@ struct DevicesView: View {
                                 Text("Added \(Fmt.when(dev.created_at.string, "d MMM yyyy")) · \(dev.created_by.string) · last used \(dev.last_seen_at.optString.map { Fmt.when($0) } ?? "never")")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
-                            Spacer()
+                        }
+                        .swipeActions(edge: .trailing) {
                             if dev.revoked_at.isNull {
-                                ConfirmButton(title: "Remove", message: "Remove \(dev.name.string)?", confirmLabel: "Remove") { page.act("settings/devices/\(dev.id.int)/revoke") }
-                                    .buttonStyle(.bordered).controlSize(.small)
+                                Button("Remove", role: .destructive) {
+                                    ask = ConfirmAsk(message: "Remove \(dev.name.string)?", confirmLabel: "Remove") { page.act("settings/devices/\(dev.id.int)/revoke") }
+                                }
                             }
                         }
                     }
@@ -449,5 +456,6 @@ struct DevicesView: View {
         }
         .navigationTitle("Devices")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmAsk($ask)
     }
 }

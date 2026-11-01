@@ -144,7 +144,9 @@ struct DashboardView: View {
                             Line(left: b.name.string, sub: Fmt.when(b.charged_at.string), right: Fmt.money(b.amount_cents.int))
                         }
                         Text("Tab used against the rules: \(b.breach.string)").font(.footnote).foregroundStyle(.red)
-                        Button("Dismiss") { page.act("breach/\(b.id.int)/ack") }.buttonStyle(.bordered).controlSize(.small)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Dismiss") { page.act("breach/\(b.id.int)/ack") }.tint(.gray)
                     }
                 }
                 ForEach(d.unlinked_tabs.array, id: \.self) { u in

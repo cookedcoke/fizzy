@@ -10,6 +10,7 @@ struct CustomerView: View {
     @State private var newSale: J?
     @State private var dismissedSales: Set<String> = []
     @State private var qr: QRCode?
+    @State private var ask: ConfirmAsk?
 
     init(id: Int) {
         self.id = id
@@ -47,6 +48,7 @@ struct CustomerView: View {
         }
         .onAppear { if page.loaded { Task { await page.load() } } }
         .task(id: page.data.opened.string) { await watchForSales() }
+        .confirmAsk($ask)
         .sheet(item: $sheet) { which in sheetContent(which) }
         .sheet(item: $qr) { QRSheet(code: $0) }
         .alert("New sale", isPresented: Binding(get: { newSale != nil }, set: { if !$0 { newSale = nil } }), presenting: newSale) { sale in
@@ -169,11 +171,12 @@ struct CustomerView: View {
                             Text("\(Fmt.when(r.created_at.string, "HH:mm")) by \(r.staff.string)" + (r.square_note.optString.map { " · In Square: \($0)" } ?? ""))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        ConfirmButton(title: "Undo", message: "Undo this redemption and give \(r.points.int) points back?", confirmLabel: "Undo") {
-                            page.act("redemptions/\(r.id.int)/undo")
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Undo") {
+                            ask = ConfirmAsk(message: "Undo this redemption and give \(r.points.int) points back?", confirmLabel: "Undo") { page.act("redemptions/\(r.id.int)/undo") }
                         }
-                        .buttonStyle(.bordered).controlSize(.small)
+                        .tint(.orange)
                     }
                 }
             }
