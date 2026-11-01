@@ -45,11 +45,25 @@ struct AppSettingsView: View {
                 Section { Label(message.text, systemImage: message.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                     .foregroundStyle(message.ok ? .green : .red) }
             }
+
+            Section {
+                LabeledContent("Version", value: Self.version)
+            } footer: {
+                Text("Check this after installing a build, to be sure the new one is running.")
+            }
         }
         .navigationTitle("This app")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { address = baseURL }
         .onDisappear(perform: save)
+    }
+
+    /// "1.1.0 (2)": the marketing version and build number from project.yml.
+    static var version: String {
+        let info = Bundle.main.infoDictionary
+        let v = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let b = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(v) (\(b))"
     }
 
     private func save() {

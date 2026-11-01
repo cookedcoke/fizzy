@@ -158,20 +158,25 @@ final class API: NSObject, URLSessionTaskDelegate {
     }
 
     /// Server-sent events (the Ask answer as it's written): one decoded JSON object per event.
-    func stream(_ path: String, _ form: Params) -> AsyncThrowingStream<J, Error> {
+    /// Server-sent events, one JSON object each. POST asks; GET joins an answer already under way.
+    func stream(_ path: String, _ form: Params = [], method: String = "POST") -> AsyncThrowingStream<J, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     var request = URLRequest(url: url(path))
-                    request.httpMethod = "POST"
-                    request.timeoutInterval = 300
-                    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                    request.httpMethod = method
+                    request.timeoutInterval = 60    // between bytes: the server sends a comment line every 15 quiet seconds
                     request.setValue(baseURL.absoluteString + "/", forHTTPHeaderField: "Referer")
                     request.setValue(baseURL.absoluteString, forHTTPHeaderField: "Origin")
-                    request.httpBody = form.map { "\(enc($0.0))=\(enc($0.1))" }.joined(separator: "&").data(using: .utf8)
+                    if method == "POST" {
+                        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                        request.httpBody = form.map { "\(enc($0.0))=\(enc($0.1))" }.joined(separator: "&").data(using: .utf8)
+                    }
                     let (bytes, response) = try await session.bytes(for: request)
                     guard let http = response as? HTTPURLResponse else { throw APIError.server(0) }
-                    try check(http, Data(), for: request)
+                    var body = Data()
+                    if http.statusCode == 423 { for try await byte in bytes { body.append(byte) } }   // which passcode it needs
+                    try check(http, body, for: request)
                     for try await line in bytes.lines where line.hasPrefix("data:") {
                         let json = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                         if let d = json.data(using: .utf8), let event = try? JSONDecoder().decode(J.self, from: d) {

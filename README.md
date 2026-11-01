@@ -485,6 +485,10 @@ looks things up itself (read-only: it can't change the database). It can also se
 custom badges and events, double points days, rewards and the display message. Those come back as a
 card with **Do it**, which needs the owner password by default (Who can do what, Ask) and is logged.
 
+Answers are written in the background: leaving the page, closing the tab or losing the connection
+doesn't lose one. Open Ask again and it joins the answer where it's up to (the app too); once done, it's
+in the saved conversation. One question at a time per person.
+
 **Custom badges and events** are how weird ideas happen without anyone writing code: describe it
 ("a badge for 20 Chi Forest and 10 milk teas in a term, 500 points", "every 5th noodles gets 100
 bonus points", "triple points on anything before 11:05 at recess") and Gemini builds a rule out of

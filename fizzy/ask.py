@@ -9,7 +9,9 @@ passcode rules as doing it by hand and is logged "via Ask". New badges and event
 import json
 import re
 import sqlite3
+import threading
 import time
+import uuid
 from datetime import date, timedelta
 
 import httpx
@@ -534,13 +536,14 @@ def md(text):
 
 @router.get("/ask", response_class=HTMLResponse)
 def page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+    pend = pending(who)   # before the messages: an answer finishing in between is then in the timeline, and joining it finds it done
     msgs = conn.execute("SELECT * FROM ask_messages WHERE staff = ? AND shown IS NOT NULL ORDER BY id DESC LIMIT 60", (who,)).fetchall()
     props = conn.execute("SELECT * FROM ask_proposals WHERE staff = ? ORDER BY id DESC LIMIT 30", (who,)).fetchall()
     timeline = [{"at": m["created_at"], "n": (0, m["id"]), "kind": "msg", "role": m["role"],
                  "html": md(m["shown"]) if m["role"] == "model" else None, "text": m["shown"]} for m in msgs]
     timeline += [{"at": p["created_at"], "n": (1, p["id"]), "kind": "proposal", "p": p} for p in props]
     timeline.sort(key=lambda t: (t["at"], t["n"]))  # oldest first; a card after the words on the same second
-    return render(request, "ask.html", timeline=timeline[-80:], enabled=enabled(), model=model(),
+    return render(request, "ask.html", timeline=timeline[-80:], enabled=enabled(), model=model(), pending=pend,
                   examples=["How did each item sell this month compared to last month?",
                             "Which day of the week is slowest, and what sells then?",
                             "Make a badge for buying 20 Chi Forest and 10 milk teas in a term, worth 500 points",
@@ -550,6 +553,9 @@ def page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
 
 @router.post("/ask")
 def send(request: Request, text: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+    """The plain form (no script): waits for the whole answer."""
+    if pending(who):
+        return back(request, "/ask#end", "Still answering your last question. Wait for it, then ask again.", "bad")
     try:
         ask(conn, who, text)
     except AskError as e:
@@ -557,30 +563,137 @@ def send(request: Request, text: str = Form(""), who=Depends(staff), conn=Depend
     return RedirectResponse("/ask#end", status_code=303)
 
 
+# ---- answering in the background ------------------------------------------------------------------------
+#
+# A question is answered in its own thread, not inside the request that asked it, so leaving the page or
+# losing the connection (a phone in the shop) doesn't lose the answer. The stream request only follows
+# along; it can be joined again (GET) and the page says what's still being answered (`pending`).
+
+STUCK_AFTER = 15 * 60        # seconds before an answer that never finished is given up on
+
+
+class _Job:
+    def __init__(self, who, text):
+        self.who, self.text, self.started = who, text, db.now_iso()
+        self.id, self.t0 = uuid.uuid4().hex[:12], time.time()
+        # Every event so far, so a client joining late gets the whole answer. The first says which
+        # question this is, so a client can tell it from an older one.
+        self.events = [{"t": "start", "id": self.id, "text": text}]
+        self.answer, self.status, self.done = "", None, False
+        self.cond = threading.Condition()
+
+    def push(self, ev):
+        with self.cond:
+            t = ev["t"]
+            if t == "delta":
+                self.answer += ev["text"]
+                self.status = None
+            elif t == "status":
+                self.status = ev["text"]
+            elif t == "reset":
+                self.answer = ""
+            self.events.append(ev)
+            if t in ("done", "error"):
+                self.done = True
+            self.cond.notify_all()
+
+    def follow(self):
+        """The events so far, then each new one as it happens, until the answer is done. A comment line
+        every 15 quiet seconds keeps the connection open through Cloudflare."""
+        n = 0
+        while True:
+            with self.cond:
+                if n >= len(self.events) and not self.done:
+                    self.cond.wait(15)
+                batch, done = self.events[n:], self.done
+            n += len(batch)
+            for ev in batch:
+                yield _sse(ev)
+            if done:
+                return
+            if not batch:
+                yield ": ping\n\n"
+
+
+_jobs = {}                   # staff name -> their latest _Job
+_jobs_lock = threading.Lock()
+
+
+def pending(who):
+    """What's still being answered for this person, for the page: None when nothing is."""
+    j = _jobs.get(who)
+    if j is None or j.done:
+        return None
+    return {"id": j.id, "text": j.text, "answer": j.answer, "status": j.status, "at": j.started}
+
+
+def start(who, text):
+    """Start answering in the background. One question at a time per person."""
+    text = text.strip()[:4000]   # as steps() saves it
+    with _jobs_lock:
+        j = _jobs.get(who)
+        if j is not None and not j.done:
+            if time.time() - j.t0 < STUCK_AFTER:
+                raise AskError("Still answering your last question. Wait for it, then ask again.")
+            j.push({"t": "error", "text": "That took too long and was given up on. Ask again."})
+        j = _jobs[who] = _Job(who, text)
+
+    def run():
+        conn = None
+        try:
+            conn = db.connect()
+            for kind, value in steps(conn, who, text):
+                if kind == "delta":  # raw text: the page reveals it smoothly and formats it as it goes
+                    j.push({"t": "delta", "text": value})
+                elif kind == "status":
+                    j.push({"t": "status", "text": value + "..."})
+                elif kind == "reset":
+                    j.push({"t": "reset"})
+                else:
+                    j.push({"t": "done"})
+        except AskError as e:
+            j.push({"t": "error", "text": str(e)})
+        except Exception as e:  # never leave the page hanging
+            j.push({"t": "error", "text": f"Something went wrong ({e.__class__.__name__}). Try again."})
+        finally:
+            if conn is not None:
+                conn.close()
+            if not j.done:
+                j.push({"t": "done"})
+    try:
+        threading.Thread(target=run, daemon=True, name=f"ask:{who}").start()
+    except Exception:
+        j.push({"t": "error", "text": "Couldn't start answering. Try again."})
+        raise AskError("Couldn't start answering. Try again.")
+    return j
+
+
+def _events(gen):
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(gen, media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @router.post("/ask/stream")
 def send_stream(request: Request, text: str = Form(""), who=Depends(staff)):
     """The answer as it's written, as server-sent events (one JSON object per event)."""
-    def events():
-        conn = db.connect()
-        try:
-            for kind, value in steps(conn, who, text):
-                if kind == "delta":  # raw text: the page reveals it smoothly and formats it as it goes
-                    yield _sse({"t": "delta", "text": value})
-                elif kind == "status":
-                    yield _sse({"t": "status", "text": value + "..."})
-                elif kind == "reset":
-                    yield _sse({"t": "reset"})
-                else:
-                    yield _sse({"t": "done"})
-        except AskError as e:
-            yield _sse({"t": "error", "text": str(e)})
-        except Exception as e:  # never leave the page hanging
-            yield _sse({"t": "error", "text": f"Something went wrong ({e.__class__.__name__}). Try again."})
-        finally:
-            conn.close()
-    from fastapi.responses import StreamingResponse
-    return StreamingResponse(events(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    try:
+        job = start(who, text)
+    except AskError as e:
+        return _events(iter([_sse({"t": "error", "text": str(e)})]))
+    return _events(job.follow())
+
+
+@router.get("/ask/stream")
+def join_stream(who=Depends(staff)):
+    """Join the latest answer, from the start: after leaving the page, or when the connection dropped. A
+    finished one is replayed too (the connection may have dropped right at the end); its "start" event
+    tells the client whether it's the one it wants. {"t": "none"} when nothing has been asked since the
+    server started."""
+    j = _jobs.get(who)
+    if j is None:
+        return _events(iter([_sse({"t": "none"})]))
+    return _events(j.follow())
 
 
 def _sse(obj):
@@ -589,8 +702,12 @@ def _sse(obj):
 
 @router.post("/ask/clear")
 def clear(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+    """A clean slate: the words and the suggestion cards both go. What a card did (a rule, a reward, a
+    double points day) stays, and the activity log still says who pressed Do it."""
+    if pending(who):   # the answer would land in the new conversation
+        return back(request, "/ask", "Still answering your last question. Wait for it, then start a new chat.", "bad")
     conn.execute("DELETE FROM ask_messages WHERE staff = ?", (who,))
-    conn.execute("UPDATE ask_proposals SET status = 'dismissed' WHERE staff = ? AND status = 'pending'", (who,))
+    conn.execute("DELETE FROM ask_proposals WHERE staff = ?", (who,))
     conn.commit()
     return back(request, "/ask", "Started a new conversation.")
 

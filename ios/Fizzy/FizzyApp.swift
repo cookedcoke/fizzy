@@ -65,6 +65,7 @@ final class AppModel {
     }
 
     func signOut() async {
+        AskLive.shared.reset()
         await API.shared.signOut()
         PageCache.clear()
         UserDefaults.standard.removeObject(forKey: "signedInAs")
@@ -73,6 +74,7 @@ final class AppModel {
     }
 
     func switchTo(_ who: String) async {
+        AskLive.shared.reset()
         _ = try? await API.shared.post("switch", [("who", who)])
         staff = who
     }
