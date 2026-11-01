@@ -189,3 +189,20 @@ def test_dashboard_on_a_closed_day_shows_a_recap_not_zeros(client):
     conn.commit()
     if stats.today().weekday() < 5:
         assert "Sold by hour" in client.get("/").text
+
+
+def test_ios_api(client):
+    assert client.get("/api/staff-names").json() == ["Will", "Mike", "Frankie"]
+    assert client.get("/api/me", follow_redirects=False).status_code == 303
+    login(client)
+    assert client.get("/api/me").json()["staff"] == "Mike"
+    client.post("/import", files={"file": ("d.csv", b"Original Name,Cleaned Name,Email\nADELINE YATES,Adeline Yates,rns00000001@reddamnorthshore.nsw.edu.au\n",
+                                           "text/csv")}, data={"confirm": "1"})
+    cid = client.get("/api/search?q=adel").json()[0]["id"]
+    client.post(f"/customers/{cid}/points", data={"delta": "100", "note": "event"}, follow_redirects=False)
+    d = client.get(f"/api/customers/{cid}").json()
+    assert d["name"] == "Adeline Yates" and d["points"] == 100 and d["flash"] == "Points +100."
+    assert d["history"][0]["delta"] == 100 and d["tab"]["status"] == "locked"
+    assert client.get(f"/api/customers/{cid}").json()["flash"] is None  # shown once
+    assert client.get(f"/api/customers/{cid}/claimable").json() == {"note": None, "square_on": False, "sales": []}
+    assert client.get("/api/customers/999999").status_code == 404

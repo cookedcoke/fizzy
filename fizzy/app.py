@@ -787,23 +787,82 @@ def register(app):
         return render(request, "claim.html", c=c, checkouts=square.unclaimed(conn), note=note, st=logic.tab_status(conn, c),
                       hours=square.CLAIM_HOURS, square_on=bool(config.SQUARE_TOKEN))
 
+    def checkout_json(k, st):
+        return {"key": k["key"], "at": local(k["at"], "%H:%M"), "at_iso": k["at"],
+                "items": k["items"] or ("Tab repayment" if k["repay_cents"] else "Sale"),
+                "paid": money(k["sale_cents"]) if k["sale_cents"] else None,
+                "tab": money(k["tab_cents"]) if k["tab_cents"] else None,
+                "repaid": money(k["repay_cents"]) if k["repay_cents"] else None,
+                "tab_warning": bool(k["tab_cents"]) and (not st["can_charge"] or k["tab_cents"] > st["available_cents"])}
+
     @app.get("/api/customers/{cid:int}/new-sales")
     def new_sales(cid: int, since: str = "", who=Depends(staff), conn=Depends(get_conn)):
         """For the "new sale - claim it?" prompt on a customer's page: unclaimed sales that came in
         after `since` (when the page was opened, less a little slack), newest first."""
         c = load_customer(conn, cid)
         st = logic.tab_status(conn, c)
-        out = []
-        for k in square.unclaimed(conn, limit=3):
-            if since and k["at"] <= since:
-                continue
-            out.append({"key": k["key"], "at": local(k["at"], "%H:%M"), "at_iso": k["at"],
-                        "items": k["items"] or ("Tab repayment" if k["repay_cents"] else "Sale"),
-                        "paid": money(k["sale_cents"]) if k["sale_cents"] else None,
-                        "tab": money(k["tab_cents"]) if k["tab_cents"] else None,
-                        "repaid": money(k["repay_cents"]) if k["repay_cents"] else None,
-                        "tab_warning": bool(k["tab_cents"]) and (not st["can_charge"] or k["tab_cents"] > st["available_cents"])})
+        out = [checkout_json(k, st) for k in square.unclaimed(conn, limit=3) if not since or k["at"] > since]
         return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+    # ---- for the iOS app: the same things the staff pages show, as JSON ---------------------
+    # Changes still go through the normal form posts. They answer with a redirect and leave their
+    # message in the session; /api/customers/{cid} hands that message back as "flash".
+
+    @app.get("/api/staff-names")
+    def api_staff_names():
+        """Who can be on the counter, for the sign-in screen (the sign-in page lists them too)."""
+        return JSONResponse(config.STAFF_NAMES)
+
+    @app.get("/api/me")
+    def api_me(request: Request, who=Depends(staff)):
+        return JSONResponse({"staff": who, "staff_names": config.STAFF_NAMES}, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/customers/{cid:int}")
+    def api_customer(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
+        c = load_customer(conn, cid)
+        if badges.award(conn, cid):
+            conn.commit()
+        s = logic.customer_summary(conn, c)
+        st, led = s["status"], s["ledger"]
+        points = conn.execute(
+            "SELECT delta, reason, note, staff, created_at FROM points_ledger WHERE customer_id = ? "
+            "AND NOT (reason = 'badge' AND delta = 0) ORDER BY created_at DESC, id DESC LIMIT 30", (cid,)).fetchall()
+        offers = rewards.offers_for(conn, cid, s["points"])
+        return JSONResponse({
+            "id": c["id"], "name": c["name"], "email": c["email"], "kind": c["kind"],
+            "archived": bool(c["archived_at"]), "points": s["points"],
+            "tab": {"status": st["status"], "label": st["label"], "can_charge": st["can_charge"],
+                    "available": money(st["available_cents"]), "limit": money(st["limit_cents"]),
+                    "spent": money(st["spend_cents"]), "unlock_spend": money(st["unlock_spend_cents"]),
+                    "decision_note": c["tab_decision_note"]},
+            "owing": money(led["owing_cents"]), "owing_cents": led["owing_cents"],
+            "overdue": money(led["overdue_cents"]) if led["overdue_cents"] else None,
+            "charges": [{"at": local(ch["charged_at"], "%d %b"), "amount": money(ch["net_cents"]),
+                         "unpaid": money(ch["unpaid_cents"]), "due": local(ch["due_at"], "%d %b"),
+                         "overdue": ch["overdue"]}
+                        for ch in reversed(led["charges"]) if ch["unpaid_cents"] > 0],
+            "rewards": [{"name": o["reward"]["name"], "cost": o["reward"]["points_cost"], "short": o["short"],
+                         "can_redeem": o["can_redeem"], "limit_hit": o["limit_hit"]} for o in offers],
+            "history": [{"delta": p["delta"], "reason": p["reason"], "note": p["note"], "staff": p["staff"],
+                         "at": local(p["created_at"], "%d %b %H:%M")} for p in points],
+            "flash": request.session.pop("flash", None),
+            "flash_kind": request.session.pop("flash_kind", "ok"),
+            "opened": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/customers/{cid:int}/claimable")
+    def api_claimable(cid: int, who=Depends(staff), conn=Depends(get_conn)):
+        """What the claim page lists: fetches the sale just taken from Square first."""
+        c = load_customer(conn, cid)
+        note = None
+        if config.SQUARE_TOKEN:
+            result = square.sync(conn, wait=8)
+            if "error" in result:
+                note = square.describe_sync(result)
+        st = logic.tab_status(conn, c)
+        return JSONResponse({"note": note, "square_on": bool(config.SQUARE_TOKEN),
+                             "sales": [checkout_json(k, st) for k in square.unclaimed(conn)]},
+                            headers={"Cache-Control": "no-store"})
 
     @app.post("/customers/{cid:int}/claim")
     def claim(request: Request, cid: int, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
