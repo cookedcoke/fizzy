@@ -114,19 +114,21 @@ final class OfflineQueue {
                 } else {
                     try await API.shared.post(p.path, form, files: files)
                 }
-                // It's in (a redirect). The message it left says whether Fizzy took it or said no; if that
-                // can't be read, it's in all the same.
-                let verdict: Flash? = (try? await API.shared.get("money")).flatMap { page in
-                    page.flash.optString.map { Flash(text: $0, ok: page.flash_kind.string != "bad") }
-                }
+                // It's in (a redirect). The message it left says whether Fizzy took it or said no. If that can't
+                // be read yet, it stays until it can: sending it again is safe (a restock has its own id).
+                let page: J
+                do { page = try await API.shared.get("money") } catch { update(id) { $0.lastTry = Date() }; return }
                 guard items.contains(where: { $0.id == id }) else { continue }   // deleted while on its way: it's in anyway
-                if let v = verdict, !v.ok {
-                    update(id) { $0.problem = v.text }
+                if page.flash_kind.string == "bad", let m = page.flash.optString {
+                    update(id) { $0.problem = m }
                     continue
                 }
                 lastSent = "\(p.title) sent."
                 remove(p)
             } catch APIError.passcode {
+                update(id) { $0.needsPasscode = true }
+                return
+            } catch APIError.cancelled {   // the passcode prompt was put away: nothing wrong, stop here
                 update(id) { $0.needsPasscode = true }
                 return
             } catch APIError.signedOut {

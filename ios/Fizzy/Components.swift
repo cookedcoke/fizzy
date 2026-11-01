@@ -40,12 +40,16 @@ final class Page {
         let mine = loading
         do {
             let d = try await AppModel.shared.call { try await API.shared.get(path, query) }
-            guard mine == loading else { return false }
+            let fresh = d.flash.optString.map { Flash(text: $0, ok: d.flash_kind.string != "bad") }
+            guard mine == loading else {   // a newer load is on its way with newer data; the message here is still the latest
+                if let fresh { flash = fresh }
+                return true
+            }
             data = d
             loaded = true
             error = nil
             offlineSince = nil
-            flash = d.flash.optString.map { Flash(text: $0, ok: d.flash_kind.string != "bad") }   // an older message doesn't linger
+            flash = fresh   // an older message doesn't linger
             return true
         } catch is CancellationError {
         } catch let e as URLError where e.code == .cancelled {

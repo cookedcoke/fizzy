@@ -146,7 +146,11 @@ final class AskLive {
                 break
             } catch APIError.message(let message) {
                 self.error = message
-                if !accepted { lost = true }     // refused before it was taken (busy, not set up, passcode cancelled): back in the box
+                if !accepted { lost = true }     // refused before it was taken (busy, not set up): back in the box
+                break
+            } catch APIError.cancelled {
+                self.error = APIError.cancelled.localizedDescription
+                lost = true                      // the passcode prompt was put away: back in the box
                 break
             } catch APIError.signedOut {
                 break

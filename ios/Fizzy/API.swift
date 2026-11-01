@@ -8,6 +8,7 @@ enum APIError: LocalizedError {
     case signedOut
     case notRegistered(String)
     case passcode(need: String)   // "pin" or "owner"
+    case cancelled                // the passcode prompt was dismissed: nothing was sent
     case message(String)
     case server(Int)
 
@@ -16,6 +17,7 @@ enum APIError: LocalizedError {
         case .signedOut: "You're signed out."
         case .notRegistered(let host): "This device isn't registered with Fizzy, so it was sent to \(host). Register it in Settings."
         case .passcode: "Enter the passcode first. Nothing was changed."
+        case .cancelled: "Cancelled. Nothing was changed."
         case .message(let m): m
         case .server(let code): code == 404 ? "Not found." : "Fizzy had a problem (\(code)). Try again."
         }

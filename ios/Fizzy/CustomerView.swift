@@ -373,7 +373,13 @@ struct CustomerView: View {
     }
 
     private func claim(_ sale: J) {
-        Task { await page.submit("customers/\(id)/claim", [("key", sale.key.string)]) }
+        Task {
+            let o = await page.submit("customers/\(id)/claim", [("key", sale.key.string)])
+            if !o.ok {   // refused, or the passcode put away: say so, and offer the sale again
+                dismissedSales.remove(sale.key.string)
+                if page.flash == nil { page.flash = Flash(text: o.message ?? "That didn't work.", ok: false) }
+            }
+        }
     }
 }
 
