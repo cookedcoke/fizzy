@@ -1,6 +1,6 @@
-# Fizzy for Mac
+# Fizzy for the counter
 
-A small Mac app for the counter. It opens two windows:
+A small desktop app for the counter, built with Electron. It opens two windows:
 
 - **Staff window** (main screen): Fizzy as usual. Sign in, search customers, claim sales.
 - **Customer display** (second screen): full screen, facing the customers. It shows
@@ -9,20 +9,24 @@ A small Mac app for the counter. It opens two windows:
 Both windows share the same cookies, so signing in once in the staff window also signs in
 the display.
 
-Needs macOS 13 or later. Runs on Apple silicon and Intel Macs.
+Needs macOS 12 or later. Runs on Apple silicon and Intel Macs.
 
 ## Build it
 
-You need Xcode (from the App Store). Then either:
-
-- open `mac/Fizzy.xcodeproj` in Xcode and press Cmd+R to build and run, or
-- run the build script, which puts the app at `mac/build/Fizzy.app`:
+You need Node.js (from nodejs.org, or `brew install node`). In this folder:
 
 ```sh
-mac/build.sh
+npm install
+npm run dist
 ```
 
-Drag `Fizzy.app` into Applications if you like.
+That makes `mac/dist/mac-universal/Fizzy.app`. Drag it into Applications. It's about
+500 MB, because it carries its own copy of Chrome for both kinds of Mac.
+
+To try changes without packaging, run `npm start`.
+
+If you had the earlier Swift version of Fizzy in Applications, delete it first. They use
+the same app ID.
 
 ## Open it the first time
 
@@ -40,15 +44,15 @@ You only need to do this once.
 
 ## Signing in
 
-- Sign in with the staff password. **Security keys (passkeys) don't work in this app**,
-  because macOS only allows them in apps signed with a developer account.
-- The app keeps its own cookies, separate from Safari. If the counter Mac has to be a
+- Sign in with the staff password. Security keys (passkeys) may not work in this app, so
+  don't rely on them.
+- The app keeps its own cookies, separate from your browser. If the counter has to be a
   registered device, register it again inside the app: make a registration link in Fizzy
   (Settings > Devices), then in the app choose **File > Open Link** (Cmd+L) and paste it.
 
 ## Using it
 
-The menu bar (while the staff window is in front):
+The menu bar:
 
 | Menu | Item | What it does |
 | --- | --- | --- |
@@ -57,22 +61,23 @@ The menu bar (while the staff window is in front):
 | Display | Reload display | Loads the display page again |
 | Display | Move display to other screen | Puts the display on the next screen and remembers it |
 | File | Open Link (Cmd+L) | Opens a pasted Fizzy link in the staff window |
-| File | Print (Cmd+P) | Prints the staff page. Fizzy's own Print buttons do the same |
+| File | Print (Cmd+P) | Prints the staff page. Fizzy's own Print buttons work too |
 | View | Back, Forward, Home, Reload Page, zoom | For the staff window |
 | Fizzy | Settings (Cmd+,) | Change the Fizzy address, e.g. to a test server |
 
 Good to know:
 
 - The customer display can't be clicked, typed into or closed, so Esc, Cmd+W and Cmd+Q
-  never reach it. It stays up when you hide Fizzy with Cmd+H.
+  never reach it.
+- Fizzy > Hide Fizzy (Cmd+H) hides only the staff window. The display stays up.
 - If the second screen is unplugged, the display hides. When a second screen is plugged back
-  in, the display goes back to it by itself.
+  in, the display goes back to it by itself. With only one screen, the display stays hidden.
 - If the display ends up on the wrong screen, use **Move display to other screen**. If the
   staff window was on that screen, it moves to the other one.
 - Closing the staff window (Cmd+W) doesn't quit. Click Fizzy in the Dock, or choose
   Window > Fizzy (Cmd+1), to get it back.
-- Quitting asks "Quit Fizzy? The customer display will turn off." Press Esc or click Cancel
-  to stay. Return does nothing, so a stray key press can't quit.
+- Quitting asks "Quit Fizzy? The customer display will turn off." Return and Esc both
+  cancel, so a stray key press can't quit. Click **Quit** to quit.
 - While Fizzy is open, the Mac won't dim its screens, start the screen saver or sleep.
 - The staff window remembers its size and position.
 - Links to other websites open in your default browser. Only `fizzy.cookedcoke.co`,
@@ -86,6 +91,8 @@ Good to know:
 Change it to try the app with a test server, e.g. `http://localhost:8000`. Both windows
 reload when you save. **Use Default** puts it back.
 
+Settings are kept in `~/Library/Application Support/Fizzy/settings.json`.
+
 ## For the Fizzy web pages
 
 How the staff pages talk to the display. The messages go straight from one window to the
@@ -94,7 +101,7 @@ other inside the app, not through the server.
 - A staff page sends a message with:
 
   ```js
-  window.webkit.messageHandlers.fizzyDisplay?.postMessage({type: "show", customer: 123});
+  window.webkit?.messageHandlers?.fizzyDisplay?.postMessage({type: "show", customer: 123});
   ```
 
   The `?.` keeps it safe in a normal browser, where `window.webkit` doesn't exist.
@@ -110,12 +117,12 @@ other inside the app, not through the server.
 - The app doesn't look inside messages. New kinds of message only need changes to the
   pages. The menu items send `{"type":"hide"}` and `{"type":"idle"}`.
 - Messages must be plain JSON (objects, arrays, strings, numbers, true/false, null).
-  Anything else is dropped and logged.
 - Only messages from Fizzy's own pages (the hosts above) are passed on.
 - Messages sent while the display page is loading are lost. The display page should work
   out what to show by itself when it loads, e.g. start idle.
-- The app adds `FizzyMac/1.0` to the browser's user agent, so pages can tell they're in
+- The app adds `FizzyMac/1.0.0` to the browser's user agent, so pages can tell they're in
   the app.
+- `window.print()` works as normal.
 
 ### Until /display exists
 
@@ -127,26 +134,23 @@ each time a page loads in the staff window, so signing in brings the display up.
 
 ### Checking messages get through
 
-Every message passed to the display is logged. To watch them, run this in Terminal while
-the app is open:
+Every message passed to the display is logged in `~/Library/Logs/Fizzy/main.log`. To watch
+them, run this in Terminal while the app is open:
 
 ```sh
-log stream --level info --predicate 'subsystem == "co.cookedcoke.fizzy"'
+tail -f ~/Library/Logs/Fizzy/main.log
 ```
 
-You'll see lines like `Forwarding to display: {"type":"show","customer":123}`. You can also
-open Console.app and search for `co.cookedcoke.fizzy`.
+You'll see lines like `[bridge] Forwarding to display: {"type":"show","customer":123}`.
 
-To look inside the pages, turn on Safari > Settings > Advanced > "Show features for web
-developers", then use Safari's Develop menu > (this Mac) > Fizzy.
+To look inside the pages, use View > Developer Tools (staff window) or
+Display > Display Developer Tools.
 
 ## The code
 
-- `Fizzy/AppDelegate.swift`: starts things up, the quit question, menu actions.
-- `Fizzy/StaffWindowController.swift`: the staff window, links, downloads, pop-ups.
-- `Fizzy/DisplayController.swift`: the display window, which screen it's on, the placeholder.
-- `Fizzy/DisplayBridge.swift`: passes messages from the staff pages to the display.
-- `Fizzy/KeepAwake.swift`, `Settings.swift`, `SettingsWindowController.swift`, `MainMenu.swift`.
-
-`Fizzy.xcodeproj` is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen).
-If you add or remove source files, run `xcodegen` in this folder (`brew install xcodegen` first).
+- `src/main.js`: starts things up, the quit question, the menu bar, passing messages on.
+- `src/staff.js`: the staff window, links, downloads, its size and position.
+- `src/display.js`: the display window, which screen it's on, the placeholder.
+- `src/staff-preload.js`: gives the staff pages `window.webkit.messageHandlers.fizzyDisplay`.
+- `src/store.js`: settings. `src/log.js`: the log file.
+- `src/settings.html`, `src/openlink.html`, `src/placeholder.html`: the app's own pages.
