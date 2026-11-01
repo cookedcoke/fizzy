@@ -303,3 +303,18 @@ def test_ask_join_with_nothing_pending(client):
     login(client)
     body = client.get("/ask/stream").text
     assert [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")] == [{"t": "none"}]
+
+
+def test_new_chat_clears_the_cards_too(client):
+    login(client)
+    conn = db.connect()
+    conn.execute("INSERT INTO ask_messages(staff, role, content, shown, created_at) VALUES ('Mike', 'user', '[]', 'hi', ?)", (db.now_iso(),))
+    for status in ("done", "dismissed", "pending"):
+        conn.execute("INSERT INTO ask_proposals(staff, action, payload, summary, status, created_at) VALUES ('Mike', 'reward', '{}', 'A reward', ?, ?)",
+                     (status, db.now_iso()))
+    conn.commit()
+    conn.close()
+    assert len(client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()["timeline"]) == 4
+    client.post("/ask/clear")
+    page = client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()
+    assert page["timeline"] == []          # no cards left lingering at the top of the new chat

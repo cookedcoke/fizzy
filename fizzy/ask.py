@@ -678,8 +678,10 @@ def _sse(obj):
 
 @router.post("/ask/clear")
 def clear(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+    """A clean slate: the words and the suggestion cards both go. What a card did (a rule, a reward, a
+    double points day) stays, and the activity log still says who pressed Do it."""
     conn.execute("DELETE FROM ask_messages WHERE staff = ?", (who,))
-    conn.execute("UPDATE ask_proposals SET status = 'dismissed' WHERE staff = ? AND status = 'pending'", (who,))
+    conn.execute("DELETE FROM ask_proposals WHERE staff = ?", (who,))
     conn.commit()
     return back(request, "/ask", "Started a new conversation.")
 
