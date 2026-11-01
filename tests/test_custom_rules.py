@@ -261,3 +261,11 @@ def test_ask_streams_steps_then_the_answer(client, monkeypatch):
     monkeypatch.setattr(ask, "_stream", lambda *a, **k: (_ for _ in ()).throw(ask.AskError("Gemini says too many requests")))
     body = client.post("/ask/stream", data={"text": "again"}).text
     assert '"t": "error"' in body and "too many requests" in body             # errors arrive as an event, never a hang
+
+
+def test_ask_sees_the_built_in_badges(conn):
+    from fizzy import ask, badges
+    out = ask.run_tool(conn, "Will", "list_rules", {})
+    names = [b["name"] for b in out["built_in_badges"]]
+    assert names == list(badges.BUILT_IN) and len(names) == 10
+    assert out["built_in_badges"][0]["how"] == "Buy something at the stall" and "custom_rules" in out
