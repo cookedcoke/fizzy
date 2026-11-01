@@ -325,8 +325,11 @@
     else if (m.type === "idle") { hidden = false; idle(); }
     else if (m.type === "hide") { hidden = true; blank(""); }
   }
-  window.fizzyDisplay = handle;                                   // the Mac app calls this
-  if ("BroadcastChannel" in window) new BroadcastChannel("fizzy-display").onmessage = function (e) { handle(e.data); };  // same browser
+  // The Mac app calls this. Its staff pages also broadcast the same message, so once the app has
+  // spoken, the broadcast copy is ignored (otherwise every message would land twice).
+  var viaApp = false;
+  window.fizzyDisplay = function (m) { viaApp = true; handle(m); };
+  if ("BroadcastChannel" in window) new BroadcastChannel("fizzy-display").onmessage = function (e) { if (!viaApp) handle(e.data); };  // same browser
 
   // Keep the screen awake where the browser allows it (the Mac app does this itself).
   function awake() { if (navigator.wakeLock) navigator.wakeLock.request("screen").catch(function () {}); }
