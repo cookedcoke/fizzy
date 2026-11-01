@@ -110,9 +110,10 @@ async function load() {
   try {
     response = await session.defaultSession.fetch(url, { cache: 'no-store' });
   } catch (err) {
-    showPlaceholder(`didn't load: ${err.message}`);
+    if (!win.isDestroyed()) showPlaceholder(`didn't load: ${err.message}`);
     return;
   }
+  if (win.isDestroyed()) return;  // quit while it was checking
   if (response.status === 404) {
     showPlaceholder("/display isn't there yet (404)");
   } else if (!isDisplayPage(response.url || url)) {
@@ -124,7 +125,7 @@ async function load() {
 
 // Tries /display again if the placeholder is up, e.g. after someone signs in on the staff screen.
 function retryIfNeeded() {
-  if (showingPlaceholder) load();
+  if (showingPlaceholder && !win.isDestroyed()) load();
 }
 
 function showPlaceholder(reason) {
@@ -139,6 +140,7 @@ function showPlaceholder(reason) {
 
 // Passes a message (already JSON) to the display page.
 function send(json) {
+  if (!win || win.isDestroyed()) return;
   log('bridge', `Forwarding to display: ${json}`);
   win.webContents
     .executeJavaScript(`void (window.fizzyDisplay && window.fizzyDisplay(${json}))`)
@@ -169,6 +171,7 @@ function chooseScreen() {
 
 // Covers the right screen, or hides the display until a second screen is plugged in.
 function place() {
+  if (!win || win.isDestroyed()) return;
   const target = chooseScreen();
   if (!target) {
     if (win.isVisible()) log('display', 'Only one screen; display hidden until another is plugged in');
@@ -221,6 +224,8 @@ function openDevTools() {
 
 // When quitting: the window can't be closed the normal way.
 function destroy() {
+  clearTimeout(placeTimer);
+  clearTimeout(retryTimer);
   if (win && !win.isDestroyed()) win.destroy();
 }
 
