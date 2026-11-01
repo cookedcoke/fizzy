@@ -65,12 +65,12 @@
               text-align: center; font-size: 2.2vh; color: var(--muted) }
   #idle .qr > svg { width: 22vh; height: 22vh; background: #fff; border-radius: 2vh; padding: 1.2vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3) }
   #idle .qr b { color: var(--ink) }
-  /* iOS stopwatch style: thin, even-width digits counting down to the next slide */
+  /* a ring counting down to the next slide */
   .countdown { position: relative; width: 22vh; height: 22vh; margin-bottom: 1.5vh; display: grid; place-items: center }
   .countdown svg { position: absolute; inset: 0; transform: rotate(-90deg) }
   .countdown circle { fill: none; stroke-width: 4; stroke-linecap: round }
   .countdown .track { stroke: #F3E2D6 } .countdown .ring { stroke: var(--red); stroke-dasharray: 100 100 }
-  .countdown span { font-family: -apple-system, "SF Pro Display", system-ui, sans-serif; font-weight: 300; font-size: 10vh;
+  .countdown span { font-family: var(--display); font-weight: 800; letter-spacing: -.03em; font-size: 10vh;
                     font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1 }
   .countdown[hidden] { display: none }
 
