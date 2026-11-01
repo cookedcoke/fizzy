@@ -308,7 +308,6 @@ struct PersonField: View {
 /// A form with Cancel and a save button. A refusal stays on the form so it can be fixed.
 struct FormSheet<Content: View>: View {
     let title: String
-    var accessory: AnyView? = nil      // a row above the keyboard (suggestions), beside Done
     var action = "Save"
     var ready = true
     var destructive = false
@@ -331,11 +330,7 @@ struct FormSheet<Content: View>: View {
             .scrollDismissesKeyboard(.interactively)
             .disabled(busy)
             .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    if let accessory { accessory }
-                    Spacer()
-                    Button("Done") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
-                }
+                KeyboardDoneButton()
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) }   // it's on its way: see it through
                 ToolbarItem(placement: .confirmationAction) {
                     if busy { ProgressView() } else {
