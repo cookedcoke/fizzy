@@ -338,7 +338,8 @@ def test_ask_gives_up_on_a_stuck_answer(client, monkeypatch):
     assert "Still answering" in body
     stuck.t0 -= ask.STUCK_AFTER + 1
     monkeypatch.setattr(ask, "_stream", lambda contents, system, tools=True: iter([("delta", "Fine."), ("content", {"role": "model", "parts": [{"text": "Fine."}]})]))
-    body = client.post("/ask/stream", data={"text": "again"}).text
+    body = client.post("/ask/stream", data={"text": "again", "client": "phone-7"}).text
     events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
     assert [e["t"] for e in events] == ["start", "delta", "done"] and events[0]["text"] == "again"
-    assert stuck.done and stuck.events[-1]["t"] == "error"      # whoever was still following the old one is told
+    assert events[0]["client"] == "phone-7"                      # the asker's own tag, to know it from an older answer
+    assert stuck.done and stuck.abandoned and stuck.events[-1]["t"] == "error"   # followers of the old one are told; it writes no more

@@ -156,8 +156,10 @@
     var me = document.createElement("div"); me.className = "bubble me enter"; me.textContent = q;
     document.getElementById("end").before(me);
     var data = new FormData(f); t.value = ""; grow();
+    data.append("client", nonce);
     run(q, me, fetch("/ask/stream", { method: "POST", body: data, credentials: "same-origin" }));
   }
+  var nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);   // this tab's tag for its question
   // Fizzy writes the answer in the background, so leaving the page or losing the connection doesn't lose it:
   // this request only follows along, and joins again (GET) if it's cut off. Opened while an answer is under
   // way (data-pending), the page joins it: me is null then, and the chat is redrawn from Fizzy's copy at the end.
@@ -198,7 +200,7 @@
     function handle(ev) {
       if (complete) return;
       if (ev.t === "start") {   // which question this is: ours, or an older one when ours never got there
-        if (jobId ? ev.id !== jobId : (joining && ev.text !== q)) {
+        if (jobId ? ev.id !== jobId : (joining ? ev.text !== q : ev.client !== nonce)) {
           if (jobId) { complete = true; rejoined = true; if (reader) reader.cancel(); }   // ours is done and gone: Fizzy's copy has it
           else fail("Couldn't reach Fizzy. Check the connection and try again.");
           return;
@@ -227,6 +229,7 @@
         var type = r.headers.get("content-type") || "";
         if (r.redirected && /\/login/.test(r.url)) { location.href = "/login?next=/ask"; throw 0; }
         if (type.indexOf("event-stream") < 0) {  // e.g. still needs the passcode: keep the question, say what Fizzy said
+          if (jobId) throw new Error("not a stream");   // joining again got a proxy's error page: Fizzy still has the question
           return r.text().then(function (html) {
             var m = new DOMParser().parseFromString(html, "text/html").querySelector(".flash.bad, .err, main > .flash");
             if (me) me.remove(); fail(m ? m.textContent.trim() : "Fizzy didn't take that. Try again.");
