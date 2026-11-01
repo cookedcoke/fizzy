@@ -622,10 +622,51 @@ def register(app):
         for i in idle:
             i["margin"] = (round(100 * (i["price"] - i["cost_each"]) / i["price"])
                            if i["price"] and i["cost_each"] is not None else None)
-        return render(request, "profit.html", pr=p, idle=idle, range=range if range in PROFIT_RANGES else "7",
+        rows, idle = _by_item(conn, p["items"], idle, cost_map)
+        return render(request, "profit.html", pr=dict(p, items=rows), idle=idle, range=range if range in PROFIT_RANGES else "7",
                       ranges=PROFIT_RANGES, label=label, square_on=bool(config.SQUARE_TOKEN),
                       catalog_sync=db.get_setting(conn, "catalog_last_ok"), catalog_error=db.get_setting(conn, "catalog_error"),
                       catalog_count=conn.execute("SELECT COUNT(*) FROM catalog_items WHERE deleted = 0").fetchone()[0])
+
+    def _by_item(conn, sold, idle, cost_map):
+        """Variations of one item (Coke Mini, Coke Can...) share one row and one cost: they cost
+        the same, so it's entered once against the item. Single-variation items are unchanged."""
+        names, count = {}, {}
+        for r in conn.execute("SELECT item_name FROM catalog_items WHERE deleted = 0"):
+            b = stats.item_key(r["item_name"])
+            names[b] = r["item_name"]; count[b] = count.get(b, 0) + 1
+        multi = {b for b, n in count.items() if n > 1}
+        groups, out_sold, out_idle = {}, [], []
+        for r in sold:
+            if r.get("custom") or r["base"] not in multi:
+                out_sold.append(r); continue
+            g = groups.get(r["base"])
+            if g is None:
+                g = groups[r["base"]] = {"key": r["base"], "base": r["base"], "name": names[r["base"]], "qty": 0, "revenue": 0,
+                                         "cost": 0, "custom": False, "variants": [], "_known": True}
+                out_sold.append(g)
+            g["qty"] += r["qty"]; g["revenue"] += r["revenue"]; g["variants"].append(r["name"])
+            g["cost"] = None if g["cost"] is None or r["cost"] is None else g["cost"] + r["cost"]
+        for r in idle:
+            b = r["base"]
+            if b in multi and b in groups:
+                groups[b]["variants"].append(r["name"]); groups[b].setdefault("prices", []).append(r["price"]); continue
+            if b in multi:
+                g = groups[b] = {"key": b, "base": b, "name": names[b], "variants": [r["name"]], "prices": [r["price"]], "idle": True}
+                out_idle.append(g); continue
+            out_idle.append(r)
+        for g in groups.values():
+            g["cost_each"] = cost_map.get(g["base"])
+            prices = sorted(p for p in g.get("prices", []) if p)
+            g["price"] = prices[0] if prices else None             # margin from the cheapest: the worst case
+            g["price_to"] = prices[-1] if prices and prices[-1] != prices[0] else None
+            if g.get("idle"):
+                g["margin"] = (round(100 * (g["price"] - g["cost_each"]) / g["price"])
+                               if g["price"] and g["cost_each"] is not None else None)
+            else:
+                g["profit"] = None if g["cost"] is None else g["revenue"] - g["cost"]
+                g["margin"] = round(100 * g["profit"] / g["revenue"]) if g["profit"] is not None and g["revenue"] else None
+        return out_sold, out_idle
 
     @app.post("/profit/refresh")
     def profit_refresh(request: Request, who=Depends(staff), conn=Depends(get_conn)):

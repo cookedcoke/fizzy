@@ -203,7 +203,10 @@ def money_page(request: Request, start: str = "", end: str = "", edit: int = 0, 
     week_start, _ = stats.day_bounds(t - timedelta(days=60))
     _, week_end = stats.day_bounds(t)
     # Square's item list first (exact names, every variation); then anything else seen or costed.
-    known = [r[0] for r in conn.execute("SELECT display FROM catalog_items WHERE deleted = 0 ORDER BY display")]
+    # Items with several variations are offered once by their plain name too (one cost for them all).
+    known = [r[0] for r in conn.execute("SELECT item_name FROM catalog_items WHERE deleted = 0 GROUP BY item_name "
+                                        "HAVING COUNT(*) > 1 ORDER BY item_name")]
+    known += [r[0] for r in conn.execute("SELECT display FROM catalog_items WHERE deleted = 0 ORDER BY display")]
     known += sorted(({r[0] for r in conn.execute("SELECT name FROM item_costs WHERE name_key NOT LIKE 'v:%'")}
                      | {i["name"] for i in stats.top_items(stats.checkouts(conn, week_start, week_end), limit=200)})
                     - set(known))

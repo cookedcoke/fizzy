@@ -218,6 +218,12 @@ def set_cost(conn, name, cost_cents, staff, key=None):
     """Save what one item costs us. key is the item's key (see line_items); by default the name."""
     from .db import now_iso
     key = key or item_key(name)
+    if cost_cents is not None and not key.startswith("v:"):
+        # A cost for the whole item (all its variations): older per-variation costs would
+        # otherwise win over it, so they go.
+        for r in conn.execute("SELECT variation_id, item_name FROM catalog_items").fetchall():
+            if item_key(r["item_name"]) == key:
+                conn.execute("DELETE FROM item_costs WHERE name_key = ?", (f"v:{r['variation_id']}",))
     if cost_cents is None:
         conn.execute("DELETE FROM item_costs WHERE name_key = ?", (key,))
     else:
@@ -278,4 +284,6 @@ def resolve_item(conn, typed):
     same = [r for r in rows if item_key(r["item_name"]) == t]
     if len(same) == 1:
         return f"v:{same[0]['variation_id']}", same[0]["display"]
+    if same:  # the item, for all its variations at once
+        return t, same[0]["item_name"]
     return t, " ".join(typed.split())
