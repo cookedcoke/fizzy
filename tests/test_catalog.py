@@ -118,9 +118,9 @@ def test_profit_page_lists_unsold_catalogue_items(client, monkeypatch):
         conn.close()
     monkeypatch.setattr(config, "SQUARE_TOKEN", "x")
     page = client.get("/profit").text
-    assert "Coca-Cola (Mini)" in page and "sells for $2.50" in page and "3 items ·" in page
-    r = client.post("/profit", data={"name": ["Coca-Cola (Mini)"], "key": ["v:V2"], "base": ["coca-cola"], "cost": ["0.55"]})
-    assert "Saved 1 cost" in r.text and "78%" in r.text                    # (2.50 - 0.55) / 2.50
+    assert "Coca-Cola (Mini)" in page and "sells for $2.50–$3.50" in page and "3 items ·" in page
+    r = client.post("/profit", data={"name": ["Coca-Cola"], "key": ["coca-cola"], "base": ["coca-cola"], "cost": ["0.55"]})
+    assert "Saved 1 cost" in r.text and "78%" in r.text                    # (2.50 - 0.55) / 2.50, the cheaper one
 
 
 def test_custom_amounts_never_ask_for_a_cost():
@@ -130,3 +130,26 @@ def test_custom_amounts_never_ask_for_a_cost():
     assert items[0]["custom"] and items[0]["name"] == "Custom amounts"
     pr = stats.profit([{"items": items}], {})
     assert pr["uncosted"] == 0 and pr["uncosted_revenue"] == 0 and pr["custom_revenue"] == items[0]["cents"]
+
+
+def test_variations_share_one_row_and_one_cost(client):
+    login(client)
+    conn = db.connect()
+    try:
+        square.sync_catalog(conn, Cat([COKE, SPRITE]))
+        stats.set_cost(conn, "Coca-Cola (Can)", 90, "Will", key="v:V1")       # an old per-variation cost
+        conn.commit()
+    finally:
+        conn.close()
+    page = client.get("/profit").text
+    assert page.count('name="key" value="coca-cola"') == 1 and 'value="v:V1"' not in page   # one row for Coke
+    assert "Coca-Cola (Can), Coca-Cola (Mini)" in page
+    r = client.post("/profit", data={"name": ["Coca-Cola"], "key": ["coca-cola"], "base": ["coca-cola"], "cost": ["0.80"]})
+    assert "Saved 1 cost" in r.text
+    conn = db.connect()
+    try:
+        c = stats.costs(conn)
+        assert "v:V1" not in c and stats.cost_of(c, "v:V1", "coca-cola") == stats.cost_of(c, "v:V2", "coca-cola") == 80
+    finally:
+        conn.close()
+    assert '<option value="Coca-Cola">' in client.get("/money").text           # restocks offer the plain item

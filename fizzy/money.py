@@ -98,6 +98,35 @@ def add_restock(conn, day, shop, note, items, staff_name, receipt=None):
     return rid
 
 
+def update_restock(conn, rid, day, shop, note, items, staff_name, receipt=None):
+    """Change a restock after the fact (substitutions, things that didn't turn up): its day, shop,
+    note and whole item list. The receipt stays unless a new one is given. Returns the old receipt
+    file if it was replaced, so the caller can remove it once this is saved."""
+    r = conn.execute("SELECT * FROM restocks WHERE id = ?", (rid,)).fetchone()
+    if r is None:
+        raise MoneyError("That restock isn't there any more.")
+    items = [(" ".join(n.split()), q, c) for n, q, c in items if n and n.strip()]
+    if not items:
+        raise MoneyError("Add at least one item. To drop the whole restock, delete it.")
+    for name, qty, _ in items:
+        if qty <= 0:
+            raise MoneyError(f"Quantity for {name} must be at least 1.")
+    before = ", ".join(f"{i['qty']}x {i['name']}" for i in conn.execute("SELECT * FROM restock_items WHERE restock_id = ? ORDER BY id", (rid,)))
+    total = sum(c for _, _, c in items)
+    conn.execute("UPDATE restocks SET day = ?, shop = ?, note = ?, total_cents = ?, receipt = COALESCE(?, receipt) WHERE id = ?",
+                 (day.isoformat(), " ".join((shop or "").split()) or None, (note or "").strip() or None, total, receipt, rid))
+    conn.execute("DELETE FROM restock_items WHERE restock_id = ?", (rid,))
+    for typed, qty, line in items:
+        key, name = stats.resolve_item(conn, typed)
+        conn.execute("INSERT INTO restock_items(restock_id, name, qty, cost_cents, item_key) VALUES (?, ?, ?, ?, ?)",
+                     (rid, name, qty, line, key))
+        stats.set_cost(conn, name, (line + qty // 2) // qty, staff_name, key=key)
+    after = ", ".join(f"{q}x {n}" for n, q, _ in items)
+    audit(conn, staff_name, "restock_edit", None,
+          f"#{rid} {r['total_cents'] / 100:.2f} -> {total / 100:.2f} ({before} -> {after})"[:500])
+    return r["receipt"] if receipt and r["receipt"] else None
+
+
 def save_receipt(data, content_type):
     ext = RECEIPT_TYPES.get((content_type or "").split(";")[0].strip().lower())
     if not ext:
@@ -157,7 +186,7 @@ def _period(start, end):
 
 
 @router.get("/money", response_class=HTMLResponse)
-def money_page(request: Request, start: str = "", end: str = "", who=Depends(staff), conn=Depends(get_conn)):
+def money_page(request: Request, start: str = "", end: str = "", edit: int = 0, who=Depends(staff), conn=Depends(get_conn)):
     try:
         s, e = _period(start, end)
     except MoneyError:
@@ -174,7 +203,10 @@ def money_page(request: Request, start: str = "", end: str = "", who=Depends(sta
     week_start, _ = stats.day_bounds(t - timedelta(days=60))
     _, week_end = stats.day_bounds(t)
     # Square's item list first (exact names, every variation); then anything else seen or costed.
-    known = [r[0] for r in conn.execute("SELECT display FROM catalog_items WHERE deleted = 0 ORDER BY display")]
+    # Items with several variations are offered once by their plain name too (one cost for them all).
+    known = [r[0] for r in conn.execute("SELECT item_name FROM catalog_items WHERE deleted = 0 GROUP BY item_name "
+                                        "HAVING COUNT(*) > 1 ORDER BY item_name")]
+    known += [r[0] for r in conn.execute("SELECT display FROM catalog_items WHERE deleted = 0 ORDER BY display")]
     known += sorted(({r[0] for r in conn.execute("SELECT name FROM item_costs WHERE name_key NOT LIKE 'v:%'")}
                      | {i["name"] for i in stats.top_items(stats.checkouts(conn, week_start, week_end), limit=200)})
                     - set(known))
@@ -183,9 +215,58 @@ def money_page(request: Request, start: str = "", end: str = "", who=Depends(sta
     paid = {n: 0 for n in config.STAFF_NAMES}
     for p in payouts:
         paid[p["partner"]] = paid.get(p["partner"], 0) + p["amount_cents"]
-    return render(request, "money.html", start=s, end=e, restocks=restocks, items=items, payouts=payouts, paid=paid,
+    editing = conn.execute("SELECT * FROM restocks WHERE id = ?", (edit,)).fetchone() if edit else None
+    edit_items = conn.execute("SELECT * FROM restock_items WHERE restock_id = ? ORDER BY id", (edit,)).fetchall() if editing else []
+    return render(request, "money.html", editing=editing, edit_items=edit_items, start=s, end=e, restocks=restocks, items=items, payouts=payouts, paid=paid,
                   spent=sum(r["total_cents"] for r in restocks), paid_total=sum(paid.values()),
                   partners=config.STAFF_NAMES, known=known, today=t, quick=quick)
+
+
+def _lines(form):
+    names, qtys, costs = form.getlist("item"), form.getlist("qty"), form.getlist("cost")
+    lines = []
+    for n, q, c in zip(names, qtys, costs):
+        if not (n or "").strip():
+            continue
+        try:
+            qty = int(q or 0)
+        except ValueError:
+            raise MoneyError(f"Quantity for {n} must be a whole number.")
+        if qty > MAX_QTY:
+            raise MoneyError(f"Quantity for {n} is more than {MAX_QTY:,} - check it.")
+        lines.append((n, qty, _cents(c, n)))
+    if not lines:
+        raise MoneyError("Add at least one item.")
+    if any(q <= 0 for _, q, _ in lines):
+        raise MoneyError("Every quantity must be at least 1.")
+    return lines
+
+
+@router.post("/money/restock/{rid:int}")
+async def restock_edit(request: Request, rid: int, who=Depends(staff), conn=Depends(get_conn)):
+    form = await request.form()
+    receipt = None
+    try:
+        lines = _lines(form)
+        day = _date(form.get("day"), stats.today())
+        upload = form.get("receipt")
+        if upload is not None and getattr(upload, "filename", ""):
+            receipt = save_receipt(await upload.read(RECEIPT_MAX + 1), upload.content_type)
+        try:
+            old = update_restock(conn, rid, day, form.get("shop"), form.get("note"), lines, who, receipt)
+        except Exception:
+            if receipt:
+                os.remove(os.path.join(receipts_dir(), receipt))
+            raise
+    except MoneyError as e:
+        return back(request, f"/money?edit={rid}#restock", str(e), "bad")
+    conn.commit()
+    if old:
+        try:
+            os.remove(os.path.join(receipts_dir(), old))
+        except OSError:
+            pass
+    return back(request, "/money", "Restock updated.")
 
 
 @router.post("/money/restock")

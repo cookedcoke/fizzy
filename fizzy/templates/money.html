@@ -25,6 +25,7 @@
         <td class="small">{% for it in items.get(r.id, []) %}{{ it.qty }}× {{ it.name }} <span class="muted">({{ it.cost_cents|money }})</span>{{ '<br>'|safe if not loop.last }}{% endfor %}</td>
         <td class="n">{{ r.total_cents|money }}</td>
         <td class="n">{% if r.receipt %}<a class="btn sm" href="/money/receipts/{{ r.receipt }}" target="_blank" rel="noopener">Receipt</a>{% endif %}
+          <a class="btn sm" href="/money?start={{ start }}&end={{ end }}&edit={{ r.id }}#restock">Edit</a>
           <form class="inline" method="post" action="/money/restock/{{ r.id }}/delete"><button class="sm danger" data-confirm="Delete this restock ({{ r.total_cents|money }})?">Delete</button></form></td></tr>{% endfor %}
     </table></div>{% endif %}
   </div>{% endif %}
@@ -40,22 +41,22 @@
 </div>
 
 <div class="col">
-  <form class="panel" id="restock" method="post" action="/money/restock" enctype="multipart/form-data"><h2>Add a restock</h2>
+  {% set ed = editing %}<form class="panel{{ ' attn' if ed }}" id="restock" method="post" action="/money/restock{{ '/' ~ ed.id if ed }}" enctype="multipart/form-data"><h2>{{ 'Edit restock' if ed else 'Add a restock' }}</h2>
     <div class="err" id="rs-problem" role="alert" hidden></div>
-    <label for="rs-day">Day</label><input id="rs-day" type="date" name="day" value="{{ today }}" max="{{ today }}">
-    <label for="rs-shop">Shop</label><input id="rs-shop" type="text" name="shop" placeholder="e.g. Costco, Woolies">
+    <label for="rs-day">Day</label><input id="rs-day" type="date" name="day" value="{{ ed.day if ed else today }}" max="{{ today }}">
+    <label for="rs-shop">Shop</label><input id="rs-shop" type="text" name="shop" value="{{ ed.shop or '' if ed else '' }}" placeholder="e.g. Costco, Woolies">
     <table class="lines" id="rs-lines">
       <tr><th>Item</th><th class="n">Qty</th><th class="n">Cost ($)</th><th></th></tr>
-      <tr><td><input type="text" name="item" list="known-items" placeholder="As named in Square" aria-label="Item"></td>
-        <td><input type="number" name="qty" min="1" step="1" value="1" aria-label="Quantity"></td>
-        <td><input type="text" name="cost" inputmode="decimal" placeholder="total" aria-label="Cost for the whole line"></td>
-        <td><button type="button" class="rm" title="Remove this item" aria-label="Remove this item">×</button></td></tr>
+      {% for it in (edit_items or [none]) %}<tr><td><input type="text" name="item" list="known-items" placeholder="As named in Square" aria-label="Item" value="{{ it.name if it else '' }}"></td>
+        <td><input type="number" name="qty" min="1" step="1" value="{{ it.qty if it else 1 }}" aria-label="Quantity"></td>
+        <td><input type="text" name="cost" inputmode="decimal" placeholder="total" aria-label="Cost for the whole line" value="{{ '%.2f'|format(it.cost_cents / 100) if it else '' }}"></td>
+        <td><button type="button" class="rm" title="Remove this item" aria-label="Remove this item">×</button></td></tr>{% endfor %}
     </table>
     <datalist id="known-items">{% for n in known %}<option value="{{ n }}">{% endfor %}</datalist>
     <div class="actions" style="margin-top:6px"><button type="button" class="sm" id="rs-add">+ Another item</button><span class="hint" style="margin:0;align-self:center">Total: <b id="rs-total">$0.00</b></span></div>
-    <label for="rs-receipt">Receipt photo <span class="muted">(optional)</span></label><input id="rs-receipt" type="file" name="receipt" accept="image/*,application/pdf" capture="environment">
-    <label for="rs-note">Note</label><input id="rs-note" type="text" name="note" placeholder="Optional">
-    <div class="actions"><button class="primary">Save restock</button></div>
+    <label for="rs-receipt">{{ 'New receipt' if ed and ed.receipt else 'Receipt photo' }} <span class="muted">(optional)</span></label><input id="rs-receipt" type="file" name="receipt" accept="image/*,application/pdf" capture="environment">
+    <label for="rs-note">Note</label><input id="rs-note" type="text" name="note" value="{{ ed.note or '' if ed else '' }}" placeholder="Optional">
+    <div class="actions"><button class="primary">{{ 'Save changes' if ed else 'Save restock' }}</button>{% if ed %}<a class="btn" href="/money?start={{ start }}&end={{ end }}">Cancel</a>{% endif %}</div>
   </form>
 
   <form class="panel" id="payout" method="post" action="/money/payout"><h2>Pay the partners</h2>
@@ -69,8 +70,8 @@
       <label class="check"><input type="checkbox" class="pc-who" value="{{ n }}" checked> {{ n }}</label>
       <input type="hidden" name="partner" value="{{ n }}">
       <input type="text" name="amount" inputmode="decimal" placeholder="$0.00" aria-label="Paid to {{ n }}"></div>{% endfor %}
-    <label for="po-day">Day</label><input id="po-day" type="date" name="day" value="{{ today }}" max="{{ today }}">
-    <label for="po-note">Note</label><input id="po-note" type="text" name="note" placeholder="Optional">
+    <label for="po-day">Day</label><input id="po-day" type="date" name="day" value="{{ ed.day if ed else today }}" max="{{ today }}">
+    <label for="po-note">Note</label><input id="po-note" type="text" name="note" value="{{ ed.note or '' if ed else '' }}" placeholder="Optional">
     <div class="actions"><button class="primary">Record payouts</button></div>
   </form>
 </div>
@@ -97,6 +98,7 @@
     row.querySelector("input").focus();
   });
   lines.addEventListener("input", total);
+  total();  // an edit opens with its lines filled in
   lines.addEventListener("click", function (e) {
     var rm = e.target.closest(".rm"); if (!rm) return;
     if (lines.rows.length > 2) rm.closest("tr").remove();

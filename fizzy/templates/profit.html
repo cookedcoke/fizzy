@@ -20,14 +20,14 @@
   {% if pr['items'] or idle %}<div class="scroll"><table>
     <tr><th>Item</th><th class="n">Sold</th><th class="n hide-sm">Revenue</th><th class="n" style="width:130px">Cost each ($)</th><th class="n">Profit</th><th class="n">Margin</th></tr>
     {% for r in pr['items'] %}{% if r.custom %}<tr><td>{{ r.name }} <span class="muted small">· no item, not in profit</span></td><td class="n">{{ r.qty }}</td><td class="n hide-sm">{{ r.revenue|money }}</td><td></td><td></td><td></td></tr>{% else %}<tr>
-      <td>{{ r.name }}<input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="base" value="{{ r.base }}"></td><td class="n">{{ r.qty }}</td><td class="n hide-sm">{{ r.revenue|money }}</td>
+      <td>{{ r.name }}{% if r.variants %}<div class="muted small">{{ r.variants|join(', ') }}</div>{% endif %}<input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="base" value="{{ r.base }}"></td><td class="n">{{ r.qty }}</td><td class="n hide-sm">{{ r.revenue|money }}</td>
       <td class="n"><input class="cost {{ 'missing' if r.cost_each is none }}" type="text" name="cost" inputmode="decimal" placeholder="e.g. 1.20"
         value="{{ '%.2f'|format(r.cost_each / 100) if r.cost_each is not none else '' }}" aria-label="Cost of one {{ r.name }}"></td>
       <td class="n">{{ r.profit|money if r.profit is not none else '' }}</td>
       <td class="n">{% if r.margin is not none %}<span class="{{ 'red' if r.margin < 20 }}">{{ r.margin }}%</span>{% endif %}</td></tr>{% endif %}{% endfor %}
     {% if idle %}<tr><th colspan="6">Not sold {{ label|lower }}{% if catalog_count %} · from Square's item list{% endif %}</th></tr>{% endif %}
     {% for r in idle %}<tr class="idle">
-      <td>{{ r.name }}{% if r.price %} <span class="muted small">· sells for {{ r.price|money }}</span>{% endif %}
+      <td>{{ r.name }}{% if r.price %} <span class="muted small">· sells for {{ r.price|money }}{% if r.price_to %}–{{ r.price_to|money }}{% endif %}</span>{% endif %}{% if r.variants %}<div class="muted small">{{ r.variants|join(', ') }}</div>{% endif %}
         <input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="base" value="{{ r.base }}"></td>
       <td class="n muted">0</td><td></td>
       <td class="n"><input class="cost {{ 'missing' if r.cost_each is none }}" type="text" name="cost" inputmode="decimal" placeholder="e.g. 1.20"

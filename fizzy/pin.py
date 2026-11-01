@@ -61,7 +61,7 @@ ACTIONS = [
     ("rules", "Pause, restart or delete custom badges and events", [("POST", r"^/rules/\d+/")], "owner"),
     ("qr_login", "Show a one-time sign-in code on the customer display", [("POST", r"^/customers/\d+/qr-login$")], "open"),
     ("passcodes", "Set or read back student passcodes", [("POST", r"^/customers/\d+/passcode")], "pin"),
-    ("money", "Add restocks and payouts", [("POST", r"^/money/(restock|payout)$")], "pin"),
+    ("money", "Add restocks and payouts", [("POST", r"^/money/(restock|payout)$"), ("POST", r"^/money/restock/\d+$")], "pin"),
     ("money_delete", "Delete restocks and payouts", [("POST", r"^/money/(restock|payout)/\d+/delete$")], "owner"),
     ("costs", "Item costs", [("POST", r"^/profit$")], "pin"),
     ("square_kind", "Change how a Square payment is counted", [("POST", r"^/square/payments/[^/]+/kind$")], "pin"),
@@ -80,7 +80,7 @@ ACTIONS = [
 ]
 OTHER = "pin"  # anything not listed (new pages) until it's given its own row
 # A points or money change by hand bigger than these needs the "big" level, whatever its row says.
-BIG_PATHS = r"^/(customers/\d+/(points|repay)|tools/|money/(restock|payout)$)"
+BIG_PATHS = r"^/(customers/\d+/(points|repay)|tools/|money/(restock|payout)$|money/restock/\d+$)"
 DEFAULTS = {"big_points": 500, "big_dollars": 50, "big": "owner"}
 
 
