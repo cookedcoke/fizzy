@@ -89,7 +89,7 @@ ipcMain.on('fizzy-display', (event, json) => {
   let host = '';
   try { host = new URL(frame.url).hostname.toLowerCase(); } catch { /* no URL */ }
   // Only Fizzy's own pages get to drive the display.
-  if (event.sender !== staff.window()?.webContents || frame !== event.sender.mainFrame || !store.appHosts().has(host)) {
+  if (event.sender !== staff.contents() || frame !== event.sender.mainFrame || !store.appHosts().has(host)) {
     log('bridge', `Ignored a message from ${host || 'an unknown page'}`);
     return;
   }
@@ -195,7 +195,7 @@ function buildMenu() {
       label: 'File',
       submenu: [
         { label: 'Open Link…', accelerator: 'Cmd+L', click: () => { staff.show(); openForm('openlink.html', 'Open Link', 170); } },
-        { label: 'Print…', accelerator: 'Cmd+P', click: staffOnly(() => staff.window().webContents.print()) },
+        { label: 'Print…', accelerator: 'Cmd+P', click: staffOnly(() => staff.contents().print()) },
         { type: 'separator' },
         { role: 'close', label: 'Close Window' },
       ],
@@ -204,8 +204,8 @@ function buildMenu() {
     {
       label: 'View',
       submenu: [
-        { label: 'Back', accelerator: 'Cmd+[', click: staffOnly(() => staff.window().webContents.navigationHistory.goBack()) },
-        { label: 'Forward', accelerator: 'Cmd+]', click: staffOnly(() => staff.window().webContents.navigationHistory.goForward()) },
+        { label: 'Back', accelerator: 'Cmd+[', click: staffOnly(() => staff.contents().navigationHistory.goBack()) },
+        { label: 'Forward', accelerator: 'Cmd+]', click: staffOnly(() => staff.contents().navigationHistory.goForward()) },
         { label: 'Home', click: staffOnly(() => staff.loadHome()) },
         { label: 'Reload Page', accelerator: 'Cmd+R', click: staffOnly(() => staff.reload()) },
         { type: 'separator' },
@@ -215,7 +215,7 @@ function buildMenu() {
         { type: 'separator' },
         { role: 'togglefullscreen', label: 'Enter Full Screen' },
         { type: 'separator' },
-        { label: 'Developer Tools', accelerator: 'Alt+Cmd+I', click: staffOnly(() => staff.window().webContents.toggleDevTools()) },
+        { label: 'Developer Tools', accelerator: 'Alt+Cmd+I', click: staffOnly(() => staff.contents().toggleDevTools()) },
       ],
     },
     {

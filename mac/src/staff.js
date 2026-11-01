@@ -1,11 +1,16 @@
 // The normal window on the main screen where staff use Fizzy.
-const { BrowserWindow, dialog, screen, shell, session } = require('electron');
+const { BrowserWindow, WebContentsView, dialog, screen, shell, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const store = require('./store');
 const log = require('./log');
 
 let win = null;
+let view = null;  // the Fizzy page, below the title bar strip
+// The title bar is hidden and the window's own background (Fizzy's dark header colour) shows
+// in a strip above the page, so it reads as one dark bar. The page sits below the strip, so the
+// window buttons never cover anything on it.
+const TITLE_BAR_HEIGHT = 28;
 let lastFailedURL = null;  // so View > Reload Page tries the page again, not the error page
 let saveTimer = null;
 const onPageLoaded = [];
@@ -23,6 +28,10 @@ function create() {
     minHeight: 360,
     show: false,
     tabbingIdentifier: 'staff',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 10, y: 7 },
+  });
+  view = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, 'staff-preload.js'),
       contextIsolation: true,
@@ -30,8 +39,21 @@ function create() {
       spellcheck: true,
     },
   });
+  view.setBackgroundColor('#15171B');
+  win.contentView.addChildView(view);
+  const layout = () => {
+    const [width, height] = win.getContentSize();
+    const top = win.isFullScreen() ? 0 : TITLE_BAR_HEIGHT;
+    view.setBounds({ x: 0, y: top, width, height: height - top });
+  };
+  layout();
+  win.on('resize', layout);
+  win.on('enter-full-screen', layout);
+  win.on('leave-full-screen', layout);
+  win.on('focus', () => view.webContents.focus());
   if (saved && saved.maximised) win.maximize();
-  win.once('ready-to-show', () => win.show());
+  view.webContents.once('did-finish-load', () => win.show());
+  setTimeout(() => { if (!win.isDestroyed()) win.show(); }, 3000);  // even if the page is slow
 
   // Remembers the size and position between launches.
   for (const event of ['resize', 'move', 'maximize', 'unmaximize']) {
@@ -50,7 +72,7 @@ function create() {
     }
   });
 
-  const contents = win.webContents;
+  const contents = view.webContents;
   contents.on('did-finish-load', () => contents.setZoomFactor(store.get('staffZoom') || 1));
 
   // Other sites (and mailto: and the like) open in the default browser or app.
@@ -146,28 +168,28 @@ function show() {
 
 function loadHome() {
   lastFailedURL = null;
-  win.loadURL(store.staffURL());
+  view.webContents.loadURL(store.staffURL());
 }
 
 function load(url) {
-  win.loadURL(url);
+  view.webContents.loadURL(url);
 }
 
 function reload() {
-  const url = win.webContents.getURL();
-  if (lastFailedURL) win.loadURL(lastFailedURL);
+  const url = view.webContents.getURL();
+  if (lastFailedURL) view.webContents.loadURL(lastFailedURL);
   else if (!url || !url.startsWith('http')) loadHome();
-  else win.webContents.reload();
+  else view.webContents.reload();
 }
 
 function setZoom(factor) {
   const zoom = Math.min(Math.max(factor, 0.5), 3);
-  win.webContents.setZoomFactor(zoom);
+  view.webContents.setZoomFactor(zoom);
   store.set('staffZoom', zoom === 1 ? undefined : zoom);
 }
 
 function zoomBy(step) {
-  setZoom(win.webContents.getZoomFactor() * step);
+  setZoom(view.webContents.getZoomFactor() * step);
 }
 
 // MARK: downloads
@@ -210,4 +232,5 @@ function unusedFile(folder, name) {
 module.exports = {
   create, show, loadHome, load, reload, setZoom, zoomBy, onPageLoaded,
   window: () => win,
+  contents: () => view && view.webContents,
 };
