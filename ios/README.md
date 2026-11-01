@@ -1,21 +1,30 @@
 # Fizzy for iPhone and iPad
 
 A native SwiftUI app for the counter. It talks to the same Fizzy server as the website, using
-the staff password, and does the counter jobs:
+the staff password, and has everything the website's staff pages have:
 
-- **Sign in** as whoever's on the counter, and switch person from the menu at the top left.
-- **Find a customer** by name, email or student number. A full student number (`rns12345678`)
-  jumps straight to them.
-- **Their page**: can they put it on their tab (and up to how much), points, what they owe,
-  unpaid tab charges, rewards and points history.
-- **Claim sale**: asks Square for the latest sales with no customer, tap one to give it to them.
-- **New sale prompt**: while a customer's page is open, a sale rung up without a customer pops
-  up within a few seconds. *Claim* or *Not theirs*. It only offers sales from about when the
-  page was opened, and never claims anything without a tap.
-- **Record repayment**, **Adjust points**, **Tab decision**: the same forms as the website. If
-  the server refuses (a bad amount, the passcode is needed), the message stays on the form.
+| Tab | What's in it |
+| --- | --- |
+| **Today** | The dashboard: sales, charts, tabs owing, what needs attention (dismiss alerts, assign payments with nobody on them), who's eligible for a tab (approve or reject), top items, latest sales, top customers. Refreshes every minute. |
+| **Customers** | Search by name, email or student number (a full `rns12345678` jumps straight to them), or see who's been in lately. Export new people for Square. |
+| **A customer** | Can they put it on their tab, and how much; points; what they owe; tab charges, repayments, points history, Square payments, tab score. Claim sale, record a repayment, adjust points, approve/reject/revoke a tab, redeem or undo a reward, set or show their student passcode, edit them, change account type, show a sign-in QR code. |
+| **Transactions** | Every Square sale with filters (dates, kind, search) and assigning sales with nobody on them. |
+| **More** | Square (sync, change how a payment is counted, raw payload), Rewards (start and end rewards and double-points days, pause custom rules), Profit (item costs), Money (restocks with receipt photos, payouts with the split calculator), Tools (all of them), Ask (Gemini, with answers as they're written), Import (school directory CSV), Settings (who can do what, tab rules, display, terms, closed days, Gemini key, PIN, maintenance, backups, updates, devices), Activity log, and this app's own settings. |
+
+Like the website, a new sale rung up without a customer pops up within a few seconds while a
+customer's page is open: **Claim** or **Not theirs**. Nothing is claimed without a tap.
+
+Passcodes work as on the website: if a change needs the PIN or the owner's password, the app
+asks for it, then carries on with the change.
 
 Needs iOS 17 or later.
+
+### Not in the app
+
+- **Adding a security key** (passkey). It needs the browser. Existing keys are listed and can
+  be removed.
+- **The customer display** (`/display`) and the Mac app's second-screen features. This is the
+  staff app.
 
 ## Build it
 
@@ -30,32 +39,38 @@ open Fizzy.xcodeproj
 Pick your team under Signing & Capabilities to run it on a device. The Xcode project is made
 from `project.yml`, so change that rather than the project.
 
-## Settings
+## This app's settings
 
-The gear button has:
+More > This app (or the gear on the sign-in screen):
 
 - **Fizzy address**: default `https://fizzy.cookedcoke.co`. Change it to try a test server,
   e.g. `http://192.168.1.20:8000` (plain http only works on the local network).
 - **Counter device**: if Fizzy only lets registered devices in, make a registration link in
-  Fizzy (Settings > Devices) and paste it here.
+  Fizzy (Settings > Devices) and paste it here. Only do this on a device that stays at the counter.
 
 ## How it talks to the server
 
-Reads use JSON endpoints added for this app in `fizzy/app.py` ("for the iOS app"):
-`/api/staff-names`, `/api/me`, `/api/customers/{id}` and `/api/customers/{id}/claimable`, plus
-the existing `/api/search` and `/api/customers/{id}/new-sales`.
+Every staff page also answers with the data it's drawn from, when the request has the header
+`X-Fizzy-Format: json` (see `render` in `fizzy/web.py`). The app uses those pages directly, so
+it always shows what the website would. Secrets (passcodes, key material) are never included.
 
-Changes go through the website's own form posts (`/customers/{id}/claim`, `/repay`, `/points`,
-`/tab`), so the rules, passcode checks and audit log are exactly the same. Those posts redirect
-and leave a message in the session; `/api/customers/{id}` hands it back as `flash`, which is how
-the app shows "Sale claimed for ..." or the reason something was refused.
+Changes go through the website's own form posts (`/customers/{id}/claim`, `/tools/{tool}`,
+`/settings/...`), so the rules, passcode checks and activity log are exactly the same. A post
+redirects and leaves a message in the session; the next page load hands it back as `flash`, which
+is how the app shows "Sale claimed for ..." or why something was refused. When a change needs a
+passcode the server answers `423` with `{"need": "pin"}` (or `"owner"`) to JSON requests.
+
+Two small endpoints exist just for the app: `/api/staff-names` (for the sign-in screen) and
+`/api/me`. Search uses the existing `/api/search`.
 
 The app sends `FizzyiOS/<version>` as its user agent.
 
 ## The code
 
-- `Fizzy/API.swift`: requests, sign-in, cookies, redirects.
-- `Fizzy/Models.swift`: the JSON shapes.
-- `Fizzy/FizzyApp.swift`: signed in or out, who's on the counter.
-- `Fizzy/LoginView.swift`, `HomeView.swift` (search), `CustomerView.swift`, `Sheets.swift`
-  (claim, repay, points, tab, passcode), `SettingsView.swift`.
+- `Fizzy/API.swift`: requests, sign-in, cookies, redirects, downloads, the Ask stream.
+- `Fizzy/JSON.swift`: the generic JSON value pages are read from, and date and money formatting.
+- `Fizzy/Components.swift`: loading a page, posting a change, shared controls, the passcode prompt.
+- `Fizzy/FizzyApp.swift`: signed in or out, the tabs, who's on the counter.
+- One file per screen: `DashboardView`, `CustomersView`, `CustomerView`, `TransactionsView`,
+  `SquareView`, `RewardsView`, `ProfitView`, `MoneyView`, `ToolsView`, `AskView`, `ImportView`,
+  `ServerSettingsView`, `LogView`, `LoginView`, `SettingsView` (this app's own).

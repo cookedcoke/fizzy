@@ -191,6 +191,9 @@ def test_dashboard_on_a_closed_day_shows_a_recap_not_zeros(client):
         assert "Sold by hour" in client.get("/").text
 
 
+JSON = {"X-Fizzy-Format": "json"}
+
+
 def test_ios_api(client):
     assert client.get("/api/staff-names").json() == ["Will", "Mike", "Frankie"]
     assert client.get("/api/me", follow_redirects=False).status_code == 303
@@ -200,9 +203,33 @@ def test_ios_api(client):
                                            "text/csv")}, data={"confirm": "1"})
     cid = client.get("/api/search?q=adel").json()[0]["id"]
     client.post(f"/customers/{cid}/points", data={"delta": "100", "note": "event"}, follow_redirects=False)
-    d = client.get(f"/api/customers/{cid}").json()
-    assert d["name"] == "Adeline Yates" and d["points"] == 100 and d["flash"] == "Points +100."
-    assert d["history"][0]["delta"] == 100 and d["tab"]["status"] == "locked"
-    assert client.get(f"/api/customers/{cid}").json()["flash"] is None  # shown once
-    assert client.get(f"/api/customers/{cid}/claimable").json() == {"note": None, "square_on": False, "sales": []}
-    assert client.get("/api/customers/999999").status_code == 404
+    d = client.get(f"/customers/{cid}", headers=JSON).json()
+    assert d["c"]["name"] == "Adeline Yates" and d["s"]["points"] == 100 and d["flash"] == "Points +100."
+    assert d["points"][0]["delta"] == 100 and d["s"]["status"]["status"] == "locked"
+    assert "passcode_enc" not in d["c"]
+    assert client.get(f"/customers/{cid}", headers=JSON).json()["flash"] is None  # shown once
+    assert client.get(f"/customers/{cid}/claim", headers=JSON).json()["checkouts"] == []
+    assert client.get("/customers/999999", headers=JSON).status_code == 404
+
+
+def test_every_page_has_json(client):
+    login(client)
+    client.post("/import", files={"file": ("d.csv", b"Original Name,Cleaned Name,Email\nADELINE YATES,Adeline Yates,rns00000001@reddamnorthshore.nsw.edu.au\n",
+                                           "text/csv")}, data={"confirm": "1"})
+    for path in ["/", "/customers", "/customers?q=a", "/transactions", "/square", "/rewards", "/profit", "/money", "/tools",
+                 "/ask", "/import", "/settings", "/audit", "/customers/1"]:
+        r = client.get(path, headers=JSON)
+        assert r.status_code == 200 and r.json()["page"], path
+    # secrets never leave the server
+    text = client.get("/customers/1", headers=JSON).text + client.get("/settings", headers=JSON).text
+    assert "passcode_enc" not in text and "token_hash" not in text and "public_key" not in text
+
+
+def test_passcode_needed_is_json_for_the_app(client):
+    from tests.test_errors import _customer
+    login(client)
+    cid = _customer()
+    client.post("/settings/pin", data={"new": "4821"})
+    client.post("/switch", data={"who": "Will"})  # someone new on the counter: locked again
+    r = client.post(f"/customers/{cid}/points", data={"delta": "5", "note": "x"}, headers=JSON)
+    assert r.status_code == 423 and r.json()["need"] == "pin"

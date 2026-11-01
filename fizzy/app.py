@@ -25,7 +25,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
 from . import ask, badges, display, jobs, passkeys, pwa, rules, transactions, updater
-from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
+from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates, wants_json
 
 log = logging.getLogger("fizzy")
 
@@ -423,6 +423,8 @@ def register(app):
     @app.exception_handler(pin.PinRequired)
     async def _need_pin(request, exc):
         msg = "Enter the passcode first. Nothing was changed."
+        if wants_json(request):  # the iOS app asks for the passcode itself, then tries again
+            return JSONResponse({"error": msg, "need": "owner" if exc.need == pin.OWNER else "pin"}, status_code=423)
         if request.method == "GET":
             return back(request, "/tools", msg, "bad")
         return back(request, _same_site_referer(request) or "/", msg, "bad")
@@ -804,9 +806,8 @@ def register(app):
         out = [checkout_json(k, st) for k in square.unclaimed(conn, limit=3) if not since or k["at"] > since]
         return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
-    # ---- for the iOS app: the same things the staff pages show, as JSON ---------------------
-    # Changes still go through the normal form posts. They answer with a redirect and leave their
-    # message in the session; /api/customers/{cid} hands that message back as "flash".
+    # ---- for the iOS app. Every staff page also answers with its data as JSON when asked (see
+    # web.render); these two are what the sign-in screen needs.
 
     @app.get("/api/staff-names")
     def api_staff_names():
@@ -816,53 +817,6 @@ def register(app):
     @app.get("/api/me")
     def api_me(request: Request, who=Depends(staff)):
         return JSONResponse({"staff": who, "staff_names": config.STAFF_NAMES}, headers={"Cache-Control": "no-store"})
-
-    @app.get("/api/customers/{cid:int}")
-    def api_customer(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
-        c = load_customer(conn, cid)
-        if badges.award(conn, cid):
-            conn.commit()
-        s = logic.customer_summary(conn, c)
-        st, led = s["status"], s["ledger"]
-        points = conn.execute(
-            "SELECT delta, reason, note, staff, created_at FROM points_ledger WHERE customer_id = ? "
-            "AND NOT (reason = 'badge' AND delta = 0) ORDER BY created_at DESC, id DESC LIMIT 30", (cid,)).fetchall()
-        offers = rewards.offers_for(conn, cid, s["points"])
-        return JSONResponse({
-            "id": c["id"], "name": c["name"], "email": c["email"], "kind": c["kind"],
-            "archived": bool(c["archived_at"]), "points": s["points"],
-            "tab": {"status": st["status"], "label": st["label"], "can_charge": st["can_charge"],
-                    "available": money(st["available_cents"]), "limit": money(st["limit_cents"]),
-                    "spent": money(st["spend_cents"]), "unlock_spend": money(st["unlock_spend_cents"]),
-                    "decision_note": c["tab_decision_note"]},
-            "owing": money(led["owing_cents"]), "owing_cents": led["owing_cents"],
-            "overdue": money(led["overdue_cents"]) if led["overdue_cents"] else None,
-            "charges": [{"at": local(ch["charged_at"], "%d %b"), "amount": money(ch["net_cents"]),
-                         "unpaid": money(ch["unpaid_cents"]), "due": local(ch["due_at"], "%d %b"),
-                         "overdue": ch["overdue"]}
-                        for ch in reversed(led["charges"]) if ch["unpaid_cents"] > 0],
-            "rewards": [{"name": o["reward"]["name"], "cost": o["reward"]["points_cost"], "short": o["short"],
-                         "can_redeem": o["can_redeem"], "limit_hit": o["limit_hit"]} for o in offers],
-            "history": [{"delta": p["delta"], "reason": p["reason"], "note": p["note"], "staff": p["staff"],
-                         "at": local(p["created_at"], "%d %b %H:%M")} for p in points],
-            "flash": request.session.pop("flash", None),
-            "flash_kind": request.session.pop("flash_kind", "ok"),
-            "opened": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        }, headers={"Cache-Control": "no-store"})
-
-    @app.get("/api/customers/{cid:int}/claimable")
-    def api_claimable(cid: int, who=Depends(staff), conn=Depends(get_conn)):
-        """What the claim page lists: fetches the sale just taken from Square first."""
-        c = load_customer(conn, cid)
-        note = None
-        if config.SQUARE_TOKEN:
-            result = square.sync(conn, wait=8)
-            if "error" in result:
-                note = square.describe_sync(result)
-        st = logic.tab_status(conn, c)
-        return JSONResponse({"note": note, "square_on": bool(config.SQUARE_TOKEN),
-                             "sales": [checkout_json(k, st) for k in square.unclaimed(conn)]},
-                            headers={"Cache-Control": "no-store"})
 
     @app.post("/customers/{cid:int}/claim")
     def claim(request: Request, cid: int, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):

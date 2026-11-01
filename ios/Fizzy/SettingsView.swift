@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// The Fizzy address (to try a test server) and registering this device.
-struct SettingsView: View {
+/// The Fizzy address (to try a test server) and registering this device. Shown from the sign-in
+/// screen as a sheet, and under More > This app.
+struct AppSettingsView: View {
+    var inSheet = false
     @Environment(\.dismiss) private var dismiss
     @AppStorage("baseURL") private var baseURL = ""
     @State private var address = ""
@@ -10,42 +12,44 @@ struct SettingsView: View {
     @State private var busy = false
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField(API.defaultBaseURL, text: $address)
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    if !baseURL.isEmpty {
-                        Button("Use Default") { address = ""; save() }
-                    }
-                } header: {
-                    Text("Fizzy address")
-                } footer: {
-                    Text("Change it to try the app with a test server, e.g. http://localhost:8000.")
-                }
+        if inSheet { NavigationStack { form.toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { save(); dismiss() } } } } }
+        else { form }
+    }
 
-                Section {
-                    TextField("Paste the registration link", text: $link, axis: .vertical)
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("Register this device", action: register).disabled(link.isEmpty || busy)
-                } header: {
-                    Text("Counter device")
-                } footer: {
-                    Text("If Fizzy only lets registered devices in, make a link in Fizzy (Settings > Devices) and paste it here. Only do this on a device that stays at the counter.")
+    private var form: some View {
+        Form {
+            Section {
+                TextField(API.defaultBaseURL, text: $address)
+                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .onSubmit(save)
+                if !baseURL.isEmpty {
+                    Button("Use Default") { address = ""; save() }
                 }
+            } header: {
+                Text("Fizzy address")
+            } footer: {
+                Text("Change it to try the app with a test server, e.g. http://192.168.1.20:8000 (plain http only works on the local network).")
+            }
 
-                if let message {
-                    Section { Label(message.text, systemImage: message.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(message.ok ? .green : .red) }
-                }
+            Section {
+                TextField("Paste the registration link", text: $link, axis: .vertical)
+                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                Button("Register this device", action: register).disabled(link.isEmpty || busy)
+            } header: {
+                Text("Counter device")
+            } footer: {
+                Text("If Fizzy only lets registered devices in, make a link in Fizzy (Settings > Devices) and paste it here. Only do this on a device that stays at the counter.")
             }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { save(); dismiss() } }
+
+            if let message {
+                Section { Label(message.text, systemImage: message.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(message.ok ? .green : .red) }
             }
-            .onAppear { address = baseURL }
         }
+        .navigationTitle("This app")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { address = baseURL }
+        .onDisappear(perform: save)
     }
 
     private func save() {

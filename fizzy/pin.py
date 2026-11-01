@@ -85,7 +85,9 @@ DEFAULTS = {"big_points": 500, "big_dollars": 50, "big": "owner"}
 
 
 class PinRequired(Exception):
-    pass
+    def __init__(self, need=PIN):
+        super().__init__(need)
+        self.need = need  # PIN or OWNER: what has to be entered
 
 
 # ---- the passcodes ---------------------------------------------------------------------------
@@ -359,11 +361,13 @@ async def guard(request: Request):
     def check():  # in a worker thread: the database can wait on a write, and that mustn't stall every request
         conn = db.connect()
         try:
-            return required(conn, request.method, path, form, request.session.get("staff")) > unlocked(request, conn)
+            need = required(conn, request.method, path, form, request.session.get("staff"))
+            return need if need > unlocked(request, conn) else None
         finally:
             conn.close()
-    if await run_in_threadpool(check):
-        raise PinRequired()
+    need = await run_in_threadpool(check)
+    if need is not None:
+        raise PinRequired(need)
 
 
 # ---- pages -----------------------------------------------------------------------------------

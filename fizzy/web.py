@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from . import config, db, logic
@@ -104,6 +104,30 @@ def staff(request: Request):
     return name
 
 
+def wants_json(request):
+    """The iOS app asks for a page's data instead of its HTML (see render)."""
+    return request.headers.get("x-fizzy-format") == "json"
+
+
+# Never sent to the app, even though the templates get them: secrets, and big blobs no page shows.
+HIDDEN_KEYS = {"passcode_enc", "token_hash", "public_key", "credential_id", "raw_json", "lock_rules"}
+
+
+def _plain(v):
+    """Template context -> JSON-ready values. Rows become dicts; dates and Markup become strings."""
+    if isinstance(v, dict) or hasattr(v, "keys"):
+        return {str(k): _plain(v[k]) for k in v.keys() if k not in HIDDEN_KEYS}
+    if isinstance(v, (list, tuple, set, frozenset)):
+        return [_plain(x) for x in v]
+    if v is None or isinstance(v, (bool, int, float, str)):
+        return str(v) if type(v) is not str and isinstance(v, str) else v  # Markup -> plain str
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    if isinstance(v, bytes):
+        return None
+    return str(v)
+
+
 def render(request, name, **ctx):
     ctx.setdefault("staff", request.session.get("staff"))
     ctx["staff_names"] = config.STAFF_NAMES
@@ -118,6 +142,11 @@ def render(request, name, **ctx):
             ctx["unlocked_until"] = (request.session.get("unlock") or {}).get("until", 0)
         finally:
             conn.close()
+    if wants_json(request):
+        # The same data the page is drawn from, so the app shows exactly what the page would.
+        ctx = {k: v for k, v in ctx.items() if k != "request"}
+        ctx.update(page=name.removesuffix(".html"), tz=config.TZ.key)
+        return JSONResponse(_plain(ctx), headers={"Cache-Control": "no-store"})
     return templates.TemplateResponse(request, name, ctx)
 
 

@@ -49,7 +49,7 @@ struct LoginView: View {
                     Button("Settings", systemImage: "gear") { showSettings = true }
                 }
             }
-            .sheet(isPresented: $showSettings, onDismiss: { Task { await model.start() } }) { SettingsView() }
+            .sheet(isPresented: $showSettings, onDismiss: { Task { await model.start() } }) { AppSettingsView(inSheet: true) }
             .refreshable { await model.start() }
             .onAppear {
                 if !model.staffNames.contains(who) { who = model.staffNames.first ?? "" }
