@@ -73,49 +73,102 @@ struct PermissionsForm: View {
     @State private var bigPoints = ""
     @State private var bigDollars = ""
     @State private var error: String?
+    @State private var busy = false
     @Environment(\.dismiss) private var dismiss
 
-    private let groups = ["claim": "Everyday", "points": "Points and rewards", "tab_decisions": "Tabs", "customers": "Customers", "ask": "Ask (Gemini)",
-                          "qr_login": "Customers", "money": "Money", "school_tools": "Big stuff", "admin_accounts": "Special accounts"]
-    private let levels = [("open", "Anyone signed in"), ("pin", "PIN"), ("owner", "Owner only")]
+    /// Where each group starts, as on the website: an action listed here opens a new section.
+    private let groupStarts = ["claim": "Everyday", "points": "Points and rewards", "tab_decisions": "Tabs", "customers": "Customers",
+                               "ask": "Ask (Gemini)", "qr_login": "Customers", "money": "Money", "school_tools": "Big stuff",
+                               "admin_accounts": "Special accounts"]
+    private let levels = [("open", "Anyone"), ("pin", "PIN"), ("owner", "Owner")]
+
+    private struct Group: Identifiable { let id: Int; let title: String; let actions: [(id: String, label: String)] }
+
+    /// The actions in the server's order, cut into sections.
+    private var groups: [Group] {
+        var out: [Group] = []
+        for a in page.data.actions.array {
+            let aid = a[0].string
+            if let title = groupStarts[aid] {
+                out.append(Group(id: out.count, title: title, actions: []))
+            } else if out.isEmpty {
+                out.append(Group(id: 0, title: "Everyday", actions: []))
+            }
+            let g = out.removeLast()
+            out.append(Group(id: g.id, title: g.title, actions: g.actions + [(aid, a[1].string)]))
+        }
+        return out
+    }
 
     var body: some View {
-        let d = page.data
         Form {
-            if let error { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
-            ForEach(d.actions.array.map { $0[0].string }, id: \.self) { aid in
-                let label = d.actions.array.first { $0[0].string == aid }?[1].string ?? aid
-                if let g = groups[aid] { Text(g).font(.footnote.bold()).foregroundStyle(.secondary).listRowBackground(Color.clear) }
-                Picker(label, selection: Binding(get: { perms[aid] ?? "open" }, set: { perms[aid] = $0 })) {
-                    ForEach(levels, id: \.0) { Text($0.1).tag($0.0) }
+            if let error { Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) } }
+            Section {
+                Text("Pick who can do each thing. “Anyone” is anyone signed in; “PIN” asks for the counter PIN first; “Owner” needs the owner's password.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            ForEach(groups) { g in
+                Section(g.title) {
+                    ForEach(g.actions, id: \.id) { a in row(a.label, key: a.id) }
                 }
             }
-            Section("Limits") {
-                Text("Big changes by hand").font(.footnote.bold())
-                HStack { Text("More than"); TextField("points", text: $bigPoints).keyboardType(.numberPad).textFieldStyle(.roundedBorder); Text("points") }
-                HStack { Text("or more than $"); TextField("dollars", text: $bigDollars).keyboardType(.numberPad).textFieldStyle(.roundedBorder) }
-                Text("or anything for everyone at once").font(.caption).foregroundStyle(.secondary)
-                Picker("Needs", selection: Binding(get: { perms["big"] ?? "open" }, set: { perms["big"] = $0 })) {
-                    ForEach(levels, id: \.0) { Text($0.1).tag($0.0) }
+            Section {
+                row("Big changes by hand", key: "big")
+                LabeledContent("More than") {
+                    HStack(spacing: 6) {
+                        TextField("500", text: $bigPoints).keyboardType(.numberPad).multilineTextAlignment(.trailing).frame(width: 70)
+                        Text("points").foregroundStyle(.secondary)
+                    }
                 }
+                LabeledContent("or more than") {
+                    HStack(spacing: 6) {
+                        Text("$").foregroundStyle(.secondary)
+                        TextField("50", text: $bigDollars).keyboardType(.numberPad).multilineTextAlignment(.leading).frame(width: 70)
+                    }
+                }
+            } header: {
+                Text("Limits")
+            } footer: {
+                Text("A change bigger than either number, or anything for everyone at once, needs the level chosen above.")
             }
-            Section { Button("Save") { Task { await save() } }.disabled(page.busy) }
+            Section {
+                Button { Task { await save() } } label: {
+                    HStack { Spacer(); if busy { ProgressView() } else { Text("Save").bold() }; Spacer() }
+                }
+                .disabled(busy)
+            }
         }
         .navigationTitle("Who can do what")
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .toolbar { KeyboardDoneButton() }
         .onAppear {
-            for (k, v) in d.perms.dict where !["big_points", "big_dollars"].contains(k) { perms[k] = v.string }
-            bigPoints = d.perms.big_points.string
-            bigDollars = d.perms.big_dollars.string
+            for (k, v) in page.data.perms.dict where !["big_points", "big_dollars"].contains(k) { perms[k] = v.string }
+            bigPoints = page.data.perms.big_points.string
+            bigDollars = page.data.perms.big_dollars.string
         }
     }
 
+    /// One thing and who can do it: its name, then the three choices under it, the same on every row.
+    private func row(_ label: String, key: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+            Picker(label, selection: Binding(get: { perms[key] ?? "open" }, set: { perms[key] = $0 })) {
+                ForEach(levels, id: \.0) { Text($0.1).tag($0.0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        .padding(.vertical, 2)
+    }
+
     private func save() async {
+        busy = true
+        error = nil
         var form: Params = perms.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
         form += [("big_points", bigPoints), ("big_dollars", bigDollars)]
         let o = await page.submit("settings/permissions", form)
+        busy = false
         if o.ok { dismiss() } else { error = o.message; page.flash = nil }
     }
 }
