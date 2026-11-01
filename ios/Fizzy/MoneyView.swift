@@ -125,8 +125,26 @@ struct RestockSheet: View {
     @State private var note = ""
     @State private var photo: PhotosPickerItem?
     @State private var photoData: Data?
+    @FocusState private var focusedLine: UUID?
 
     private var total: Int { lines.reduce(0) { $0 + Fmt.cents($1.cost) } }
+
+    /// Item names from Square's list (saved with the page, so this works with no signal too), in the
+    /// row above the keyboard while an item box is being typed in.
+    private var itemSuggestions: AnyView? {
+        guard let id = focusedLine, let i = lines.firstIndex(where: { $0.id == id }) else { return nil }
+        let q = lines[i].item.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return nil }
+        let matches = page.data.known.strings.filter { $0.lowercased().contains(q) && $0.lowercased() != q }.prefix(8)
+        guard !matches.isEmpty else { return nil }
+        return AnyView(ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(matches), id: \.self) { m in
+                    Button(m) { lines[i].item = m }.buttonStyle(.bordered).controlSize(.small)
+                }
+            }
+        })
+    }
 
     private func fill() {
         guard let r = editing, lines.count == 1, lines[0].item.isEmpty else { return }
@@ -138,7 +156,7 @@ struct RestockSheet: View {
     }
 
     var body: some View {
-        FormSheet(title: editing == nil ? "Add a restock" : "Edit restock", ready: lines.contains { !$0.item.isEmpty && !$0.cost.isEmpty }, page: page, send: {
+        FormSheet(title: editing == nil ? "Add a restock" : "Edit restock", accessory: itemSuggestions, ready: lines.contains { !$0.item.isEmpty && !$0.cost.isEmpty }, page: page, send: {
             var form: Params = [("day", day), ("shop", shop), ("note", note)]
             for l in lines where !l.item.trimmingCharacters(in: .whitespaces).isEmpty || !l.cost.isEmpty {
                 form += [("item", l.item), ("qty", l.qty), ("cost", l.cost)]
@@ -157,7 +175,7 @@ struct RestockSheet: View {
                 ForEach($lines) { $l in
                     VStack(alignment: .leading) {
                         TextField("Item, as named in Square", text: $l.item).textInputAutocapitalization(.words).autocorrectionDisabled()
-                        ItemSuggestions(text: $l.item, known: page.data.known.strings)
+                            .focused($focusedLine, equals: l.id)
                         HStack {
                             Text("Qty"); TextField("1", text: $l.qty).keyboardType(.numberPad).frame(width: 50).textFieldStyle(.roundedBorder)
                             Text("Cost for the line $"); TextField("total", text: $l.cost).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
@@ -241,30 +259,6 @@ struct PayoutSheet: View {
     }
 }
 
-
-/// Item names from Square's list (saved with the page, so this works with no signal too).
-struct ItemSuggestions: View {
-    @Binding var text: String
-    let known: [String]
-
-    private var matches: [String] {
-        let q = text.trimmingCharacters(in: .whitespaces).lowercased()
-        guard q.count >= 2 else { return [] }
-        return Array(known.filter { $0.lowercased().contains(q) && $0.lowercased() != q }.prefix(4))
-    }
-
-    var body: some View {
-        if !matches.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    ForEach(matches, id: \.self) { m in
-                        Button(m) { text = m }.buttonStyle(.bordered).controlSize(.small)
-                    }
-                }
-            }
-        }
-    }
-}
 
 /// Restocks saved on this phone with no signal, until they're sent.
 struct WaitingSection: View {
