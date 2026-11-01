@@ -17,6 +17,13 @@ customer's page is open: **Claim** or **Not theirs**. Nothing is claimed without
 Passcodes work as on the website: if a change needs the PIN or the owner's password, the app
 asks for it, then carries on with the change.
 
+**Working with bad signal** (restocking in a shop): pages open from the last copy that loaded, with a
+note saying how old it is, and the app opens even with no connection. A restock added with no signal
+is kept on the phone (receipt photo included) under "Waiting to send" on Money, and sends by itself when
+signal comes back. Each restock carries an id, so one sent twice (the answer got lost) is only saved once.
+If the server needs the passcode, it waits for you to tap "Send now". Item names are suggested from the
+saved Square list. Other changes (claims, repayments and so on) still need a connection.
+
 Needs iOS 17 or later.
 
 ### Not in the app
@@ -69,6 +76,7 @@ The app sends `FizzyiOS/<version>` as its user agent.
 
 - `Fizzy/API.swift`: requests, sign-in, cookies, redirects, downloads, the Ask stream.
 - `Fizzy/JSON.swift`: the generic JSON value pages are read from, and date and money formatting.
+- `Fizzy/Offline.swift`: the waiting-to-send queue, and the saved copies of pages.
 - `Fizzy/Components.swift`: loading a page, posting a change, shared controls, the passcode prompt.
 - `Fizzy/FizzyApp.swift`: signed in or out, the tabs, who's on the counter.
 - One file per screen: `DashboardView`, `CustomersView`, `CustomerView`, `TransactionsView`,

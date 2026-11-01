@@ -25,6 +25,7 @@ final class Page {
     var busy = false
     var error: String?
     var flash: Flash?
+    var offlineSince: Date?      // showing the copy saved then, because there's no connection
 
     init(_ path: String, query: [String: String] = [:]) {
         self.path = path
@@ -37,9 +38,21 @@ final class Page {
             data = d
             loaded = true
             error = nil
+            offlineSince = nil
             if let text = d.flash.optString { flash = Flash(text: text, ok: d.flash_kind.string != "bad") }
         } catch is CancellationError {
         } catch let e as URLError where e.code == .cancelled {
+        } catch where isOffline(error) {
+            if let (saved, when) = PageCache.load(path, query) {
+                data = saved
+                loaded = true
+                self.error = nil
+                offlineSince = when
+            } else if !loaded {
+                self.error = "No connection, and this page hasn't been opened on this phone before."
+            } else {
+                offlineSince = offlineSince ?? Date()
+            }
         } catch {
             if !loaded || self.error != nil { self.error = error.localizedDescription } else { flash = Flash(text: error.localizedDescription, ok: false) }
         }
@@ -47,7 +60,9 @@ final class Page {
 
     /// Posts a change, then reloads to pick up the server's message and the new numbers.
     @discardableResult
-    func submit(_ path: String, _ form: Params = [], files: [FilePart] = [], query: [String: String] = [:], reload: Bool = true) async -> Outcome {
+    /// `queue`: if there's no connection, keep it on the phone under this name and send it later.
+    func submit(_ path: String, _ form: Params = [], files: [FilePart] = [], query: [String: String] = [:], reload: Bool = true,
+                queue: String? = nil) async -> Outcome {
         flash = nil
         busy = true
         defer { busy = false }
@@ -59,6 +74,11 @@ final class Page {
             if reload { await load() }
             let ok = flash?.ok ?? true
             return Outcome(ok: ok, message: flash?.text, body: nil)
+        } catch where queue != nil && isOffline(error) {
+            OfflineQueue.shared.add(title: queue!, path: path, form: form, files: files)
+            let m = "No connection, so it's saved on this phone. It sends by itself when there's signal."
+            flash = Flash(text: m, ok: true)
+            return Outcome(ok: true, message: m, body: nil)
         } catch {
             return Outcome(ok: false, message: error.localizedDescription, body: nil)
         }
@@ -83,6 +103,10 @@ struct PageList<Content: View>: View {
     var body: some View {
         List {
             if let flash = page.flash { FlashRow(flash: flash) }
+            if let when = page.offlineSince {
+                Label("No connection. Showing what was saved \(when.formatted(.relative(presentation: .named))).", systemImage: "wifi.slash")
+                    .foregroundStyle(.orange)
+            }
             if let error = page.error { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
             if page.loaded { content(page.data) }
         }

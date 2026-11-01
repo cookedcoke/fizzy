@@ -98,6 +98,7 @@ final class API: NSObject, URLSessionTaskDelegate {
         let (data, http) = try await send(URLRequest(url: url(path, query)))
         guard http.statusCode == 200 else { throw APIError.server(http.statusCode) }
         let page = try JSONDecoder().decode(J.self, from: data)
+        if page.page.optString != nil { PageCache.save(data, path, query) }
         if let tz = page.tz.optString, let zone = TimeZone(identifier: tz) { Fmt.timeZone = zone }
         return page
     }

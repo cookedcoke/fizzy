@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct FizzyApp: App {
     private let model = AppModel.shared
+    private let queue = OfflineQueue.shared   // starts watching for signal to send what's waiting
 
     var body: some Scene {
         WindowGroup {
@@ -43,6 +44,14 @@ final class AppModel {
             staff = me.staff.string
             staffNames = me.staff_names.strings
             phase = .signedIn
+            UserDefaults.standard.set(staff, forKey: "signedInAs")
+            UserDefaults.standard.set(staffNames, forKey: "staffNames")
+        } catch where isOffline(error) && UserDefaults.standard.string(forKey: "signedInAs") != nil {
+            // No signal (a shop, say): carry on as whoever was signed in. Pages open from their saved
+            // copies and restocks wait on the phone; the server still checks the sign-in when they're sent.
+            staff = UserDefaults.standard.string(forKey: "signedInAs") ?? ""
+            staffNames = UserDefaults.standard.stringArray(forKey: "staffNames") ?? [staff]
+            phase = .signedIn
         } catch {
             phase = .signedOut
             if case APIError.signedOut = error {} else { problem = error.localizedDescription }
@@ -57,6 +66,8 @@ final class AppModel {
 
     func signOut() async {
         await API.shared.signOut()
+        PageCache.clear()
+        UserDefaults.standard.removeObject(forKey: "signedInAs")
         staff = ""
         phase = .signedOut
     }
@@ -76,6 +87,7 @@ final class AppModel {
                 if !(await askPasscode(need)) { throw APIError.message("Cancelled. Nothing was changed.") }
             } catch APIError.signedOut {
                 phase = .signedOut
+                UserDefaults.standard.removeObject(forKey: "signedInAs")
                 throw APIError.signedOut
             }
         }

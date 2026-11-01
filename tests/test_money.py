@@ -99,3 +99,17 @@ def test_editing_a_restock_for_substitutions(client):
     assert conn.execute("SELECT 1 FROM audit_log WHERE action = 'restock_edit'").fetchone()
     assert "Add at least one item" in client.post("/money/restock/1", data={"item": [""], "qty": ["1"], "cost": [""]}).text
     assert "That restock" in client.post("/money/restock/99", data={"item": ["A"], "qty": ["1"], "cost": ["1"]}).text
+
+
+def test_restock_sent_twice_by_the_app_is_saved_once(client):
+    from tests.test_app import login
+    login(client)
+    form = {"day": "2026-10-01", "shop": "Costco", "item": "Coke", "qty": "24", "cost": "20", "client_id": "abc-123"}
+    client.post("/money/restock", data=form)
+    client.post("/money/restock", data=form)
+    from fizzy import db
+    conn = db.connect()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM restocks WHERE client_id = 'abc-123'").fetchone()[0] == 1
+    finally:
+        conn.close()

@@ -223,6 +223,15 @@ def test_every_page_has_json(client):
     # secrets never leave the server
     text = client.get("/customers/1", headers=JSON).text + client.get("/settings", headers=JSON).text
     assert "passcode_enc" not in text and "token_hash" not in text and "public_key" not in text
+    r = client.get("/settings", headers=JSON)
+    assert "X-Fizzy-Format" in r.headers["vary"] and "X-Fizzy-Format" in client.get("/settings").headers["vary"]
+
+
+def test_json_hides_anything_named_like_a_secret():
+    from fizzy.web import _plain
+    out = _plain({"gemini_api_key": "x", "secret": "x", "device_token": "x", "pin_hash": "x", "key_enc": "x",
+                  "key": "o:123", "hint": "abcd", "rows": [{"password": "x", "name": "Nora"}]})
+    assert out == {"key": "o:123", "hint": "abcd", "rows": [{"name": "Nora"}]}
 
 
 def test_passcode_needed_is_json_for_the_app(client):

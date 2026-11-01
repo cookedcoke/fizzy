@@ -334,6 +334,7 @@ MIGRATIONS = [
     ("points_events", "rule_id", "INTEGER"),
     ("customers", "kind", "TEXT"),  # NULL (a normal customer), admin (staff themselves) or test
     ("customers", "me_gen", "INTEGER"),
+    ("restocks", "client_id", "TEXT"),  # set by the iOS app, so a restock sent again after a lost answer isn't added twice
     ("points_ledger", "rule_key", "TEXT"),  # rules.py: one grant per key, paid once  # bumped by "Sign out their phones" on the customer page
 ]
 
@@ -344,6 +345,7 @@ def init(conn):
         cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_restocks_client_id ON restocks(client_id) WHERE client_id IS NOT NULL")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_points_rule_key ON points_ledger(customer_id, rule_key) WHERE rule_key IS NOT NULL")
     # Passcodes were briefly stored as one-way hashes (column passcode_hash), which can't be read
     # back: those students show as "not set" so staff know to set a new one.

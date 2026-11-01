@@ -8,10 +8,15 @@ struct MoneyView: View {
     @State private var end = ""
     @State private var sheet: Sheet?
     @State private var showDates = false
+    @State private var confirmDelete: DeleteAsk?
 
-    enum Sheet: String, Identifiable {
-        case restock, payout
-        var id: String { rawValue }
+    struct DeleteAsk: Identifiable { let id = UUID(); let message: String; let path: String }
+
+    enum Sheet: Identifiable {
+        case restock, edit(J), payout
+        var id: String {
+            switch self { case .restock: "restock"; case .edit(let r): "edit-\(r.id.int)"; case .payout: "payout" }
+        }
     }
 
     var body: some View {
@@ -44,11 +49,12 @@ struct MoneyView: View {
                 Button { sheet = .restock } label: { Label("Add a restock", systemImage: "cart.badge.plus") }
                 Button { sheet = .payout } label: { Label("Pay the partners", systemImage: "banknote") }
             }
+            WaitingSection(page: page)
             if d.restocks.array.isEmpty && d.payouts.array.isEmpty {
                 Text("No restocks or payouts in these dates.").foregroundStyle(.secondary)
             }
             if !d.restocks.array.isEmpty {
-                Section("Restocks · \(d.restocks.count)") {
+                Section {
                     ForEach(d.restocks.array, id: \.self) { r in
                         VStack(alignment: .leading, spacing: 4) {
                             Line(left: Fmt.when(r.day.string, "EEE d MMM"), sub: [r.shop.optString, r.note.optString].compactMap { $0 }.joined(separator: " · "),
@@ -56,38 +62,46 @@ struct MoneyView: View {
                             ForEach(d.items[String(r.id.int)].array, id: \.self) { it in
                                 Text("\(it.qty.int)× \(it.name.string) (\(Fmt.money(it.cost_cents.int)))").font(.caption).foregroundStyle(.secondary)
                             }
-                            HStack {
-                                if let receipt = r.receipt.optString { DownloadButton(title: "Receipt", path: "money/receipts/\(receipt)", systemImage: "doc.text.image") }
-                                Spacer()
-                                ConfirmButton(title: "Delete", message: "Delete this restock (\(Fmt.money(r.total_cents.int)))?", confirmLabel: "Delete") {
-                                    page.act("money/restock/\(r.id.int)/delete")
-                                }
-                                .buttonStyle(.bordered).controlSize(.small)
+                            if let receipt = r.receipt.optString {
+                                DownloadButton(title: "Receipt", path: "money/receipts/\(receipt)", systemImage: "doc.text.image").font(.footnote)
                             }
-                            .font(.footnote)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button("Delete", role: .destructive) { confirmDelete = DeleteAsk(message: "Delete this restock (\(Fmt.money(r.total_cents.int)))?", path: "money/restock/\(r.id.int)/delete") }
+                            Button("Edit") { sheet = .edit(r) }.tint(.blue)
                         }
                     }
+                } header: {
+                    Text("Restocks · \(d.restocks.count)")
+                } footer: {
+                    Text("Swipe left to edit or delete.")
                 }
             }
             if !d.payouts.array.isEmpty {
-                Section("Payouts · \(d.payouts.count)") {
+                Section {
                     ForEach(d.payouts.array, id: \.self) { p in
-                        HStack {
-                            Line(left: p.partner.string, sub: [Fmt.when(p.day.string, "EEE d MMM"), p.note.optString].compactMap { $0 }.joined(separator: " · "),
-                                 right: Fmt.money(p.amount_cents.int))
-                            ConfirmButton(title: "Delete", message: "Delete \(p.partner.string)'s \(Fmt.money(p.amount_cents.int)) payout?", confirmLabel: "Delete") {
-                                page.act("money/payout/\(p.id.int)/delete")
+                        Line(left: p.partner.string, sub: [Fmt.when(p.day.string, "EEE d MMM"), p.note.optString].compactMap { $0 }.joined(separator: " · "),
+                             right: Fmt.money(p.amount_cents.int))
+                            .swipeActions(edge: .trailing) {
+                                Button("Delete", role: .destructive) { confirmDelete = DeleteAsk(message: "Delete \(p.partner.string)'s \(Fmt.money(p.amount_cents.int)) payout?", path: "money/payout/\(p.id.int)/delete") }
                             }
-                            .labelStyle(.iconOnly).buttonStyle(.borderless)
-                        }
                     }
+                } header: {
+                    Text("Payouts · \(d.payouts.count)")
+                } footer: {
+                    Text("Swipe left to delete.")
                 }
             }
         }
         .task { await page.load(); start = page.data.start.string; end = page.data.end.string }
+        .confirmationDialog(confirmDelete?.message ?? "", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let c = confirmDelete { page.act(c.path) } }
+            Button("Cancel", role: .cancel) {}
+        }
         .sheet(item: $sheet) { which in
             switch which {
             case .restock: RestockSheet(page: page)
+            case .edit(let r): RestockSheet(page: page, editing: r, items: page.data.items[String(r.id.int)].array)
             case .payout: PayoutSheet(page: page)
             }
         }
@@ -101,6 +115,9 @@ struct MoneyView: View {
 
 struct RestockSheet: View {
     let page: Page
+    var editing: J? = nil       // a restock to change (substitutions, things that didn't turn up)
+    var items: [J] = []
+    @State private var clientID = UUID().uuidString
     struct Line: Identifiable { let id = UUID(); var item = ""; var qty = "1"; var cost = "" }
     @State private var day = Fmt.day(Date())
     @State private var shop = ""
@@ -111,15 +128,26 @@ struct RestockSheet: View {
 
     private var total: Int { lines.reduce(0) { $0 + Int((parse($1.cost) * 100).rounded()) } }
 
+    private func fill() {
+        guard let r = editing, lines.count == 1, lines[0].item.isEmpty else { return }
+        day = r.day.string
+        shop = r.shop.string
+        note = r.note.string
+        lines = items.map { Line(item: $0.name.string, qty: "\($0.qty.int)", cost: dollars($0.cost_cents.int)) }
+        if lines.isEmpty { lines = [Line()] }
+    }
+
     var body: some View {
-        FormSheet(title: "Add a restock", ready: lines.contains { !$0.item.isEmpty && !$0.cost.isEmpty }, page: page, send: {
+        FormSheet(title: editing == nil ? "Add a restock" : "Edit restock", ready: lines.contains { !$0.item.isEmpty && !$0.cost.isEmpty }, page: page, send: {
             var form: Params = [("day", day), ("shop", shop), ("note", note)]
             for l in lines where !l.item.trimmingCharacters(in: .whitespaces).isEmpty || !l.cost.isEmpty {
                 form += [("item", l.item), ("qty", l.qty), ("cost", l.cost)]
             }
             var files: [FilePart] = []
             if let photoData { files.append(FilePart(field: "receipt", filename: "receipt.jpg", mime: "image/jpeg", data: photoData)) }
-            return await page.submit("money/restock", form, files: files)
+            if editing == nil { form.append(("client_id", clientID)) }   // so a resend isn't saved twice
+            let title = (editing == nil ? "Restock" : "Restock edit") + (shop.isEmpty ? "" : " at \(shop)") + " (\(Fmt.money(total)))"
+            return await page.submit(editing.map { "money/restock/\($0.id.int)" } ?? "money/restock", form, files: files, queue: title)
         }) {
             Section {
                 DayField(title: "Day", text: $day)
@@ -128,7 +156,8 @@ struct RestockSheet: View {
             Section("Items") {
                 ForEach($lines) { $l in
                     VStack(alignment: .leading) {
-                        TextField("Item, as named in Square", text: $l.item).textInputAutocapitalization(.words)
+                        TextField("Item, as named in Square", text: $l.item).textInputAutocapitalization(.words).autocorrectionDisabled()
+                        ItemSuggestions(text: $l.item, known: page.data.known.strings)
                         HStack {
                             Text("Qty"); TextField("1", text: $l.qty).keyboardType(.numberPad).frame(width: 50).textFieldStyle(.roundedBorder)
                             Text("Cost for the line $"); TextField("total", text: $l.cost).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
@@ -142,7 +171,8 @@ struct RestockSheet: View {
             }
             Section {
                 PhotosPicker(selection: $photo, matching: .images) {
-                    Label(photoData == nil ? "Add a receipt photo (optional)" : "Receipt photo added", systemImage: "camera")
+                    Label(photoData != nil ? "Receipt photo added"
+                          : (editing?.receipt.optString != nil ? "Replace the receipt photo (optional)" : "Add a receipt photo (optional)"), systemImage: "camera")
                 }
                 .onChange(of: photo) {
                     Task {
@@ -154,6 +184,7 @@ struct RestockSheet: View {
                 TextField("Note (optional)", text: $note)
             }
         }
+        .onAppear(perform: fill)
     }
 
     /// "12,50" is $12.50 (a comma before two digits at the end is a decimal point).
@@ -214,5 +245,71 @@ struct PayoutSheet: View {
             }
         }
         .onAppear { included = Set(partners) }
+    }
+}
+
+
+/// Item names from Square's list (saved with the page, so this works with no signal too).
+struct ItemSuggestions: View {
+    @Binding var text: String
+    let known: [String]
+
+    private var matches: [String] {
+        let q = text.trimmingCharacters(in: .whitespaces).lowercased()
+        guard q.count >= 2 else { return [] }
+        return Array(known.filter { $0.lowercased().contains(q) && $0.lowercased() != q }.prefix(4))
+    }
+
+    var body: some View {
+        if !matches.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    ForEach(matches, id: \.self) { m in
+                        Button(m) { text = m }.buttonStyle(.bordered).controlSize(.small)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Restocks saved on this phone with no signal, until they're sent.
+struct WaitingSection: View {
+    let page: Page
+    @State private var queue = OfflineQueue.shared
+
+    var body: some View {
+        if let sent = queue.lastSent {
+            Label(sent, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                .task(id: sent) { await page.load() }
+        }
+        if !queue.items.isEmpty {
+            Section {
+                ForEach(queue.items) { p in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(p.title)
+                        Text("Saved \(p.created.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+                        if let problem = p.problem {
+                            Text("Fizzy said no: \(problem) Delete it and add it again.").font(.caption).foregroundStyle(.red)
+                        } else if p.needsPasscode {
+                            Text("Needs the passcode. Tap Send now.").font(.caption).foregroundStyle(.orange)
+                        }
+                    }
+                    .swipeActions {
+                        Button("Delete", role: .destructive) { queue.remove(p) }
+                    }
+                }
+                Button {
+                    Task { await queue.send(asking: true) }
+                } label: {
+                    HStack { Label("Send now", systemImage: "arrow.up.circle"); if queue.sending { Spacer(); ProgressView() } }
+                }
+                .disabled(queue.sending)
+            } header: {
+                Text("Waiting to send · \(queue.items.count)")
+            } footer: {
+                Text("Saved on this phone because there was no signal. They send by themselves when there is. Swipe to delete one.")
+            }
+        }
     }
 }

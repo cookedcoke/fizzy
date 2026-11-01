@@ -3,18 +3,11 @@ import SwiftUI
 /// Rewards the stall is running, repeating double-points days, and custom badges and events.
 struct RewardsView: View {
     @State private var page = Page("rewards")
-    @State private var sheet: Sheet?
-
-    enum Sheet: String, Identifiable {
-        case reward, event
-        var id: String { rawValue }
-    }
 
     var body: some View {
         PageList(page: page, title: "Rewards") { d in
             Section {
-                Button { sheet = .reward } label: { Label("Start a reward", systemImage: "gift") }
-                Button { sheet = .event } label: { Label("Schedule a double points day", systemImage: "sparkles") }
+                Text("Start rewards and double points days in Ask.").font(.footnote).foregroundStyle(.secondary)
             }
             Section("Live · \(d.live.count)") {
                 ForEach(d.live.array, id: \.self) { r in
@@ -108,65 +101,6 @@ struct RewardsView: View {
                              right: "\(Fmt.number(r.points_cost.int)) pts")
                     }
                 }
-            }
-        }
-        .sheet(item: $sheet) { which in
-            switch which {
-            case .reward: NewRewardSheet(page: page)
-            case .event: NewEventSheet(page: page)
-            }
-        }
-    }
-}
-
-struct NewRewardSheet: View {
-    let page: Page
-    @State private var name = ""
-    @State private var points = ""
-    @State private var squareNote = ""
-    @State private var limit = ""
-    @State private var announce = false
-
-    var body: some View {
-        FormSheet(title: "Start a reward", action: "Start", ready: !name.isEmpty && !points.isEmpty, page: page, send: {
-            var form: Params = [("name", name), ("points", points), ("square_note", squareNote), ("limit", limit)]
-            if announce { form.append(("announce", "1")) }
-            return await page.submit("rewards", form)
-        }) {
-            Section {
-                TextField("Name, e.g. Free drink", text: $name)
-                TextField("Points it costs", text: $points).keyboardType(.numberPad)
-                TextField("How to ring it up in Square (optional)", text: $squareNote)
-                TextField("Limit per customer (optional)", text: $limit).keyboardType(.numberPad)
-                if page.data.discord_on.bool { Toggle("Announce it on Discord", isOn: $announce) }
-            }
-        }
-    }
-}
-
-struct NewEventSheet: View {
-    let page: Page
-    @State private var name = ""
-    @State private var multiplier = "2"
-    @State private var start = Fmt.day(Date())
-    @State private var end = Fmt.day(Date())
-    @State private var weekly = false
-    @State private var announce = false
-
-    var body: some View {
-        FormSheet(title: "Double points day", action: "Schedule", ready: !name.isEmpty, page: page, send: {
-            var form: Params = [("name", name), ("multiplier", multiplier), ("start", start), ("end", end)]
-            if weekly { form.append(("weekly", "1")) }
-            if announce { form.append(("announce", "1")) }
-            return await page.submit("events", form)
-        }) {
-            Section {
-                TextField("Name", text: $name)
-                TextField("Multiplier", text: $multiplier).keyboardType(.decimalPad)
-                DayField(title: "From", text: $start)
-                DayField(title: "To", text: $end)
-                Toggle("Repeat every week", isOn: $weekly)
-                if page.data.discord_on.bool { Toggle("Announce it on Discord", isOn: $announce) }
             }
         }
     }

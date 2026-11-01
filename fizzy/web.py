@@ -1,6 +1,7 @@
 """Shared web helpers: templates, auth dependency, form parsing."""
 import hashlib
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -111,12 +112,19 @@ def wants_json(request):
 
 # Never sent to the app, even though the templates get them: secrets, and big blobs no page shows.
 HIDDEN_KEYS = {"passcode_enc", "token_hash", "public_key", "credential_id", "raw_json", "lock_rules"}
+# Anything named like a secret goes too, so a secret added to a page later isn't sent by accident.
+# ("key" on its own is an item or sale key, not a secret.)
+SECRET_NAME = re.compile(r"(^|_)(secret|token|password|passwd|hash|api_?key|private)($|_)|_enc$", re.I)
+
+
+def _hidden(k):
+    return k in HIDDEN_KEYS or bool(SECRET_NAME.search(str(k)))
 
 
 def _plain(v):
     """Template context -> JSON-ready values. Rows become dicts; dates and Markup become strings."""
     if isinstance(v, dict) or hasattr(v, "keys"):
-        return {str(k): _plain(v[k]) for k in v.keys() if k not in HIDDEN_KEYS}
+        return {str(k): _plain(v[k]) for k in v.keys() if not _hidden(k)}
     if isinstance(v, (list, tuple, set, frozenset)):
         return [_plain(x) for x in v]
     if v is None or isinstance(v, (bool, int, float, str)):
@@ -146,8 +154,10 @@ def render(request, name, **ctx):
         # The same data the page is drawn from, so the app shows exactly what the page would.
         ctx = {k: v for k, v in ctx.items() if k != "request"}
         ctx.update(page=name.removesuffix(".html"), tz=config.TZ.key)
-        return JSONResponse(_plain(ctx), headers={"Cache-Control": "no-store"})
-    return templates.TemplateResponse(request, name, ctx)
+        return JSONResponse(_plain(ctx), headers={"Cache-Control": "no-store", "Vary": "X-Fizzy-Format"})
+    response = templates.TemplateResponse(request, name, ctx)
+    response.headers["Vary"] = "X-Fizzy-Format"  # same address, HTML or JSON: never cache one for the other
+    return response
 
 
 def back(request, url, msg=None, kind="ok"):

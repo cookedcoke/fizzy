@@ -75,8 +75,8 @@ def _looks_like(data, ext):
 
 # ---- restocks -----------------------------------------------------------------------------------
 
-def add_restock(conn, day, shop, note, items, staff_name, receipt=None):
-    """items: [(name, qty, line_cents)]. Returns the restock id."""
+def add_restock(conn, day, shop, note, items, staff_name, receipt=None, client_id=None):
+    """items: [(name, qty, line_cents)]. Returns the restock id. client_id: the app's own id for it."""
     items = [(" ".join(n.split()), q, c) for n, q, c in items if n and n.strip()]
     if not items:
         raise MoneyError("Add at least one item.")
@@ -84,10 +84,10 @@ def add_restock(conn, day, shop, note, items, staff_name, receipt=None):
         if qty <= 0:
             raise MoneyError(f"Quantity for {name} must be at least 1.")
     total = sum(c for _, _, c in items)
-    cur = conn.execute("INSERT INTO restocks(day, shop, paid_from, note, total_cents, receipt, created_by, created_at) "
-                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    cur = conn.execute("INSERT INTO restocks(day, shop, paid_from, note, total_cents, receipt, created_by, created_at, client_id) "
+                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        (day.isoformat(), " ".join((shop or "").split()) or None, "",
-                        (note or "").strip() or None, total, receipt, staff_name, now_iso()))
+                        (note or "").strip() or None, total, receipt, staff_name, now_iso(), client_id or None))
     rid = cur.lastrowid
     for typed, qty, line in items:
         key, name = stats.resolve_item(conn, typed)   # matched to Square's item list where possible
@@ -274,6 +274,10 @@ async def restock_add(request: Request, who=Depends(staff), conn=Depends(get_con
     form = await request.form()
     names, qtys, costs = form.getlist("item"), form.getlist("qty"), form.getlist("cost")
     receipt = None
+    # The app sends a restock again if it never heard back (bad signal in the shop): once is enough.
+    client_id = (form.get("client_id") or "").strip()[:64] or None
+    if client_id and conn.execute("SELECT 1 FROM restocks WHERE client_id = ?", (client_id,)).fetchone():
+        return back(request, "/money", "Restock saved.")
     try:
         lines = []
         for n, q, c in zip(names, qtys, costs):
@@ -295,7 +299,7 @@ async def restock_add(request: Request, who=Depends(staff), conn=Depends(get_con
         if upload is not None and getattr(upload, "filename", ""):
             receipt = save_receipt(await upload.read(RECEIPT_MAX + 1), upload.content_type)  # only once the rest is valid
         try:
-            add_restock(conn, day, form.get("shop"), form.get("note"), lines, who, receipt)
+            add_restock(conn, day, form.get("shop"), form.get("note"), lines, who, receipt, client_id)
         except Exception:
             if receipt:  # don't leave a photo behind for a restock that wasn't saved
                 os.remove(os.path.join(receipts_dir(), receipt))

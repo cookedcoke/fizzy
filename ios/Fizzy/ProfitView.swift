@@ -77,7 +77,11 @@ struct ProfitView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(r.name.string)
                     Text(sold ? "\(r.qty.int) sold · \(Fmt.money(r.revenue.int))" + (r.profit.isNull ? "" : " · profit \(Fmt.money(r.profit.int))")
-                              : (r.price.isNull ? "" : "sells for \(Fmt.money(r.price.int))")).font(.caption).foregroundStyle(.secondary)
+                              : (r.price.isNull ? "" : "sells for \(Fmt.money(r.price.int))" + (r.price_to.isNull ? "" : "–\(Fmt.money(r.price_to.int))")))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if !r.variants.array.isEmpty {
+                        Text(r.variants.strings.joined(separator: ", ")).font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 HStack(spacing: 2) {
