@@ -2,3 +2,4 @@ Fizzy.xcodeproj/
 build/
 DerivedData/
 .DS_Store
+build-device/
