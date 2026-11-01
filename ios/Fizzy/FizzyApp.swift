@@ -198,6 +198,12 @@ struct MoreView: View {
 /// Who's on the counter: switch to someone else, or sign out ("Lock" on the website).
 struct StaffMenu: View {
     @Environment(AppModel.self) private var model
+
+    /// "w.circle.fill" for Will. Falls back to the person icon for a name that doesn't start with a letter.
+    private var initialSymbol: String {
+        guard let c = model.staff.lowercased().first, c.isASCII, c.isLetter else { return "person.crop.circle.fill" }
+        return "\(c).circle.fill"
+    }
     @State private var problem: String?
 
     var body: some View {
@@ -211,7 +217,11 @@ struct StaffMenu: View {
             }
             Button("Lock", systemImage: "lock", role: .destructive) { Task { await model.signOut() } }
         } label: {
-            Label(model.staff, systemImage: "person.crop.circle").labelStyle(.titleAndIcon)
+            // Everyone on the counter has a different initial, so it says who's signed in at a glance.
+            // A symbol, not text, so the toolbar keeps the button round rather than a pill.
+            Image(systemName: initialSymbol)
+                .font(.title2)
+                .accessibilityLabel("On the counter: \(model.staff)")
         }
         .alert("Couldn't switch", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
             Button("OK", role: .cancel) {}

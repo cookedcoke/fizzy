@@ -111,7 +111,7 @@ struct CustomersView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(Fmt.number(points)) pts").monospacedDigit()
                     HStack(spacing: 4) {
-                        if owing != "$0.00" { Text("owes \(owing)").foregroundStyle(.orange) }
+                        if owing != "$0.00" { Text("owes \(owing)").foregroundStyle(.orange).lineLimit(1).fixedSize() }
                         Tag(text: status, color: statusColor(statusKey))
                         if reward { Tag(text: "Reward", color: .purple) }
                     }
