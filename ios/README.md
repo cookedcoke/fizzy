@@ -9,10 +9,14 @@ the staff password, and has everything the website's staff pages have:
 | **Customers** | Search by name, email or student number (a full `rns12345678` jumps straight to them), or see who's been in lately. Export new people for Square. |
 | **A customer** | Can they put it on their tab, and how much; points; what they owe; tab charges, repayments, points history, Square payments, tab score. Claim sale, record a repayment, adjust points, approve/reject/revoke a tab, redeem or undo a reward, set or show their student passcode, edit them, change account type, show a sign-in QR code. |
 | **Transactions** | Every Square sale with filters (dates, kind, search) and assigning sales with nobody on them. |
-| **More** | Square (sync, change how a payment is counted, raw payload), Rewards (start and end rewards and double-points days, pause custom rules), Profit (item costs), Money (restocks with receipt photos, payouts with the split calculator), Tools (all of them), Ask (Gemini, with answers as they're written), Import (school directory CSV), Settings (who can do what, tab rules, display, terms, closed days, Gemini key, PIN, maintenance, backups, updates, devices), Activity log, and this app's own settings. |
+| **More** | Square (sync, change how a payment is counted, raw payload), Rewards (start and end rewards and double-points days, pause custom rules), Profit (item costs), Money (restocks with receipt photos, payouts with the split calculator), Tools (all of them), Ask (Gemini, with answers as they're written, drawn with their tables, lists and headings), Import (school directory CSV), Settings (who can do what, tab rules, display, terms, closed days, Gemini key, PIN, maintenance, backups, updates, devices), Activity log, and this app's own settings. |
 
 Like the website, a new sale rung up without a customer pops up within a few seconds while a
 customer's page is open: **Claim** or **Not theirs**. Nothing is claimed without a tap.
+
+**Ask keeps going without you.** Fizzy writes the answer in the background, so leaving the page, switching
+apps or losing signal doesn't lose it. Come back whenever: the page joins the answer where it's up to, and
+once it's done the saved conversation shows it. One question at a time per person.
 
 Passcodes work as on the website: if a change needs the PIN or the owner's password, the app
 asks for it, then carries on with the change.
@@ -70,12 +74,17 @@ passcode the server answers `423` with `{"need": "pin"}` (or `"owner"`) to JSON 
 Two small endpoints exist just for the app: `/api/staff-names` (for the sign-in screen) and
 `/api/me`. Search uses the existing `/api/search`.
 
+Ask: `POST /ask/stream` asks and streams the answer as server-sent events; the server answers in the
+background, so `GET /ask/stream` joins the same answer from the start (after losing the connection, or
+when the page is opened again), and the Ask page's `pending` says what's still being answered.
+
 The app sends `FizzyiOS/<version>` as its user agent.
 
 ## The code
 
 - `Fizzy/API.swift`: requests, sign-in, cookies, redirects, downloads, the Ask stream.
 - `Fizzy/JSON.swift`: the generic JSON value pages are read from, and date and money formatting.
+- `Fizzy/Markdown.swift`: Gemini's markdown as native views (headings, lists, tables, code, quotes).
 - `Fizzy/Offline.swift`: the waiting-to-send queue, and the saved copies of pages.
 - `Fizzy/Components.swift`: loading a page, posting a change, shared controls, the passcode prompt.
 - `Fizzy/FizzyApp.swift`: signed in or out, the tabs, who's on the counter.
