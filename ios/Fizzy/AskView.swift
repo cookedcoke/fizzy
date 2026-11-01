@@ -68,7 +68,7 @@ final class AskLive {
                 }
                 break
             } catch APIError.message(let message) {
-                error = message
+                self.error = message
                 break
             } catch APIError.signedOut {
                 break
@@ -79,7 +79,7 @@ final class AskLive {
                 ask = nil
                 tries += 1
                 if tries > 12 {
-                    error = "Lost the connection. The answer will be here once it's done: pull down to refresh."
+                    self.error = "Lost the connection. The answer will be here once it's done: pull down to refresh."
                     break
                 }
                 try? await Task.sleep(for: .seconds(min(10, 2 * tries)))
