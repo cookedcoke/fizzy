@@ -185,7 +185,7 @@ struct PayoutSheet: View {
     }
 
     var body: some View {
-        FormSheet(title: "Pay the partners", action: "Record payouts", ready: amounts.values.contains { !$0.isEmpty }, page: page, send: {
+        FormSheet(title: "Payouts", action: "Record payouts", ready: amounts.values.contains { !$0.isEmpty }, page: page, send: {
             var form: Params = [("day", day), ("note", note)]
             for n in partners { form += [("partner", n), ("amount", amounts[n] ?? "")] }
             return await page.submit("money/payout", form)

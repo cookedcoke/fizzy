@@ -103,6 +103,8 @@ struct PermissionsForm: View {
         }
         .navigationTitle("Who can do what")
         .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar { KeyboardDoneButton() }
         .onAppear {
             for (k, v) in d.perms.dict where !["big_points", "big_dollars"].contains(k) { perms[k] = v.string }
             bigPoints = d.perms.big_points.string
@@ -151,6 +153,8 @@ struct SettingsForm<Content: View>: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar { KeyboardDoneButton() }
     }
 }
 
@@ -166,10 +170,10 @@ struct TabRulesForm: View {
             await page.submit("settings", [("tab_limit", limit), ("due_days", days), ("unlock_spend", unlock), ("score_needed", score)])
         }) {
             Section {
-                LabeledContent("Highest tab limit ($)") { TextField("", text: $limit).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
-                LabeledContent("Days to pay") { TextField("", text: $days).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
-                LabeledContent("Spend before eligible ($)") { TextField("", text: $unlock).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
-                LabeledContent("Tab score needed (0 to 100)") { TextField("", text: $score).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
+                labelled("Highest tab limit ($)") { TextField("", text: $limit).keyboardType(.decimalPad) }
+                labelled("Days to pay") { TextField("", text: $days).keyboardType(.numberPad) }
+                labelled("Spend before eligible ($)") { TextField("", text: $unlock).keyboardType(.decimalPad) }
+                labelled("Tab score needed (0 to 100)") { TextField("", text: $score).keyboardType(.numberPad) }
             }
         }
         .onAppear {
@@ -177,6 +181,13 @@ struct TabRulesForm: View {
             limit = dollars(c.tab_limit_cents.int); days = "\(c.tab_due_days.int)"
             unlock = dollars(c.unlock_spend_cents.int); score = "\(c.tab_score_needed.int)"
         }
+    }
+}
+
+private func labelled<C: View>(_ title: String, @ViewBuilder _ field: () -> C) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+        Text(title).font(.footnote).foregroundStyle(.secondary)
+        field()
     }
 }
 

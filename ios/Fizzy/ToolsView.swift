@@ -125,6 +125,8 @@ struct ToolFormView: View {
         }
         .navigationTitle(label)
         .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar { KeyboardDoneButton() }
         .onAppear(perform: defaults)
         .sheet(item: $report) { ReportSheet(report: $0.value) }
     }

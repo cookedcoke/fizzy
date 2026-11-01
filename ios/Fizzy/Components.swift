@@ -89,9 +89,23 @@ struct PageList<Content: View>: View {
         .overlay { if !page.loaded && page.error == nil { ProgressView() } }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
         .refreshable { await page.load() }
         .task { if !page.loaded { await page.load() } }
-        .toolbar { if staffMenu { ToolbarItem(placement: .topBarLeading) { StaffMenu() } } }
+        .toolbar {
+            if staffMenu { ToolbarItem(placement: .topBarLeading) { StaffMenu() } }
+            KeyboardDoneButton()
+        }
+    }
+}
+
+/// Number pads have no Return key, so give every keyboard a Done button.
+struct KeyboardDoneButton: ToolbarContent {
+    var body: some ToolbarContent {
+        ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("Done") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
+        }
     }
 }
 
@@ -249,8 +263,10 @@ struct FormSheet<Content: View>: View {
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
             .disabled(busy)
             .toolbar {
+                KeyboardDoneButton()
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     if busy { ProgressView() } else {
