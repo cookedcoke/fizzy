@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'">
+<title>Open Link</title>
+<link rel="stylesheet" href="form.css">
+</head>
+<body>
+<form id="form">
+  <label for="url">Open Link</label>
+  <input id="url" type="text" spellcheck="false" autocomplete="off">
+  <p id="message">Paste a Fizzy link, for example a device registration link.</p>
+  <div class="buttons">
+    <span class="gap"></span>
+    <button type="button" id="cancel">Cancel</button>
+    <button type="submit">Open</button>
+  </div>
+</form>
+<script>
+  const url = document.getElementById('url');
+  const message = document.getElementById('message');
+  fizzy.get('staffURL').then((v) => { url.placeholder = v; url.focus(); });
+  document.getElementById('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const error = await fizzy.submit('openlink', url.value);
+    if (error) {
+      message.textContent = error;
+      message.className = 'bad';
+    }
+  });
+  document.getElementById('cancel').addEventListener('click', () => fizzy.close());
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fizzy.close(); });
+</script>
+</body>
+</html>

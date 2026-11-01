@@ -1,0 +1,10 @@
+:root { color-scheme: light dark; --muted: #6e6e73; --bad: #d70015; }
+@media (prefers-color-scheme: dark) { :root { --muted: #98989d; --bad: #ff6961; } }
+body { font: 13px -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 20px; }
+label { display: block; font-weight: 600; margin-bottom: 6px; }
+input { width: 100%; box-sizing: border-box; font: inherit; padding: 5px 7px; }
+p { color: var(--muted); margin: 10px 0 16px; line-height: 1.4; }
+p.bad { color: var(--bad); }
+.buttons { display: flex; gap: 8px; }
+.buttons .gap { flex: 1; }
+button { font: inherit; padding: 3px 14px; }
