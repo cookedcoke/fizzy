@@ -50,12 +50,20 @@ open Fizzy.xcodeproj
 Pick your team under Signing & Capabilities to run it on a device. The Xcode project is made
 from `project.yml`, so change that rather than the project.
 
+**Getting the latest code into the build.** The Xcode project lists the source files it was generated
+with, so after pulling changes that add files, run `xcodegen` again or the new files aren't compiled.
+Check you're on the right branch too (`git branch --show-current`, usually `main`) and that `git log -1`
+shows the commit you expect. Then Product > Clean Build Folder (Shift+Cmd+K), build, and compare the
+version under More > This app with `project.yml`.
+
 ## This app's settings
 
 More > This app (or the gear on the sign-in screen):
 
 - **Fizzy address**: default `https://fizzy.cookedcoke.co`. Change it to try a test server,
   e.g. `http://192.168.1.20:8000` (plain http only works on the local network).
+- **Version**: what's installed, e.g. `1.1.0 (2)`. After a build, check it changed; if it didn't, the old app is still
+  running (see below).
 - **Counter device**: if Fizzy only lets registered devices in, make a registration link in
   Fizzy (Settings > Devices) and paste it here. Only do this on a device that stays at the counter.
 
