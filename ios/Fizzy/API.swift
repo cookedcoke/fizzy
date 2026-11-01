@@ -165,7 +165,7 @@ final class API: NSObject, URLSessionTaskDelegate {
                 do {
                     var request = URLRequest(url: url(path))
                     request.httpMethod = method
-                    request.timeoutInterval = 300   // between bytes: the server sends a comment line every 15 quiet seconds
+                    request.timeoutInterval = 60    // between bytes: the server sends a comment line every 15 quiet seconds
                     request.setValue(baseURL.absoluteString + "/", forHTTPHeaderField: "Referer")
                     request.setValue(baseURL.absoluteString, forHTTPHeaderField: "Origin")
                     if method == "POST" {
@@ -174,7 +174,9 @@ final class API: NSObject, URLSessionTaskDelegate {
                     }
                     let (bytes, response) = try await session.bytes(for: request)
                     guard let http = response as? HTTPURLResponse else { throw APIError.server(0) }
-                    try check(http, Data(), for: request)
+                    var body = Data()
+                    if http.statusCode == 423 { for try await byte in bytes { body.append(byte) } }   // which passcode it needs
+                    try check(http, body, for: request)
                     for try await line in bytes.lines where line.hasPrefix("data:") {
                         let json = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                         if let d = json.data(using: .utf8), let event = try? JSONDecoder().decode(J.self, from: d) {

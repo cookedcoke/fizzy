@@ -12,8 +12,11 @@ final class AskLive {
     var status: String?
     var error: String?
     var active = false
-    var lost = false            // the question never reached Fizzy: it goes back in the box
+    var accepted = false        // Fizzy has the question (the stream's "start" event): it's saved, and being answered
+    var lost = false            // it never got there: back in the box
     var finished = 0            // goes up when an answer ends, so the screen reloads the saved chat
+    var changed = 0             // goes up when the saved chat changed mid-answer (the question saved, a part finished)
+    private var jobID: String?
     private var task: Task<Void, Never>?
 
     func send(_ question: String) {
@@ -25,9 +28,34 @@ final class AskLive {
     func join(_ pending: J) {
         guard !active else { return }
         begin(pending.text.string)
+        accepted = true
+        jobID = pending.id.optString ?? "?"
         answer = pending.answer.string
         status = pending.status.optString
         task = Task { await run(asking: nil) }
+    }
+
+    /// Signing out or switching person: whatever was being followed was theirs.
+    func reset() {
+        task?.cancel()
+        task = nil
+        question = nil
+        answer = ""
+        status = nil
+        error = nil
+        active = false
+        accepted = false
+        lost = false
+        jobID = nil
+    }
+
+    /// The screen has the saved chat after an answer ended: the live copy can go. The error stays until the next question.
+    func shown() {
+        guard !active else { return }
+        question = nil
+        answer = ""
+        status = nil
+        lost = false
     }
 
     private func begin(_ q: String) {
@@ -36,52 +64,96 @@ final class AskLive {
         answer = ""
         status = nil
         error = nil
-        lost = false
         active = true
+        accepted = false
+        lost = false
+        jobID = nil
     }
 
     private func run(asking: String?) async {
         var ask = asking             // the first attempt asks; every later one joins what's being written
-        var received = false         // any of the answer seen, in this or an earlier attempt
         var tries = 0
         while !Task.isCancelled {
-            var fresh = ask == nil   // a join replays from the start
+            let joining = ask == nil
             do {
                 try await AppModel.shared.call {
                     let events = ask.map { API.shared.stream("ask/stream", [("text", $0)]) }
                         ?? API.shared.stream("ask/stream", method: "GET")
-                    for try await event in events {
-                        if fresh { answer = ""; status = nil; fresh = false }
+                    var buffer = ""                              // a join replays from the start...
+                    var caughtUp = !joining || answer.isEmpty    // ...and shows once it has caught up with what's on screen
+                    var complete = false
+                    stream: for try await event in events {
                         switch event.t.string {
-                        case "delta": answer += event.text.string; status = nil; received = true
-                        case "status": status = event.text.string; received = true
-                        case "reset": answer = ""; received = true
-                        case "error": throw APIError.message(event.text.string)
-                        case "none":
-                            if !received {
+                        case "start":
+                            // Which question this is. Joining with no id of our own, it's ours only if it's our words:
+                            // the question may never have got there, and this be an older answer.
+                            let id = event.id.string
+                            let ours = jobID.map { $0 == id } ?? (joining ? event.text.string == question : true)
+                            if !ours {
+                                complete = true
+                                if jobID == nil {
+                                    lost = true
+                                    throw APIError.message("Couldn't reach Fizzy. Check the connection and try again.")
+                                }
+                                break stream                     // ours is finished and gone: the saved chat has it
+                            }
+                            jobID = id
+                            if !accepted { accepted = true; changed += 1 }   // saved: the chat shows it from now on
+                        case "delta":
+                            buffer += event.text.string
+                            if !caughtUp, buffer.count >= answer.count { caughtUp = true }
+                            if caughtUp { answer = buffer; status = nil }
+                        case "status":
+                            caughtUp = true
+                            answer = buffer
+                            status = event.text.string
+                        case "reset":   // it wrote a bit, then went to look things up: that bit is saved as its own message
+                            buffer = ""
+                            caughtUp = true
+                            answer = ""
+                            changed += 1
+                        case "done":
+                            complete = true
+                            break stream
+                        case "error":
+                            complete = true
+                            throw APIError.message(event.text.string)
+                        case "none":    // nothing being answered: the question never got there, or the server restarted
+                            complete = true
+                            if jobID == nil {
                                 lost = true
                                 throw APIError.message("Couldn't reach Fizzy. Check the connection and try again.")
                             }
-                        default: break
+                            break stream
+                        default:
+                            break
                         }
                     }
+                    if !complete { throw URLError(.networkConnectionLost) }   // cut off before the end: join again
                 }
                 break
             } catch APIError.message(let message) {
                 self.error = message
+                if !accepted { lost = true }     // refused before it was taken (busy, not set up, passcode cancelled): back in the box
                 break
             } catch APIError.signedOut {
                 break
             } catch is CancellationError {
                 return
             } catch {
-                // The connection dropped. Fizzy is still writing: join again in a moment.
-                ask = nil
+                // The connection dropped (or a proxy answered for Fizzy). Join again in a moment: a question
+                // Fizzy never took gets a few goes, an answer it's writing many more.
                 tries += 1
-                if tries > 12 {
-                    self.error = "Lost the connection. The answer will be here once it's done: pull down to refresh."
+                if tries > (accepted ? 12 : 3) {
+                    if accepted {
+                        self.error = "Lost the connection. The answer will be here once it's done: pull down to refresh."
+                    } else {
+                        self.error = "Couldn't reach Fizzy. Check the connection and try again."
+                        lost = true
+                    }
                     break
                 }
+                ask = nil
                 try? await Task.sleep(for: .seconds(min(10, 2 * tries)))
             }
         }
@@ -94,23 +166,29 @@ final class AskLive {
 struct AskView: View {
     @State private var page = Page("ask")
     @State private var text = ""
+    @State private var atEnd = true          // the page follows the answer only while its end is in view, like the website
     @FocusState private var focused: Bool
     private var live: AskLive { .shared }
 
     var body: some View {
         let d = page.data
         let timeline = d.timeline.array
-        // The question is saved the moment it's asked, so after a reload it's already in the chat.
-        let questionSaved = timeline.last.map { $0.kind.string == "msg" && $0.role.string == "user" && $0.text.string == live.question } ?? false
+        let liveAnswer = live.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Once Fizzy has the question it's in the saved chat (the reload that "accepted" triggers brings it).
+        let questionInChat = live.accepted && timeline.contains { $0.kind.string == "msg" && $0.role.string == "user" && $0.text.string == live.question }
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if let flash = page.flash { FlashRow(flash: flash) }
+                    if let when = page.offlineSince {
+                        Label("No connection. Showing what was saved \(when.formatted(.relative(presentation: .named))).", systemImage: "wifi.slash")
+                            .foregroundStyle(.orange)
+                    }
                     if let e = page.error { Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
                     if page.loaded && !d.enabled.bool {
                         Label("Ask is off. Put the Gemini API key in Settings to turn it on.", systemImage: "sparkles").foregroundStyle(.orange)
                     }
-                    if page.loaded && timeline.isEmpty && !live.active && d.enabled.bool {
+                    if page.loaded && timeline.isEmpty && live.question == nil && d.enabled.bool {
                         Text("Try asking:").font(.footnote).foregroundStyle(.secondary)
                         ForEach(d.examples.strings, id: \.self) { ex in
                             Button { text = ex; focused = true } label: {
@@ -122,25 +200,28 @@ struct AskView: View {
                         }
                     }
                     ForEach(Array(timeline.enumerated()), id: \.offset) { _, t in item(t) }
-                    if let q = live.question, !questionSaved, live.active || live.error != nil { bubble(q, mine: true) }
-                    if live.active {
-                        if !live.answer.isEmpty { bubble(live.answer, mine: false) }
-                        else {
-                            HStack(spacing: 8) { ProgressView(); Text(live.status ?? "Thinking…").font(.footnote).foregroundStyle(.secondary) }
-                                .padding(.horizontal, 12).padding(.vertical, 9)
-                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-                        }
+                    if let q = live.question, !questionInChat { bubble(q, mine: true) }
+                    if !liveAnswer.isEmpty {
+                        bubble(live.answer, mine: false, streaming: live.active)
+                    } else if live.active {
+                        HStack(spacing: 8) { ProgressView(); Text(live.status ?? "Thinking…").font(.footnote).foregroundStyle(.secondary) }
+                            .padding(.horizontal, 12).padding(.vertical, 9)
+                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
                     }
                     if let error = live.error { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
                     Color.clear.frame(height: 1).id("end")
+                        .onAppear { atEnd = true }
+                        .onDisappear { atEnd = false }
                 }
                 .padding()
             }
-            .onChange(of: live.answer) { proxy.scrollTo("end") }
-            .onChange(of: live.status) { proxy.scrollTo("end") }
-            .onChange(of: live.active) { proxy.scrollTo("end") }
-            .onChange(of: page.data) { proxy.scrollTo("end"); joinIfPending() }
+            .overlay { if !page.loaded && page.error == nil { ProgressView() } }
+            .onChange(of: live.answer) { if atEnd { proxy.scrollTo("end") } }
+            .onChange(of: live.status) { if atEnd { proxy.scrollTo("end") } }
+            .onChange(of: live.question) { if live.question != nil { proxy.scrollTo("end") } }   // asking: always down to it
+            .onChange(of: page.data) { if atEnd { proxy.scrollTo("end") }; joinIfPending() }
         }
+        .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) { composer(d) }
         .navigationTitle("Ask")
         .navigationBarTitleDisplayMode(.inline)
@@ -155,21 +236,26 @@ struct AskView: View {
         .refreshable { await page.load() }
         .task {
             await page.load()
-            settle()
+            if !live.active { settle(); live.shown() }
         }
+        .onChange(of: live.changed) { Task { await page.load() } }
         .onChange(of: live.finished) {
-            settle()
-            Task { await page.load() }   // the saved conversation, with any change it proposes
+            Task {
+                await page.load()   // the saved conversation, with any change it proposes
+                settle()
+                live.shown()
+            }
         }
     }
 
     /// An answer still being written when the page opens (asked here earlier, or on the website) is joined.
+    /// Not from a saved copy of the page: that answer is long done.
     private func joinIfPending() {
         let p = page.data.pending
-        if !p.isNull, !live.active { live.join(p) }
+        if !p.isNull, page.offlineSince == nil, !live.active { live.join(p) }
     }
 
-    /// A question that never reached Fizzy goes back in the box to send again.
+    /// A question that never reached Fizzy goes back in the box, to send again.
     private func settle() {
         if live.lost, let q = live.question {
             if text.isEmpty { text = q }
@@ -203,14 +289,15 @@ struct AskView: View {
         }
     }
 
-    /// What was asked, as typed; what Fizzy said, with its markdown drawn (tables, lists, headings, code).
-    @ViewBuilder private func bubble(_ s: String, mine: Bool) -> some View {
+    /// What was asked, as typed, in ink like the website; what Fizzy said, with its markdown drawn.
+    @ViewBuilder private func bubble(_ s: String, mine: Bool, streaming: Bool = false) -> some View {
         Group {
-            if mine { Text(s).textSelection(.enabled) } else { MarkdownView(MD.stripEmoji(s)) }
+            if mine { Text(s).textSelection(.enabled) } else { MarkdownView(MD.stripEmoji(s), streaming: streaming) }
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .foregroundStyle(mine ? Color.white : Color.primary)
-        .background(mine ? Color("Brand") : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .foregroundStyle(mine ? Color(.systemBackground) : Color.primary)
+        .background(mine ? Color(.label) : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .frame(maxWidth: 720, alignment: mine ? .trailing : .leading)
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
     }
 

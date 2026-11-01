@@ -42,6 +42,20 @@ enum MD {
             let t = line.trimmingCharacters(in: .whitespaces)
             if t.isEmpty { flush(); i += 1; continue }
 
+            // "Title" over "===" or "---" is a heading.
+            if !para.isEmpty, let level = setextLevel(t) {
+                out.append(.heading(level, joinParagraph(para)))
+                para = []
+                i += 1
+                continue
+            }
+            // "2. " in the middle of a paragraph is part of it; only "1." can start a numbered list there.
+            if !para.isEmpty, let m = listMarker(line), m.ordered, m.number != 1 {
+                para.append(line)
+                i += 1
+                continue
+            }
+
             if let fence = fenceStart(t) {
                 flush()
                 var body: [String] = []
@@ -58,9 +72,10 @@ enum MD {
                 flush()
                 var q: [String] = []
                 while i < lines.endIndex {
-                    let s = lines[i].trimmingCharacters(in: .whitespaces)
-                    if s.hasPrefix(">") { q.append(stripQuote(s)); i += 1 }
-                    else if !s.isEmpty, !startsBlock(s), !(q.last ?? "").isEmpty { q.append(s); i += 1 }   // a wrapped line
+                    let raw = String(lines[i].drop { $0 == " " || $0 == "\t" })   // trailing spaces kept: a hard break
+                    let s = raw.trimmingCharacters(in: .whitespaces)
+                    if raw.hasPrefix(">") { q.append(stripQuote(raw)); i += 1 }
+                    else if !s.isEmpty, !startsBlock(s), !(q.last ?? "").trimmingCharacters(in: .whitespaces).isEmpty { q.append(raw); i += 1 }   // a wrapped line
                     else { break }
                 }
                 out.append(.quote(parse(q[...])))
@@ -89,8 +104,12 @@ enum MD {
             if let first = listMarker(line) {
                 flush()
                 var items: [Item] = []
-                while i < lines.endIndex, let mk = listMarker(lines[i]), mk.ordered == first.ordered, mk.indent < first.contentIndent {
-                    i += 1
+                while i < lines.endIndex {
+                    // Blank lines between items keep the list together.
+                    var k = i
+                    while k < lines.endIndex, lines[k].trimmingCharacters(in: .whitespaces).isEmpty { k += 1 }
+                    guard k < lines.endIndex, let mk = listMarker(lines[k]), mk.ordered == first.ordered, mk.indent < first.contentIndent else { break }
+                    i = k + 1
                     var body: [String] = []     // the item's further lines, with the item's indent taken off
                     while i < lines.endIndex {
                         let l = expandTabs(lines[i])
@@ -104,7 +123,7 @@ enum MD {
                         let indent = leadingSpaces(l)
                         if indent >= mk.contentIndent { body.append(String(l.dropFirst(mk.contentIndent))) }
                         else if listMarker(l) != nil || startsBlock(s) { break }
-                        else if !(body.last ?? " ").isEmpty { body.append(s) }   // a wrapped line of the item's text
+                        else if !(body.last ?? " ").isEmpty { body.append(l) }   // a wrapped line of the item's text
                         else { break }
                         i += 1
                     }
@@ -115,8 +134,10 @@ enum MD {
                     var children = parse(body[...])
                     // Lines wrapped straight under the marker belong to the item's own text.
                     if let f = body.first, !f.trimmingCharacters(in: .whitespaces).isEmpty, case .paragraph(let p)? = children.first {
-                        text = text.isEmpty ? p : text + " " + p
+                        text = joinParagraph([text, p])
                         children.removeFirst()
+                    } else {
+                        text = joinParagraph([text])
                     }
                     items.append(Item(text: text, checked: checked, children: children))
                 }
@@ -148,6 +169,12 @@ enum MD {
     private static func expandTabs(_ s: String) -> String { s.replacingOccurrences(of: "\t", with: "    ") }
 
     private static func leadingSpaces(_ s: String) -> Int { s.prefix { $0 == " " }.count }
+
+    /// "===" under a paragraph makes it a level-1 heading, "---" a level-2 one (CommonMark setext headings).
+    private static func setextLevel(_ t: String) -> Int? {
+        guard let c = t.first, c == "=" || c == "-", t.allSatisfy({ $0 == c }) else { return nil }
+        return c == "=" ? 1 : 2
+    }
 
     private static func fenceStart(_ t: String) -> (marker: String, lang: String)? {
         guard let c = t.first, c == "`" || c == "~" else { return nil }
@@ -223,7 +250,7 @@ enum MD {
         guard afterMarker.isEmpty || afterMarker.first == " " else { return nil }
         let spaces = afterMarker.prefix { $0 == " " }.count
         let gap = afterMarker.isEmpty ? 1 : (spaces > 4 ? 1 : spaces)   // 5+ spaces means indented code in the item: count one
-        let text = afterMarker.dropFirst(spaces).trimmingCharacters(in: .whitespaces)
+        let text = String(afterMarker.dropFirst(spaces))                 // trailing spaces kept: a hard break
         return Marker(indent: indent, contentIndent: indent + markerLength + gap, ordered: number != nil, number: number, text: text)
     }
 
@@ -265,17 +292,66 @@ enum MD {
         return out
     }
 
+    // MARK: a partial answer
+
+    /// An answer still arriving, tidied so half-made formatting doesn't flash (as the website's tidy() does):
+    /// an unclosed ** or `, a table before its |---| line, half a row, a bullet with no words yet.
+    static func tidy(_ s: String) -> String {
+        var t = s
+        if (t.components(separatedBy: "**").count - 1) % 2 == 1, let r = t.range(of: "**", options: .backwards) { t = String(t[..<r.lowerBound]) }
+        if t.filter({ $0 == "`" }).count % 2 == 1, let r = t.range(of: "`", options: .backwards) { t = String(t[..<r.lowerBound]) }
+        let blockStart = t.range(of: "\n\n", options: .backwards)?.upperBound ?? t.startIndex
+        let block = t[blockStart...]
+        if block.trimmingCharacters(in: .whitespaces).hasPrefix("|") {
+            let hasSeparator = block.split(separator: "\n", omittingEmptySubsequences: false).dropFirst().contains { line in
+                var l = Substring(line.trimmingCharacters(in: .whitespaces))
+                if l.hasPrefix("|") { l = l.dropFirst() }
+                l = Substring(l.trimmingCharacters(in: .whitespaces))
+                if l.hasPrefix(":") { l = l.dropFirst() }
+                return l.hasPrefix("---")
+            }
+            if !hasSeparator { t = String(t[..<blockStart]) }
+        }
+        let lineStart = t.lastIndex(of: "\n").map { t.index(after: $0) } ?? t.startIndex
+        let last = t[lineStart...].trimmingCharacters(in: .whitespaces)
+        if last.hasPrefix("|") || isBareMarker(last) { t = String(t[..<lineStart]) }
+        return t
+    }
+
+    private static func isBareMarker(_ l: String) -> Bool {
+        if l == "-" || l == "*" || l == "+" { return true }
+        let digits = l.prefix { $0.isNumber }
+        return !digits.isEmpty && l.dropFirst(digits.count) == "."
+    }
+
     // MARK: inline
 
     /// Bold, italics, code, strikethrough and links. Only web links stay links, as on the website.
     static func inline(_ s: String) -> AttributedString {
-        var a = (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace,
-                                                                   failurePolicy: .returnPartiallyParsedIfPossible)))
+        var a = (try? AttributedString(markdown: autolinked(s), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                                                                               failurePolicy: .returnPartiallyParsedIfPossible)))
             ?? AttributedString(s)
         for run in a.runs {
             if let url = run.link, !(url.scheme == "http" || url.scheme == "https") { a[run.range].link = nil }
         }
         return a
+    }
+
+    private static let bareURL = try! NSRegularExpression(pattern: #"(?<![\w(<\[/`])https?://[^\s<>()\[\]`]+"#)
+
+    /// A web address on its own becomes a link, as marked and mistune make it on the website.
+    static func autolinked(_ s: String) -> String {
+        guard s.contains("http") else { return s }
+        let ns = s as NSString
+        var out = s
+        for m in bareURL.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed() {
+            var url = ns.substring(with: m.range)
+            var trail = ""
+            while let last = url.last, ".,;:!?'\"".contains(last) { trail.insert(last, at: trail.startIndex); url.removeLast() }
+            guard let r = Range(m.range, in: out) else { continue }
+            out.replaceSubrange(r, with: "<\(url)>\(trail)")
+        }
+        return out
     }
 
     /// Like the website: a number (even a bold or dollar one) sits on the right of its column.
@@ -295,6 +371,11 @@ enum MD {
         return !t.hasSuffix(".")
     }
 
+    /// A cell that stands for "nothing here" doesn't stop its column being a column of numbers.
+    static func isBlank(_ s: String) -> Bool {
+        ["", "-", "—", "–", "n/a", "na", "none"].contains(s.filter { !"*_`".contains($0) }.trimmingCharacters(in: .whitespaces).lowercased())
+    }
+
     /// Emojis are dropped, as the website does for saved answers (the staff site has none).
     static func stripEmoji(_ s: String) -> String {
         var out = String.UnicodeScalarView()
@@ -310,12 +391,12 @@ enum MD {
 
 // MARK: views
 
-/// Markdown text as native views, re-parsed whenever the text changes (cheap at chat sizes), so it
-/// works for an answer that's still arriving.
+/// Markdown text as native views, re-parsed whenever the text changes (cheap at chat sizes). While the
+/// answer is still arriving, the half-made tail is held back so it doesn't flash as raw markup.
 struct MarkdownView: View {
     let blocks: [MD.Block]
 
-    init(_ text: String) { blocks = MD.parse(text) }
+    init(_ text: String, streaming: Bool = false) { blocks = MD.parse(streaming ? MD.tidy(text) : text) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -334,13 +415,15 @@ struct MDBlockView: View {
             Text(MD.inline(s))
         case .heading(let level, let s):
             Text(MD.inline(s))
-                .font(level == 1 ? .title3.bold() : level == 2 ? .headline : .subheadline.bold())
+                .font(level == 1 ? .title3.bold() : level == 2 ? .headline : .body.weight(.semibold))
                 .padding(.top, 2)
         case .list(let items, let ordered, let start):
+            let wide = ordered && start + items.count - 1 >= 10
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { n, item in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         marker(item, ordered: ordered, number: start + n)
+                            .frame(minWidth: wide ? 26 : 18, alignment: .trailing)
                         VStack(alignment: .leading, spacing: 4) {
                             if !item.text.isEmpty { Text(MD.inline(item.text)) }
                             ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in MDBlockView(block: child) }
@@ -375,16 +458,16 @@ struct MDBlockView: View {
         if let checked = item.checked {
             Image(systemName: checked ? "checkmark.square.fill" : "square")
                 .foregroundStyle(checked ? Color.accentColor : Color.secondary)
-                .frame(minWidth: 18, alignment: .trailing)
         } else if ordered {
-            Text("\(number).").monospacedDigit().frame(minWidth: 18, alignment: .trailing)
+            Text("\(number).").monospacedDigit()
         } else {
-            Text("•").frame(minWidth: 18, alignment: .trailing)
+            Text("•")
         }
     }
 }
 
-/// A table that scrolls sideways when it's wider than the bubble. Columns of numbers line up on the right.
+/// A table that scrolls sideways when it's wider than the bubble. Columns of numbers line up on the
+/// right; a long cell wraps rather than pushing the whole table off the screen.
 struct MDTable: View {
     let header: [String]
     let align: [MD.Align]
@@ -396,9 +479,18 @@ struct MDTable: View {
         case .center: return .center
         case .right: return .trailing
         case .auto:
-            let values = rows.compactMap { col < $0.count && !$0[col].isEmpty ? $0[col] : nil }
+            let values = rows.compactMap { col < $0.count ? $0[col] : nil }.filter { !MD.isBlank($0) }
             return !values.isEmpty && values.allSatisfy(MD.isNumber) ? .trailing : .leading
         }
+    }
+
+    private func cell(_ s: String, _ col: Int, header: Bool) -> some View {
+        let h = alignment(col)
+        return Text(MD.inline(s))
+            .font(header ? .footnote.weight(.semibold) : .footnote)
+            .multilineTextAlignment(h == .trailing ? .trailing : h == .center ? .center : .leading)
+            .padding(.vertical, header ? 7 : 6)
+            .frame(maxWidth: 240, alignment: Alignment(horizontal: h, vertical: .center))
     }
 
     var body: some View {
@@ -406,25 +498,19 @@ struct MDTable: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 0) {
                 GridRow {
                     ForEach(header.indices, id: \.self) { c in
-                        Text(MD.inline(header[c]))
-                            .font(.footnote.weight(.semibold))
-                            .padding(.vertical, 7)
-                            .gridColumnAlignment(alignment(c))
+                        cell(header[c], c, header: true).gridColumnAlignment(alignment(c))
                     }
                 }
                 Divider().gridCellUnsizedAxes(.horizontal)
                 ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
                     GridRow {
                         ForEach(header.indices, id: \.self) { c in
-                            Text(MD.inline(c < row.count ? row[c] : ""))
-                                .font(.footnote)
-                                .padding(.vertical, 6)
+                            cell(c < row.count ? row[c] : "", c, header: false)
                         }
                     }
                     if r < rows.count - 1 { Divider().gridCellUnsizedAxes(.horizontal) }
                 }
             }
-            .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 10)
         }

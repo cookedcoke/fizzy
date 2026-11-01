@@ -255,8 +255,9 @@ def test_ask_streams_steps_then_the_answer(client, monkeypatch):
     body = client.post("/ask/stream", data={"text": "slowest day?"}).text
     events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
     kinds = [e["t"] for e in events]
-    assert kinds == ["status", "delta", "delta", "done"]
-    assert events[0]["text"] == "Adding up sales by weekday..." and events[1]["text"] + events[2]["text"] == "Mondays are **slowest**."
+    assert kinds == ["start", "status", "delta", "delta", "done"]
+    assert events[0]["text"] == "slowest day?" and len(events[0]["id"]) == 12   # which question this is
+    assert events[1]["text"] == "Adding up sales by weekday..." and events[2]["text"] + events[3]["text"] == "Mondays are **slowest**."
     assert "<strong>slowest</strong>" in client.get("/ask").text            # saved, and rendered properly after
     monkeypatch.setattr(ask, "_stream", lambda *a, **k: (_ for _ in ()).throw(ask.AskError("Gemini says too many requests")))
     body = client.post("/ask/stream", data={"text": "again"}).text
@@ -285,17 +286,22 @@ def test_ask_answers_in_the_background(client, monkeypatch):
             break
         _time.sleep(0.05)
     page = client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()
-    assert page["pending"] == {"text": "slowest day?", "answer": "Mondays ", "status": None, "at": job.started}
+    assert page["pending"] == {"id": job.id, "text": "slowest day?", "answer": "Mondays ", "status": None, "at": job.started}
     body = client.post("/ask/stream", data={"text": "another"}).text   # one at a time
     assert '"t": "error"' in body and "Still answering" in body
+    r = client.post("/ask/clear", follow_redirects=False)                # and no clean slate under a running answer
+    assert r.status_code == 303 and "Still answering" in client.get("/ask").text
+    assert client.post("/ask", data={"text": "plain form"}, follow_redirects=False).status_code == 303
     gate.set()
     body = client.get("/ask/stream").text                          # joining replays from the start, then follows
     events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
-    assert [e["t"] for e in events] == ["delta", "delta", "done"]
-    assert "".join(e.get("text", "") for e in events) == "Mondays are slow."
+    assert [e["t"] for e in events] == ["start", "delta", "delta", "done"] and events[0]["id"] == job.id
+    assert "".join(e.get("text", "") for e in events[1:]) == "Mondays are slow."
     page = client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()
     assert page["pending"] is None
     assert [m["text"] for m in page["timeline"] if m["kind"] == "msg"] == ["slowest day?", "Mondays are slow."]
+    body = client.get("/ask/stream").text                          # a finished answer is still there to replay
+    assert '"t": "done"' in body
 
 
 def test_ask_join_with_nothing_pending(client):
@@ -318,3 +324,21 @@ def test_new_chat_clears_the_cards_too(client):
     client.post("/ask/clear")
     page = client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()
     assert page["timeline"] == []          # no cards left lingering at the top of the new chat
+
+
+def test_ask_gives_up_on_a_stuck_answer(client, monkeypatch):
+    """A thread that never finishes (or died before its try/finally) mustn't lock the person out for ever."""
+    import threading
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    ask._jobs.clear()
+    stuck = ask._Job("Mike", "never answered")
+    ask._jobs["Mike"] = stuck
+    login(client)
+    body = client.post("/ask/stream", data={"text": "again"}).text
+    assert "Still answering" in body
+    stuck.t0 -= ask.STUCK_AFTER + 1
+    monkeypatch.setattr(ask, "_stream", lambda contents, system, tools=True: iter([("delta", "Fine."), ("content", {"role": "model", "parts": [{"text": "Fine."}]})]))
+    body = client.post("/ask/stream", data={"text": "again"}).text
+    events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
+    assert [e["t"] for e in events] == ["start", "delta", "done"] and events[0]["text"] == "again"
+    assert stuck.done and stuck.events[-1]["t"] == "error"      # whoever was still following the old one is told

@@ -3,7 +3,7 @@
 <div class="ask-page">
 <div class="ask-head">
   <h1>Ask</h1>
-  {% if timeline %}<form class="inline" method="post" action="/ask/clear"><button class="sm" data-confirm="Clear this chat?">New chat</button></form>{% endif %}
+  {% if timeline and not pending %}<form class="inline" method="post" action="/ask/clear"><button class="sm" data-confirm="Clear this chat?">New chat</button></form>{% endif %}
 </div>
 
 {% if not enabled %}
@@ -159,17 +159,20 @@
     run(q, me, fetch("/ask/stream", { method: "POST", body: data, credentials: "same-origin" }));
   }
   // Fizzy writes the answer in the background, so leaving the page or losing the connection doesn't lose it:
-  // this request only follows along. Opened while an answer is under way (data-pending), the page joins it.
+  // this request only follows along, and joins again (GET) if it's cut off. Opened while an answer is under
+  // way (data-pending), the page joins it: me is null then, and the chat is redrawn from Fizzy's copy at the end.
+  var THINK = "<i></i><i></i><i></i><span class=st></span>";
   function run(q, me, request) {
     f.dataset.busy = 1; b.disabled = true;
-    var wait = bubble("thinking"); wait.innerHTML = "<i></i><i></i><i></i><span class=st></span>";
+    var wait = bubble("thinking"); wait.innerHTML = THINK;
     var out = null, target = "", shown = 0, failed = false, ticking = false, drained = null, st = { len: 0, fades: [] };
     var before = chat.querySelectorAll(".proposal").length;
+    var jobId = null, joining = !me, rejoined = false, retries = 0, complete = false, reader = null;
     follow(function () {});
     stuck = true;
     function finish() { delete f.dataset.busy; b.disabled = false; if (!touch) t.focus(); }
     function fail(msg) {
-      failed = true; if (me) { t.value = q; grow(); }
+      failed = true; complete = true; if (me || !jobId) { t.value = q; grow(); }
       (out || wait).className = "bubble them err"; (out || wait).textContent = msg; if (out) wait.remove();
     }
     function tick() {  // one animation frame: show a few more words, faster the further behind it is
@@ -187,54 +190,87 @@
       var el = wait.querySelector(".st"); if (!el || el.textContent === text) return;
       el.classList.remove("swap"); void el.offsetWidth; el.textContent = text; el.classList.add("swap");
     }
+    function restart() {  // joining replays the answer from the start: draw it afresh
+      if (out) { out.remove(); out = null; }
+      target = ""; shown = 0; ticking = false; drained = null; st = { len: 0, fades: [] };
+      if (!wait.isConnected) { wait = bubble("thinking"); wait.innerHTML = THINK; }
+    }
     function handle(ev) {
-      if (ev.t === "status") follow(function () { status(ev.text); });
+      if (complete) return;
+      if (ev.t === "start") {   // which question this is: ours, or an older one when ours never got there
+        if (jobId ? ev.id !== jobId : (joining && ev.text !== q)) {
+          if (jobId) { complete = true; rejoined = true; if (reader) reader.cancel(); }   // ours is done and gone: Fizzy's copy has it
+          else fail("Couldn't reach Fizzy. Check the connection and try again.");
+          return;
+        }
+        jobId = ev.id;
+      }
+      else if (ev.t === "status") follow(function () { status(ev.text); });
       else if (ev.t === "delta") {
         if (!out) { out = document.createElement("div"); out.className = "bubble them streaming"; wait.replaceWith(out); st = { len: 0, fades: [] }; }
         target += ev.text;
         if (!ticking) { ticking = true; requestAnimationFrame(tick); }
       } else if (ev.t === "reset") {  // it wrote a bit, now it's looking things up again
+        if (joining || rejoined) { follow(restart); return; }   // that bit is in Fizzy's copy, drawn at the end
         shown = target.length; settle(); ticking = false; drained = null;
         out = null; target = ""; shown = 0; st = { len: 0, fades: [] };
-        follow(function () { wait = bubble("thinking"); wait.innerHTML = "<i></i><i></i><i></i><span class=st></span>"; });
-      } else if (ev.t === "error") fail(ev.text);
-      else if (ev.t === "none") fail("Fizzy was restarted before it finished. Ask again.");
-    }
-    request.then(function (r) {
-      var type = r.headers.get("content-type") || "";
-      if (r.redirected && /\/login/.test(r.url)) { location.href = r.url; throw 0; }
-      if (type.indexOf("event-stream") < 0) {  // e.g. still needs the passcode: keep the question, say what Fizzy said
-        return r.text().then(function (html) {
-          var m = new DOMParser().parseFromString(html, "text/html").querySelector(".flash.bad, .err, main > .flash");
-          if (me) me.remove(); fail(m ? m.textContent.trim() : "Fizzy didn't take that. Try again.");
-        });
+        follow(function () { wait = bubble("thinking"); wait.innerHTML = THINK; });
+      } else if (ev.t === "done") complete = true;
+      else if (ev.t === "error") fail(ev.text);
+      else if (ev.t === "none") {  // nothing being answered: the question never got there, or Fizzy was restarted
+        if (jobId) complete = true;
+        else fail(joining ? "Fizzy was restarted before it finished. Ask again." : "Couldn't reach Fizzy. Check the connection and try again.");
       }
-      var reader = r.body.getReader(), dec = new TextDecoder(), buf = "";
-      return (function pump() {
-        return reader.read().then(function (res) {
-          if (res.done) return;
-          buf += dec.decode(res.value, { stream: true });
-          var parts = buf.split("\n\n"); buf = parts.pop();
-          parts.forEach(function (chunk) {
-            var line = chunk.split("\n").filter(function (l) { return l.indexOf("data:") === 0; })[0];
-            if (line) { try { handle(JSON.parse(line.slice(5))); } catch (err) {} }
+    }
+    function attempt(req) {
+      return req.then(function (r) {
+        var type = r.headers.get("content-type") || "";
+        if (r.redirected && /\/login/.test(r.url)) { location.href = "/login?next=/ask"; throw 0; }
+        if (type.indexOf("event-stream") < 0) {  // e.g. still needs the passcode: keep the question, say what Fizzy said
+          return r.text().then(function (html) {
+            var m = new DOMParser().parseFromString(html, "text/html").querySelector(".flash.bad, .err, main > .flash");
+            if (me) me.remove(); fail(m ? m.textContent.trim() : "Fizzy didn't take that. Try again.");
           });
-          return pump();
-        });
-      })().then(function () {
-        if (failed) return;
-        return new Promise(whenShown).then(function () {
-          settle();  // the reply stays as drawn; only suggestion cards ("Do it") come from Fizzy's copy
-          return fetch("/ask", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.text(); })
-            .then(function (html) {
-              var fresh = new DOMParser().parseFromString(html, "text/html").querySelectorAll("#chat .proposal");
-              follow(function () {
-                for (var i = before; i < fresh.length; i++) { var c = document.importNode(fresh[i], true); c.classList.add("enter"); document.getElementById("end").before(c); }
-              });
+        }
+        reader = r.body.getReader(); var dec = new TextDecoder(), buf = "";
+        return (function pump() {
+          return reader.read().then(function (res) {
+            if (res.done) return;
+            buf += dec.decode(res.value, { stream: true });
+            var parts = buf.split("\n\n"); buf = parts.pop();
+            parts.forEach(function (chunk) {
+              var line = chunk.split("\n").filter(function (l) { return l.indexOf("data:") === 0; })[0];
+              if (line) { try { handle(JSON.parse(line.slice(5))); } catch (err) {} }
             });
-        });
+            return pump();
+          });
+        })();
+      }).then(function () {
+        if (!failed && !complete) throw new Error("cut off");   // the stream ended before "done": join again
+      }).catch(function (err) {
+        if (err === 0 || failed || complete) return;
+        if (jobId && retries < 5) {  // Fizzy has the question and is still writing: join again in a moment
+          retries++; rejoined = true;
+          return new Promise(function (ok) { setTimeout(ok, 2000); })
+            .then(function () { restart(); return attempt(fetch("/ask/stream", { credentials: "same-origin", cache: "no-store" })); });
+        }
+        fail("Couldn't reach Fizzy. Check the connection and try again.");
       });
-    }).catch(function (err) { if (err !== 0) fail("Couldn't reach Fizzy. Check the connection and try again."); }).then(finish);
+    }
+    attempt(request).then(function () {
+      if (failed) return;
+      return new Promise(whenShown).then(function () {
+        settle();  // the reply stays as drawn; only suggestion cards ("Do it") come from Fizzy's copy
+        return fetch("/ask", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.text(); })
+          .then(function (html) {
+            if (joining || rejoined) { follow(function () { refresh(html, true); }); return; }   // drawn from Fizzy's copy, so nothing shows twice
+            var fresh = new DOMParser().parseFromString(html, "text/html").querySelectorAll("#chat .proposal");
+            follow(function () {
+              for (var i = before; i < fresh.length; i++) { var c = document.importNode(fresh[i], true); c.classList.add("enter"); document.getElementById("end").before(c); }
+            });
+          });
+      });
+    }).then(finish);
   }
   // "No thanks" without a reload too. "Do it" goes the normal way so the passcode box can ask first.
   chat.addEventListener("submit", function (e) {
