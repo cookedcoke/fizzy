@@ -83,7 +83,7 @@ struct RewardsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack {
                                     Text(e.name.string).bold() + Text(" · ×\(Fmt.g(e.multiplier.double))").foregroundStyle(.secondary)
-                                    if on { Tag(text: "On now", color: .green) } else if soon { Tag(text: "Coming up", color: .blue) }
+                                    if on { Tag(text: "On now", color: .green) } else if soon { Tag(text: "Coming up", color: .blue) } else { Tag(text: "Finished") }
                                     if !e.rule_id.isNull { Tag(text: "Weekly") }
                                 }
                                 Text(Fmt.when(e.start_date.string, "EEE d MMM") + (e.end_date.string != e.start_date.string ? " to \(Fmt.when(e.end_date.string, "EEE d MMM"))" : "")
