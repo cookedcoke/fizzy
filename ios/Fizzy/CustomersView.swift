@@ -105,7 +105,7 @@ struct CustomersView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.body.weight(.medium))
-                    if let email { Text(email).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                    if let email { Text(email.split(separator: "@").first.map(String.init) ?? email).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {

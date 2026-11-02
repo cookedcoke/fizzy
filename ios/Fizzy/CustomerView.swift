@@ -33,12 +33,10 @@ struct CustomerView: View {
 
     var body: some View {
         PageList(page: page, title: customer.name.string) { d in
-            header(d)
-            verdict(d)
+            summary(d)
+            actions(d)
             todos(d)
             rewards(d)
-            figures(d)
-            actions(d)
             charges(d)
             repayments(d)
             history(d)
@@ -61,29 +59,9 @@ struct CustomerView: View {
 
     // MARK: sections
 
-    @ViewBuilder private func header(_ d: J) -> some View {
-        let c = d.c, st = d.s.status
-        Section {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Tag(text: st.label.string, color: statusColor(st.status.string))
-                    if c.archived_at.optString != nil { Tag(text: "Archived") }
-                    if c.kind.string == "admin" { Tag(text: "Admin", color: .purple) }
-                    if c.kind.string == "test" { Tag(text: "Test", color: .orange) }
-                }
-                let number = c.email.string.split(separator: "@").first.map(String.init) ?? ""
-                let link = !c.square_customer_id.isNull ? "Linked to Square" : (c.kind.string == "test" ? "Test account" : "Not in Square yet")
-                Text("\(number) · \(link)").font(.footnote).foregroundStyle(.secondary)
-            }
-            if c.archived_at.optString == nil {
-                Button { sheet = .claim } label: { Label("Claim sale", systemImage: "square.and.arrow.down") }
-                Button { Task { await makeQR() } } label: { Label("Show sign-in code", systemImage: "qrcode") }
-            }
-        }
-    }
-
-    @ViewBuilder private func verdict(_ d: J) -> some View {
-        let st = d.s.status, led = d.s.ledger, c = d.c
+    /// What matters at the counter, in one card: can they use their tab, their points, what they owe.
+    @ViewBuilder private func summary(_ d: J) -> some View {
+        let c = d.c, st = d.s.status, led = d.s.ledger
         let canCharge = st.can_charge.bool
         let waiting = ["locked", "eligible", "paused"].contains(st.status.string)
         Section {
@@ -100,6 +78,25 @@ struct CustomerView: View {
                         Text(why(st, led, c)).font(.footnote).foregroundStyle(.secondary)
                     }
                 }
+            }
+            .padding(.vertical, 2)
+            HStack(alignment: .top, spacing: 16) {
+                Stat(title: "Points", value: Fmt.number(d.s.points.int))
+                Stat(title: "Owing", value: Fmt.money(led.owing_cents.int),
+                     sub: led.has_overdue.bool ? "\(Fmt.money(led.overdue_cents.int)) overdue"
+                        : (led.balance_cents.int < 0 ? "\(Fmt.money(-led.balance_cents.int)) in credit" : nil),
+                     alert: led.has_overdue.bool)
+                Stat(title: "Spent", value: Fmt.money(st.spend_cents.int),
+                     sub: st.spend_cents.int < st.unlock_spend_cents.int ? "of \(Fmt.money(st.unlock_spend_cents.int)) for a tab" : nil)
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Text(c.email.string.split(separator: "@").first.map(String.init) ?? "").font(.footnote.monospaced()).textCase(nil)
+                Tag(text: st.label.string, color: statusColor(st.status.string))
+                if c.archived_at.optString != nil { Tag(text: "Archived") }
+                if c.kind.string == "admin" { Tag(text: "Admin", color: .purple) }
+                if c.kind.string == "test" { Tag(text: "Test", color: .orange) }
+                if led.late_count.int > 0 { Tag(text: "\(led.late_count.int) late", color: .red) }
             }
         }
     }
@@ -189,26 +186,14 @@ struct CustomerView: View {
         return "Needs \(Fmt.number(o.short.int)) more points."
     }
 
-    @ViewBuilder private func figures(_ d: J) -> some View {
-        let st = d.s.status, led = d.s.ledger
-        Section {
-            StatGrid(stats: [
-                Stat(title: "Points", value: Fmt.number(d.s.points.int)),
-                Stat(title: "Tab owing", value: Fmt.money(led.owing_cents.int), sub: led.balance_cents.int < 0 ? "\(Fmt.money(-led.balance_cents.int)) in credit" : nil, alert: led.has_overdue.bool),
-                Stat(title: "Overdue", value: Fmt.money(led.overdue_cents.int),
-                     sub: led.late_count.int > 0 ? "\(led.late_count.int) late payment\(led.late_count.int == 1 ? "" : "s") on record" : nil, alert: led.has_overdue.bool),
-                Stat(title: "Spent", value: Fmt.money(st.spend_cents.int),
-                     sub: st.spend_cents.int < st.unlock_spend_cents.int ? "\(Fmt.money(st.unlock_spend_cents.int)) to unlock tab" : nil),
-            ])
-        }
-    }
-
     @ViewBuilder private func actions(_ d: J) -> some View {
         if d.c.archived_at.optString == nil {
-            Section("Actions") {
+            Section {
+                Button { sheet = .claim } label: { Label("Claim sale", systemImage: "square.and.arrow.down") }.bold()
                 Button { sheet = .repay } label: { Label("Record repayment without Square", systemImage: "dollarsign.circle") }
                 Button { sheet = .tab } label: { Label("Tab approval", systemImage: "checkmark.seal") }
                 Button { sheet = .points } label: { Label("Adjust points", systemImage: "plusminus.circle") }
+                Button { Task { await makeQR() } } label: { Label("Show sign-in code", systemImage: "qrcode") }
             }
         }
     }
