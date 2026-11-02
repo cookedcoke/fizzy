@@ -97,8 +97,6 @@ def _tab_line(st):
         return "Nothing more on your tab until that's paid."
     if st["status"] in ("approved", "paused"):
         return "Your tab's paused. Ask at the counter."
-    if st["status"] == "eligible":
-        return "You can ask for a tab."
     return None
 
 

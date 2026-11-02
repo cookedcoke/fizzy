@@ -319,7 +319,9 @@ def promos(conn=Depends(get_conn)):
                           for e in list(events.on(conn)) + list(events.upcoming(conn))],
         "student_site": f"https://{config.PUBLIC_HOST}/" if config.PUBLIC_HOST else None,
         "closed": [{"start": a, "end": b, "label": label} for a, b, label in logic.closed_days(conn) if b >= t.isoformat()],
-        "rules": {"unlock_spend_cents": cfg["unlock_spend_cents"], "score_needed": cfg["tab_score_needed"], "due_days": cfg["tab_due_days"]},
+        # unlock_spend_cents and score_needed: kept for the main website, which reads them. Nothing waits on spending now.
+        "rules": {"min_score": cfg["tab_min_score"], "due_days": cfg["tab_due_days"],
+                  "unlock_spend_cents": 0, "score_needed": cfg["tab_min_score"]},
     }
     return JSONResponse(body, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60"})
 

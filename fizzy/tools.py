@@ -30,9 +30,8 @@ TOOLS = [
         ("reset_points", "Reset all points", "Set everyone's points to 0. Spending and tabs aren't touched."),
     ]),
     ("Tabs", [
-        ("pause_tabs", "Pause all tabs", "Stop anyone using a tab for now. Turn it back on and everyone's approval is still there."),
-        ("approve_eligible", "Approve all eligible", "Approve everyone who's spent enough and hasn't been approved or rejected yet."),
-        ("revoke_all", "Revoke all tabs", "Take tabs off everyone, like at the end of the year."),
+        ("pause_tabs", "Pause all tabs", "Stop anyone using a tab for now. Turn it back on and nothing else has changed."),
+        ("revoke_all", "Turn off all tabs", "Turn everyone's tab off, like at the end of the year. Turn them back on one at a time."),
         ("manual_charge", "Add tab charge by hand", "Put something on someone's tab that didn't go through Square."),
         ("write_off", "Write off a debt", "Wipe some or all of what someone owes. No points for it."),
         ("extend_due", "Give more time to pay", "Give someone more days to pay what they owe."),
@@ -348,26 +347,13 @@ def h_pause_tabs(request, conn, who, form):
     return done(request, "pause_tabs", "All tabs paused." if paused else "Tabs back on.")
 
 
-def h_approve_eligible(request, conn, who, form):
-    cfg = logic.settings(conn)
-    rows = conn.execute(
-        "SELECT c.id FROM customers c JOIN points_ledger p ON p.customer_id = c.id WHERE c.tab_decision IS NULL "
-        "AND c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id HAVING SUM(p.spend_cents) >= ?", (cfg["unlock_spend_cents"],)
-    ).fetchall()
-    rows = [r for r in rows if logic.tab_score(conn, r["id"], cfg=cfg)["ready"]]  # spent enough and a good enough score
-    note = form.get("note", "").strip() or "Bulk approved"
-    for r in rows:
-        logic.set_tab_decision(conn, r["id"], "approved", note, who)
-    return done(request, "approve_eligible", f"Approved {len(rows)} customer(s).")
-
-
 def h_revoke_all(request, conn, who, form):
     _confirm(form, "REVOKE")
-    note = form.get("note", "").strip() or "Bulk revoked"
-    rows = conn.execute("SELECT id FROM customers WHERE tab_decision = 'approved'").fetchall()
+    note = form.get("note", "").strip() or "Turned off all tabs"
+    rows = conn.execute("SELECT id FROM customers WHERE tab_decision IS NULL AND archived_at IS NULL").fetchall()
     for r in rows:
         logic.set_tab_decision(conn, r["id"], "revoked", note, who)
-    return done(request, "revoke_all", f"Revoked {len(rows)} tab(s).")
+    return done(request, "revoke_all", f"Turned off {len(rows)} tab(s).")
 
 
 def h_manual_charge(request, conn, who, form):
@@ -490,6 +476,8 @@ def h_merge(request, conn, who, form):
     if keep["passcode_enc"] is None and dup["passcode_enc"] is not None:
         conn.execute("UPDATE customers SET passcode_enc = ?, passcode_set_at = ? WHERE id = ?",
                      (dup["passcode_enc"], dup["passcode_set_at"], keep["id"]))
+    if not keep["score_adjust"] and dup["score_adjust"]:
+        conn.execute("UPDATE customers SET score_adjust = ? WHERE id = ?", (dup["score_adjust"], keep["id"]))
     conn.execute("UPDATE customers SET square_customer_id = NULL, archived_at = ?, merged_into = ?, tab_decision = NULL, "
                  "passcode_enc = NULL, passcode_set_at = NULL WHERE id = ?", (db.now_iso(), keep["id"], dup["id"]))
     # Their tab money and charges now sit together: the points have to match the combined tab.
@@ -708,9 +696,6 @@ def h_integrity(request, conn, who, form):
     count("Active customers not linked to Square",
           "SELECT COUNT(*) FROM customers WHERE square_customer_id IS NULL AND archived_at IS NULL AND kind IS NOT 'test'",
           link("Import this CSV into Square, then sync", "/export/square-customers.csv"))
-    count("Approved tabs on archived customers",
-          "SELECT COUNT(*) FROM customers WHERE archived_at IS NOT NULL AND tab_decision = 'approved'",
-          "Revoke them from the customer page")
     err = db.get_setting(conn, "square_last_error")
     checks.append(["Last Square sync error", err or "none", "ok" if not err else "Check the Square page"])
     return report(request, "Health check", ["Check", "Result", "Status"], [[a, b, c] for a, b, c in checks])

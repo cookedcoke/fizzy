@@ -5,7 +5,7 @@
   --ink: #15171B; --fg: #1F2328; --muted: #6A717C; --faint: #6F7680;
   --line: #E3E5E9; --line-strong: #CDD1D7; --bg: #F2F3F5; --surface: #FFFFFF; --hover: #F7F8FA;
   --ok: #17703A; --ok-wash: #EAF6EE; --warn: #8A5A00; --warn-wash: #FFF5DB;
-  --ok-line: var(--ok-line); --red-line: var(--red-line); --warn-line: var(--warn-line); --warn-mark: #D9A21B;
+  --ok-line: #B5DCC2; --red-line: #F2BDBD; --warn-line: #EBD59A; --warn-mark: #D9A21B;
   --on-ink: #FFFFFF; --ink-hover: #2C3038; --header: #15171B;
   --admin: #6D3FC0; --admin-line: #D5C6F2; --admin-wash: #F3EEFC;
   color-scheme: light;
@@ -110,6 +110,7 @@ td a { font-weight: 500 }
 .tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint) }
 .tag.approved { color: var(--ok); border-color: var(--ok-line); background: var(--ok-wash) } .tag.approved::before { background: var(--ok) }
 .tag.eligible { color: var(--warn); border-color: var(--warn-line); background: var(--warn-wash) } .tag.eligible::before { background: var(--warn-mark) }
+.tag.low_score { color: var(--warn); border-color: var(--warn-line); background: var(--warn-wash) } .tag.low_score::before { background: var(--warn-mark) }
 .tag.rejected, .tag.revoked, .tag.blocked_overdue, .tag.paused, .tag.red { color: var(--red-ink); border-color: var(--red-line); background: var(--red-wash) }
 .tag.rejected::before, .tag.revoked::before, .tag.blocked_overdue::before, .tag.paused::before, .tag.red::before { background: var(--red) }
 
@@ -708,3 +709,8 @@ html.quiet .bars .pair i, html.quiet .flash { animation: none }
 @media (prefers-reduced-motion: reduce) {
   main, dialog[open], dialog[open]::backdrop, .nav-menu, .results, .jobbar, .bars .pair i { animation: none !important }
 }
+
+/* Customer page: Tab limit. One button per limit band; the one they're in now is filled. */
+.tab-limit .bands { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s3) }
+.tab-limit .bands button { flex: 1 1 0; min-width: 72px; font-variant-numeric: tabular-nums }
+.tab-limit .bands button.on, .tab-limit .bands button.on:hover { background: var(--ink); border-color: var(--ink); color: var(--on-ink); cursor: default; opacity: 1; transform: none }

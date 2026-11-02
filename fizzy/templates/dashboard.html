@@ -67,7 +67,7 @@
   <div class="stat"><div class="k">Total owed</div><div class="v">{{ total_owed|money }}</div></div>
   <div class="stat {{ 'alert' if total_overdue }}"><div class="k">Overdue</div><div class="v">{{ total_overdue|money }}</div><div class="sub">{{ overdue|length }} charge{{ '' if overdue|length == 1 else 's' }}</div></div>
   <div class="stat"><div class="k">Due in 2 days</div><div class="v">{{ due_soon|length }}</div><div class="sub">charge{{ '' if due_soon|length == 1 else 's' }}</div></div>
-  <div class="stat"><div class="k">Awaiting approval</div><div class="v">{{ eligible|length }}</div><div class="sub">eligible for a tab</div></div>
+  <div class="stat"><div class="k">Tabs turned off</div><div class="v">{{ tabs_off }}</div><div class="sub">by staff</div></div>
   <div class="stat"><div class="k">Square sync</div><div class="v sm">{{ last_sync|local or 'Never' }}</div></div>
   <div class="stat {{ 'alert' if not backup[0] }}"><div class="k">Last backup</div><div class="v sm">{{ backup[1] if backup[0] else 'Problem' }}</div>
     {% if not backup[0] %}<div class="sub">see the warning at the top</div>{% endif %}</div>
@@ -113,16 +113,6 @@
     </table></div>{% endif %}
   </div>{% endif %}
 </div>
-{% if eligible %}<div class="col">
-  <div class="panel" style="box-shadow:inset 4px 0 0 var(--ok)"><h2>Eligible for a tab <span class="count">{{ eligible|length }}</span></h2>
-    {% if eligible %}<div class="scroll"><table>
-      {% for c in eligible[:8] %}<tr><td><a href="/customers/{{ c.id }}">{{ c.name }}</a><br><span class="muted small">{{ c.spent|money }} spent</span></td>
-        <td class="n" style="vertical-align:middle"><form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="approve"><button class="sm">Approve</button></form>
-            <form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="reject"><button class="sm danger">Reject</button></form></td></tr>{% endfor %}
-      {% if eligible|length > 8 %}<tr><td colspan="2" class="small">{{ eligible|length - 8 }} more · <a href="/tools#approve_eligible">Approve all eligible</a></td></tr>{% endif %}
-    </table></div>{% endif %}
-  </div>
-</div>{% endif %}
 </div>
   </div>
 </div>

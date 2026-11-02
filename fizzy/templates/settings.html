@@ -35,8 +35,8 @@
 <form class="panel" method="post" action="/settings"><h2>Tab rules</h2>
   <label>Highest tab limit ($)<input type="text" name="tab_limit" inputmode="decimal" value="{{ '%.2f'|format(cfg.tab_limit_cents/100) }}"></label>
   <label>Days to pay<input type="number" name="due_days" min="1" value="{{ cfg.tab_due_days }}"></label>
-  <label>Spend before eligible ($)<input type="text" name="unlock_spend" inputmode="decimal" value="{{ '%.2f'|format(cfg.unlock_spend_cents/100) }}"></label>
-  <label>Tab score needed (0 to 100)<input type="number" name="score_needed" min="0" max="100" step="1" value="{{ cfg.tab_score_needed }}"></label>
+  <label>Minimum tab score (0 to 100)<input type="number" name="min_score" min="0" max="100" step="1" value="{{ cfg.tab_min_score }}"></label>
+  <p class="hint">Everyone at or above it has a tab, sized by their score. New people start on 30.</p>
   <div class="actions"><button class="primary">Save</button></div>
 </form>
 <form class="panel" id="display" method="post" action="/settings/display"><h2>Customer display</h2>

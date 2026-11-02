@@ -84,14 +84,14 @@ def system_prompt(conn, who):
     today = stats.today()
     items = [r[0] for r in conn.execute("SELECT DISTINCT item_name FROM catalog_items WHERE deleted = 0 ORDER BY item_name")]
     terms = rules.terms(conn)
-    cfg = {k: db.get_setting(conn, k) for k in ("tab_limit_cents", "tab_due_days", "unlock_spend_cents", "tab_score_needed")}
+    cfg = {k: db.get_setting(conn, k) for k in ("tab_limit_cents", "tab_due_days", "tab_min_score")}
     return f"""You are the assistant inside Fizzy, the staff app for Cooked Coke Co., a student-run tuck shop (drinks and
 noodles) at Reddam House North Shore, Sydney. You're talking to {who}, one of the student owners. Use Australian
 English, be brief and plain, no emojis. Money is AUD. Today is {today:%A %-d %B %Y}, Sydney time.
 
 How the stall works: students earn 1 point per cent spent (tab purchases earn theirs when paid off), swap points for
-rewards, can have a tab once they've spent ${int(cfg['unlock_spend_cents'] or 3000) / 100:.0f} and their tab score is
-{cfg['tab_score_needed']}+ (pay within {cfg['tab_due_days']} days). Double points days multiply points. Built-in badges pay
+rewards, and have a tab while their tab score (0-100, from their history; staff can add an adjustment) is
+{cfg['tab_min_score'] or 20}+ and nothing's overdue: the score sets the limit (pay within {cfg['tab_due_days']} days). Double points days multiply points. Built-in badges pay
 points once. Open at recess (11:00-11:15) and lunch (13:10-13:45) on school days, no lunch on Tuesdays.
 
 You can look anything up with the tools. Start with `sales_summary` for totals by weekday, hour, day, week, month or item

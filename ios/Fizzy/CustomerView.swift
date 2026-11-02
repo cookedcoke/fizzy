@@ -83,7 +83,7 @@ struct CustomerView: View {
     @ViewBuilder private func verdict(_ d: J) -> some View {
         let st = d.s.status, led = d.s.ledger, c = d.c
         let canCharge = st.can_charge.bool
-        let waiting = ["locked", "eligible", "paused"].contains(st.status.string)
+        let waiting = ["low_score", "paused"].contains(st.status.string)
         Section {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: canCharge ? "checkmark.circle.fill" : (waiting ? "minus.circle.fill" : "xmark.circle.fill"))
@@ -107,21 +107,18 @@ struct CustomerView: View {
         case "approved": return "Owes \(Fmt.money(led.owing_cents.int)), at or over the \(Fmt.money(st.limit_cents.int)) limit - needs to pay some off first."
         case "paused": return "All tabs are paused right now."
         case "blocked_overdue": return "Has an overdue charge. Clears as soon as it's paid."
-        case "eligible": return "Eligible - waiting for staff approval below."
-        case "locked" where st.spent_enough.bool: return "Tab score is \(st.score.score.int); it needs \(st.score_needed.int) for a tab."
-        case "locked": return "Needs \(Fmt.money(st.unlock_spend_cents.int - st.spend_cents.int)) more spent before becoming eligible."
+        case "low_score": return "Tab score is \(st.score.score.int); it needs \(st.min_score.int) for a tab. Give them a limit to let them have one."
         default: return st.label.string + (c.tab_decision_note.optString.map { ": “\($0)”" } ?? "") + "."
         }
     }
 
     @ViewBuilder private func todos(_ d: J) -> some View {
-        let c = d.c, st = d.s.status, led = d.s.ledger
+        let c = d.c, led = d.s.ledger
         if c.archived_at.optString == nil {
             let overdue = led.has_overdue.bool, owes = led.owing_cents.int > 0
             let needsPasscode = c.passcode_set_at.optString == nil
-            let eligible = st.status.string == "eligible" && c.tab_decision.optString == nil
             let notInSquare = c.square_customer_id.isNull && c.kind.string != "test"
-            if overdue || owes || eligible || needsPasscode || notInSquare {
+            if overdue || owes || needsPasscode || notInSquare {
                 Section("To do") {
                     if overdue {
                         Label("\(Fmt.money(led.overdue_cents.int)) overdue. Ask \(first) to pay it off - ring it up as Tab repayment in Square.", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
@@ -129,7 +126,6 @@ struct CustomerView: View {
                         let due = led.charges.array.filter { $0.unpaid_cents.int > 0 }.map { $0.due_at.string }.min() ?? ""
                         Label("Owes \(Fmt.money(led.owing_cents.int)). Due \(Fmt.when(due, "EEE d MMM")).", systemImage: "dollarsign.circle").foregroundStyle(.orange)
                     }
-                    if eligible { Label("Spent enough for a tab. Approve or reject it below.", systemImage: "checkmark.seal").foregroundStyle(.green) }
                     if needsPasscode {
                         Button { sheet = .passcode } label: { Label("No student site passcode yet. Set one", systemImage: "key") }
                     }
@@ -194,8 +190,7 @@ struct CustomerView: View {
                 Stat(title: "Tab owing", value: Fmt.money(led.owing_cents.int), sub: led.balance_cents.int < 0 ? "\(Fmt.money(-led.balance_cents.int)) in credit" : nil, alert: led.has_overdue.bool),
                 Stat(title: "Overdue", value: Fmt.money(led.overdue_cents.int),
                      sub: led.late_count.int > 0 ? "\(led.late_count.int) late payment\(led.late_count.int == 1 ? "" : "s") on record" : nil, alert: led.has_overdue.bool),
-                Stat(title: "Spent", value: Fmt.money(st.spend_cents.int),
-                     sub: st.spend_cents.int < st.unlock_spend_cents.int ? "\(Fmt.money(st.unlock_spend_cents.int)) to unlock tab" : nil),
+                Stat(title: "Spent", value: Fmt.money(st.spend_cents.int)),
             ])
         }
     }
@@ -204,7 +199,7 @@ struct CustomerView: View {
         if d.c.archived_at.optString == nil {
             Section("Actions") {
                 Button { sheet = .repay } label: { Label("Record repayment without Square", systemImage: "dollarsign.circle") }
-                Button { sheet = .tab } label: { Label("Tab approval", systemImage: "checkmark.seal") }
+                Button { sheet = .tab } label: { Label("Tab limit", systemImage: "slider.horizontal.3") }
                 Button { sheet = .points } label: { Label("Adjust points", systemImage: "plusminus.circle") }
             }
         }
@@ -285,7 +280,7 @@ struct CustomerView: View {
         Section("Tab score") {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text("\(sc.score.int)").font(.system(size: 40, weight: .bold)).monospacedDigit()
-                    .foregroundStyle(sc.score.int >= 80 ? .green : (sc.score.int >= st.score_needed.int ? .orange : .red))
+                    .foregroundStyle(sc.score.int >= 80 ? .green : (sc.score.int >= st.min_score.int ? .orange : .red))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Limit \(Fmt.money(sc.limit_cents.int))").bold()
                     if !sc.next.isNull { Text("\(sc.next.score.int)+ gets \(Fmt.money(sc.next.limit_cents.int))").font(.caption).foregroundStyle(.secondary) }
@@ -301,7 +296,7 @@ struct CustomerView: View {
     @ViewBuilder private func more(_ d: J) -> some View {
         let c = d.c
         Section("More") {
-            DisclosureGroup("Tab decision history (\(d.decisions.count))") {
+            DisclosureGroup("Tab history (\(d.decisions.count))") {
                 if d.decisions.array.isEmpty { Text("None.").foregroundStyle(.secondary) }
                 ForEach(d.decisions.array, id: \.self) { x in
                     Line(left: x.decision.string.capitalized, sub: [Fmt.when(x.created_at.string), x.note.optString].compactMap { $0 }.joined(separator: " · "), right: x.staff.string)
@@ -333,7 +328,7 @@ struct CustomerView: View {
         case .claim: ClaimSheet(id: id, name: customer.name.string, page: page)
         case .repay: RepaySheet(id: id, page: page, owing: d.s.ledger.owing_cents.int)
         case .points: PointsSheet(id: id, page: page)
-        case .tab: TabSheet(id: id, page: page, customer: d.c)
+        case .tab: TabSheet(id: id, page: page, customer: d.c, status: d.s.status, bands: d.bands.array)
         case .passcode: StudentPasscodeSheet(id: id, page: page, customer: d.c, readable: d.passcode_readable.bool)
         case .edit: EditCustomerSheet(id: id, page: page, customer: d.c)
         case .kind: KindSheet(id: id, page: page, kind: d.c.kind.string)
@@ -517,55 +512,101 @@ struct RepaySheet: View {
     }
 }
 
-/// Approve, reject, revoke or clear a tab decision.
+/// Their tab limit: put them in a limit band or set the staff adjustment by hand (both a line in
+/// their tab score), or turn the tab off and back on.
 struct TabSheet: View {
     let id: Int
     let page: Page
     let customer: J
+    let status: J
+    let bands: [J]   // [score floor, limit cents], smallest first
+    @State private var adjust = ""
     @State private var note = ""
     @State private var busy = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
 
-    private var decision: String { customer.tab_decision.string }
+    private var off: Bool { ["rejected", "revoked"].contains(customer.tab_decision.string) }
+    private var score: Int { status.score.score.int }
+    /// The band they're in now: the last one whose floor is at or under their score (none under the first).
+    private var current: Int? { bands.last(where: { $0[0].int <= score })?[0].int }
+
+    private func signed(_ n: Int) -> String { n > 0 ? "+\(n)" : "\(n)" }
+
+    private var summary: String {
+        let low = status.status.string == "low_score" ? ", but it's under the \(status.min_score.int) needed for a tab" : ""
+        return "Score \(score) gives a \(Fmt.money(status.score.limit_cents.int)) limit\(low)."
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 if let error { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
                 Section {
-                    if let d = customer.tab_decision.optString {
-                        Text("\(d.capitalized) by \(customer.tab_decision_by.string) · \(Fmt.when(customer.tab_decision_at.string))").font(.subheadline)
+                    if off {
+                        Text("Turned off by \(customer.tab_decision_by.string) · \(Fmt.when(customer.tab_decision_at.string))").font(.subheadline)
                         if let n = customer.tab_decision_note.optString { Text("“\(n)”").font(.footnote).foregroundStyle(.secondary) }
                     } else {
-                        Text("No decision yet.").foregroundStyle(.secondary)
+                        Text(summary).font(.subheadline)
+                    }
+                    if status.score.adjust.int != 0 {
+                        Text("Includes a staff adjustment of \(signed(status.score.adjust.int)).").font(.footnote).foregroundStyle(.secondary)
                     }
                     TextField("Why? (optional)", text: $note)
                 }
                 Section {
-                    if decision != "approved" { Button("Approve") { send("approve") } }
-                    if decision == "approved" {
-                        ConfirmButton(title: "Revoke", message: "Revoke \(customer.name.string)'s tab?", confirmLabel: "Revoke") { send("revoke") }
-                    } else if decision != "rejected" {
-                        ConfirmButton(title: "Reject", message: "Reject \(customer.name.string) for a tab?", confirmLabel: "Reject") { send("reject") }
+                    ForEach(bands, id: \.self) { b in
+                        let here = b[0].int == current
+                        Button { send([("band", "\(b[0].int)")]) } label: {
+                            HStack {
+                                Text(Fmt.money(b[1].int))
+                                Spacer()
+                                if here { Image(systemName: "checkmark") } else { Text("Score \(b[0].int)").foregroundStyle(.secondary) }
+                            }
+                        }
+                        .disabled(here)
                     }
-                    if !customer.tab_decision.isNull { Button("Clear the decision") { send("reset") } }
+                } header: {
+                    Text("Set their limit")
+                } footer: {
+                    Text("Sets their score to the start of that limit with a staff adjustment. Later payments still move it up or down.")
+                }
+                Section {
+                    HStack {
+                        TextField("Adjustment, e.g. +20 or -10", text: $adjust).keyboardType(.numbersAndPunctuation)
+                        Button("Set") { send([("decision", "adjust"), ("adjust", adjust)]) }
+                            .buttonStyle(.bordered)
+                    }
+                } footer: {
+                    Text("A line in their tab score, from -100 to +100. Leave it empty and tap Set to clear it.")
+                }
+                Section {
+                    if off {
+                        Button("Turn tab back on") { send([("decision", "on")]) }
+                    } else {
+                        ConfirmButton(title: "Turn tab off", message: "Turn \(customer.name.string)'s tab off? Their score stays; you can turn it back on.",
+                                      confirmLabel: "Turn off") { send([("decision", "off")]) }
+                    }
                 }
             }
             .disabled(busy)
-            .navigationTitle("Tab approval")
+            .navigationTitle("Tab limit")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) } }
         }
         .interactiveDismissDisabled(busy)
         .passcodeHost()
+        .onAppear {
+            let a = status.score.adjust.int
+            adjust = a == 0 ? "" : signed(a)
+        }
     }
 
-    private func send(_ decision: String) {
+    private func send(_ form: Params) {
         busy = true
         error = nil
         Task {
-            let o = await page.submit("customers/\(id)/tab", [("decision", decision), ("note", note)])
+            let o = await page.submit("customers/\(id)/tab", form + [("note", note)])
             busy = false
             if o.ok { dismiss() } else { error = o.message; page.flash = nil }
         }

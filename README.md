@@ -58,8 +58,8 @@ Nothing breaks: the sale waits on the **Square** page to be assigned later.
 1. In Fizzy: `Esc`, type their name, then `Enter` (or the result's number, `1`–`8`).
 2. Read the answer at the top of their page:
    - **Green tick:** they can, up to the amount shown.
-   - **Red cross:** no (overdue, rejected, revoked, or at the limit). The line underneath says why.
-   - **Grey dash:** not yet (hasn't spent $30, waiting for approval, or tabs are paused).
+   - **Red cross:** no (overdue, tab turned off, or at the limit). The line underneath says why.
+   - **Grey dash:** not yet (tab score under the minimum, or tabs are paused).
 3. If green: on the Terminal, ring up the items, **attach their profile**, apply the **Fizzy
    Tab** discount, and charge the **$0 as cash**. Fizzy adds it to their tab automatically.
    - Only part of it on the tab? Apply the discount to just those items and charge the rest
@@ -81,8 +81,12 @@ Switch it with `W` or the dropdown. **Lock** signs the device out.
 
 ### Install it like an app
 
-Fizzy and the student site can both be added to a phone's home screen. They then open full
-screen with their own icon, like an app. On iPhone: Safari → Share → **Add to Home Screen**. On
+**Phones can't open the staff site:** a phone browser gets a page pointing it at the Fizzy iPhone
+app (`ios/`), which is built for a small screen. iPads, Android tablets, computers and the Mac app
+are unaffected, and the student site works on any phone.
+
+Fizzy (on an iPad) and the student site (on a phone) can be added to the home screen. They then open full
+screen with their own icon, like an app. On iPhone or iPad: Safari → Share → **Add to Home Screen**. On
 Android: Chrome → ⋮ → **Install app**. Pages are always loaded fresh (nothing about students is
 stored on the phone). If the home PC or the internet is down, you get a "You're offline" page
 with a Try again button instead of a browser error.
@@ -147,22 +151,26 @@ search box, Enter still opens the student).
 |---|---|---|
 | Most a customer can owe | $10 | Settings |
 | Days to pay each tab charge | 7 | Settings (applies to new charges) |
-| Spend needed before eligible for a tab | $30 | Settings |
+| Tab score needed to have a tab | 20 (new customers start on 30) | Settings |
 | Points | 1 per cent paid ($3 = 300 points) | fixed |
 
 **Tab status**
 
 | Status | Meaning | Can use tab? |
 |---|---|---|
-| Locked | Hasn't spent $30 yet | No |
-| Eligible | Spent $30, waiting for a staff decision | No, until approved |
-| Approved | Staff said yes | **Yes**, up to the limit |
-| Blocked (overdue) | Approved, but has a charge past its due date | No. Clears itself when paid |
-| Paused (all tabs) | Approved, but tabs are paused for everyone (Tools) | No |
-| Rejected / Revoked | Staff said no / took it away | No |
+| Tab on (shown as *Tab $5.00*) | Tab score at or over the minimum | **Yes**, up to the limit their score gives |
+| Score too low | Tab score under the minimum (late payments, write-offs) | No. Comes back as the score does |
+| Blocked (overdue) | Has a charge past its due date | No. Clears itself when paid |
+| Paused (all tabs) | Tabs are paused for everyone (Tools) | No |
+| Tab off | Staff turned it off | No, until staff turn it back on |
 
-- **Staff have the final say.** Approve, reject or revoke in one click, with an optional
-  note. Every decision is kept in the customer's history.
+- **Nobody waits for approval.** Everyone has a tab sized by their tab score, from their first
+  day: $2.50 for a new customer with the default $10 maximum.
+- **Staff have the final say.** On the customer page, **Tab limit** puts someone in a limit band
+  ($2.50, $5, $7.50 or $10) or sets a score adjustment by hand. Either way it's a *Staff adjustment*
+  line in their tab score, so the limit always matches the score: paying late still brings it
+  down. **Turn tab off** stops their tab whatever the score. Every change, with its note, is kept
+  in the customer's tab history.
 - **What counts as "spent":** completed sales with the customer attached, plus tab
   repayments, minus refunds. Manual point adjustments don't count.
 - **Points on tab purchases** are earned when the tab is **repaid**, not when charged.
@@ -200,11 +208,13 @@ and shown, with every point explained, on their customer page and on the student
 | Each debt written off | −15 |
 | First purchase under 2 weeks ago | −10 |
 
+| Staff adjustment | Whatever staff set on the customer page, −100 to +100 |
+
 It does two things:
 
-- **Who's ready for a tab:** someone becomes *eligible* once they've spent the minimum *and* their
-  score reaches the **Tab score needed** (60 by default, in Settings). Staff still approve them.
-- **How much they can owe:** an approved customer's limit comes from their score. 80+ gets the
+- **Who has a tab:** everyone whose score is at or over the **Minimum tab score** (20 by default,
+  in Settings), unless staff turned their tab off.
+- **How much they can owe:** their limit comes from their score. 80+ gets the
   **Highest tab limit** from Settings, 65+ three quarters of it, 50+ half, below that a quarter
   (rounded down to 50c). Paying on time raises it; paying late, or owing overdue money, lowers it
   straight away.
@@ -284,10 +294,10 @@ system, and it doesn't suit this:
 
 | | Square House Accounts | Fizzy tabs |
 |---|---|---|
-| Setup | An account created one customer at a time in Square, with a spending limit and a billing method | Everyone is imported once; staff approve with one click |
+| Setup | An account created one customer at a time in Square, with a spending limit and a billing method | Everyone is imported once; everyone has a small tab that grows with their tab score |
 | Collecting money | Square invoices (one-off or recurring) or an automatic charge to a card on file. Square says house accounts can't take repayment in instalments, and a sale can't be split between House Account and another payment type | Cash or card at the counter, any amount, any time |
 | Overdue | Square sends reminders; you lock accounts by hand | Blocked automatically until paid, with a permanent late record |
-| Points, the $30 rule, approvals | None | Built in |
+| Points, the tab score, limits that follow it | None | Built in |
 | Your experience | It's the invoice flow you already shut down because people paid late | Built around a 7-day, $10 counter tab |
 
 House Account suits a business billing regular adult customers monthly. For students paying
@@ -334,7 +344,7 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 | Page | What's on it |
 |---|---|
 | **Dashboard** | Search; noticeboard; warnings (Square not connected, tabs paused). **Today's sales:** sold, taken, orders and average, customers, put on tabs and repaid; sold by hour against the same day last week; the last 7 school days; top items; latest sales. It refreshes itself every minute while nobody's touching it. **Tabs:** totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers; people waiting for tab approval |
-| **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend (with a progress bar to $30); record repayment; approve / reject / revoke; adjust points; tab charges with due dates and status; repayments; points history; Square payments; decision history; activity log; edit (name, Square ID, archive) |
+| **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend; record repayment; tab limit (pick a band or set a score adjustment, turn the tab off or on); tab score with every line explained; adjust points; tab charges with due dates and status; repayments; points history; Square payments; tab history; activity log; edit (name, Square ID, archive) |
 | **Customers** | Search with a results table; download the Square import CSV |
 | **Claim sale** (`K` on a customer) | The latest Square sales with no customer; `Enter` gives the newest to this customer |
 | **Rewards** | Start and end reward events; see how many were redeemed |
@@ -455,8 +465,8 @@ Don't use the Fizzy Tab discount for rewards: that would put the sale on a tab. 
 refuses a reward whose instructions mention it.
 
 **Ending one:** press **End** on the Rewards page. Its history (how many redeemed, by how
-many people) is kept. Redeeming doesn't count as spending, so it doesn't affect the $30 tab
-threshold. 1 point = 1 cent spent, so 1000 points = $10 spent.
+many people) is kept. Redeeming doesn't count as spending, so it doesn't change the tab
+score. 1 point = 1 cent spent, so 1000 points = $10 spent.
 
 **Double points days.** On the Rewards page, *Schedule double points*: a name, a multiplier
 (2 = double), and the first and last day (today or later). During those days every purchase
@@ -591,8 +601,7 @@ says who you might mean, so a typo can't hit the wrong student.
 | | Move points | Points went to the wrong person |
 | | Reset all points | End of year. Spend history and tab eligibility are kept |
 | Tabs | Pause all tabs | Holidays, end of term. Approvals come back when unpaused |
-| | Approve all eligible | Approve everyone who's reached $30 with no decision yet |
-| | Revoke all tabs | End of year |
+| | Turn off all tabs | End of year |
 | | Add tab charge by hand | Only if the sale isn't in Square at all; otherwise it'd be counted twice |
 | | Write off a debt | Clear some or all of what someone owes. Earns no points |
 | | Give more time to pay | Push back the due date on all of someone's unpaid charges |
@@ -652,9 +661,9 @@ identically.
 ### Shortcuts
 
 Press **`?`** on any page for the list. Buttons and sections with a shortcut show its key
-in a small grey box (e.g. **Approve `A`**), and hovering over anything with a shortcut, including
+in a small grey box (e.g. **Claim sale `K`**), and hovering over anything with a shortcut, including
 the top-bar links, names it. Shortcuts don't fire while you're typing in a box; `Esc` gets
-you out of the box first. The key boxes are hidden on phones.
+you out of the box first.
 
 | Key | Does |
 |---|---|
@@ -666,10 +675,9 @@ you out of the box first. The key boxes are hidden on phones.
 | `R` | Customer: record repayment (amount pre-filled; `Enter` saves) |
 | `P` | Customer: adjust points (`Tab` to the reason, `Enter` saves) |
 | `O` | Customer: redeem the reward they can have (asks first) |
-| `A` | Customer: approve tab |
-| `X` | Customer: reject, or revoke if approved (asks first) |
-| `N` | Customer: note for the tab decision |
-| `H` `L` `E` | Customer: decision history, activity log, edit |
+| `X` | Customer: turn tab off (asks first), or back on |
+| `N` | Customer: note for a tab change |
+| `H` `L` `E` | Customer: tab history, activity log, edit |
 | `W` | Switch who's on the counter |
 | `U` | Square page: sync now |
 | `1`–`8` | Tools page: jump to a section |

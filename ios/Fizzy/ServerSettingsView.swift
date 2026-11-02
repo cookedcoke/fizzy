@@ -162,24 +162,22 @@ struct TabRulesForm: View {
     let page: Page
     @State private var limit = ""
     @State private var days = ""
-    @State private var unlock = ""
-    @State private var score = ""
+    @State private var minScore = ""
 
     var body: some View {
         SettingsForm(page: page, title: "Tab rules", send: {
-            await page.submit("settings", [("tab_limit", limit), ("due_days", days), ("unlock_spend", unlock), ("score_needed", score)])
+            await page.submit("settings", [("tab_limit", limit), ("due_days", days), ("min_score", minScore)])
         }) {
             Section {
                 labelled("Highest tab limit ($)") { TextField("", text: $limit).keyboardType(.decimalPad) }
                 labelled("Days to pay") { TextField("", text: $days).keyboardType(.numberPad) }
-                labelled("Spend before eligible ($)") { TextField("", text: $unlock).keyboardType(.decimalPad) }
-                labelled("Tab score needed (0 to 100)") { TextField("", text: $score).keyboardType(.numberPad) }
+                labelled("Minimum tab score (0 to 100)") { TextField("", text: $minScore).keyboardType(.numberPad) }
             }
         }
         .onAppear {
             let c = page.data.cfg
             limit = dollars(c.tab_limit_cents.int); days = "\(c.tab_due_days.int)"
-            unlock = dollars(c.unlock_spend_cents.int); score = "\(c.tab_score_needed.int)"
+            minScore = "\(c.tab_min_score.int)"
         }
     }
 }

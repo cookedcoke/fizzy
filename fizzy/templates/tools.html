@@ -39,8 +39,6 @@
   <p>Tabs are currently <b class="{{ 'red' if cfg.tabs_paused }}">{{ 'PAUSED' if cfg.tabs_paused else 'on' }}</b>.</p>
   <input type="hidden" name="paused" value="{{ '0' if cfg.tabs_paused else '1' }}">{{ note() }}
   <p><button class="{{ 'primary' if cfg.tabs_paused else 'danger' }} sm">{{ 'Turn tabs back on' if cfg.tabs_paused else 'Pause all tabs' }}</button></p>
-{% elif id == 'approve_eligible' %}
-  {{ note() }}
 {% elif id == 'revoke_all' %}
   {{ note('Reason') }}{{ confirm('REVOKE') }}
 {% elif id == 'manual_charge' %}

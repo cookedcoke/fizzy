@@ -172,7 +172,8 @@ def test_closed_days_reach_the_website(client, owner):
     assert "2099-12-12 to 2100-01-31 Summer holidays" in client.get("/settings").text
     p = client.get("/me/promos.json").json()
     assert p["closed"][0] == {"start": "2099-01-26", "end": "2099-01-26", "label": "Australia Day"}
-    assert p["rules"]["score_needed"] == 60 and p["rules"]["due_days"] == 7
+    assert p["rules"]["min_score"] == 20 and p["rules"]["due_days"] == 7
+    assert p["rules"]["score_needed"] == 20 and p["rules"]["unlock_spend_cents"] == 0  # still there for the website
 
 
 def test_test_accounts_hand_repayments_left_out_of_transactions_repaid(client):
