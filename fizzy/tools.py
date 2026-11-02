@@ -563,7 +563,7 @@ def h_chase(request, conn, who, form):
     rows.sort(key=lambda b: b[2] or "")
     from .web import local
     table = [[cust_link(c), c["email"], money(led["owing_cents"]),
-              money(led["overdue_cents"]) if led["overdue_cents"] else "", local(due, "%a %d %b")]
+              money(led["overdue_cents"]) if led["overdue_cents"] else "", local(due, "%a %-d %b")]
              for c, led, due in rows]
     overdue_emails = ", ".join(c["email"] for c, led, _ in rows if led["has_overdue"])
     all_emails = ", ".join(c["email"] for c, _, _ in rows)
@@ -703,7 +703,7 @@ def h_integrity(request, conn, who, form):
 
 def h_notice(request, conn, who, form):
     text = form.get("notice", "").strip()
-    db.set_setting(conn, "notice", f"{text}\n— {who}, {datetime.now(config.TZ):%a %d %b %H:%M}" if text else "")
+    db.set_setting(conn, "notice", f"{text}\n— {who}, {datetime.now(config.TZ):%a %-d %b %H:%M}" if text else "")
     db.audit(conn, who, "notice", None, text or "(cleared)")
     return done(request, "notice", "Noticeboard updated." if text else "Noticeboard cleared.")
 

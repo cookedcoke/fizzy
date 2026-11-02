@@ -9,12 +9,12 @@
 {% elif sync_error %}<div class="err">Last Square sync failed: {{ sync_error }}</div>{% endif %}
 {% if not backup[0] %}<div class="err">{{ backup[1] }}</div>{% endif %}
 
-{% if events_on or events_soon %}<div class="flash" style="border-left-color:var(--ok)">
+{% if events_on or events_soon %}<div class="flash ok">
   {% for e in events_on %}<b>{{ e.name }} (×{{ '%g'|format(e.multiplier) }}) is on today</b>{{ ' · ' if not loop.last }}{% endfor %}
   {% if events_on and events_soon %} · {% endif %}
   {% if events_soon %}Coming up: {% for e in events_soon %}{{ e.name }} {{ e.start_date|ymd('%a %-d %b') }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}
   · <a href="/rewards#events">Manage</a></div>{% endif %}
-{% if live_rewards %}<div class="flash" style="border-left-color:var(--ok)">Rewards on:
+{% if live_rewards %}<div class="flash ok">Rewards on:
   {% for r in live_rewards %}<b>{{ r.name }}</b> ({{ '{:,}'.format(r.points_cost) }} pts){{ ', ' if not loop.last }}{% endfor %}
   · <a href="/rewards">Manage</a></div>{% endif %}
 {% set t = sales.today %}<span hidden data-autorefresh="60"></span>
@@ -74,7 +74,7 @@
 </div>
 
 {% if breaches or unlinked_tabs %}
-<div class="panel" style="border-color:var(--red-line)">
+<div class="panel attn bad">
   <h2 class="red">Needs attention <span class="count">{{ breaches|length + unlinked_tabs|length }}</span></h2>
   <div class="scroll"><table class="attn">
     <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th>Problem</th><th></th></tr>
@@ -96,13 +96,13 @@
 
 <div class="cols">
 <div class="col" style="flex-grow:2">
-  {% if not overdue and not due_soon %}<div class="todo go" style="margin-bottom:var(--s4)"><b>No tabs overdue or due soon.</b>
+  {% if not overdue and not due_soon %}<div class="todo go"><b>No tabs overdue or due soon.</b>
     <span>{{ total_owed|money }} owed in total.</span></div>{% endif %}
-  {% if overdue %}<div class="panel" style="box-shadow:inset 4px 0 0 var(--red)"><h2>Overdue <span class="count">{{ overdue|length }}</span></h2>
+  {% if overdue %}<div class="panel attn bad"><h2>Overdue <span class="count">{{ overdue|length }}</span></h2>
     {% if overdue %}<div class="scroll"><table>
       <tr><th>Customer</th><th class="n">Unpaid</th><th>Was due</th></tr>
       {% for r in overdue %}<tr><td><a href="/customers/{{ r.customer.id }}">{{ r.customer.name }}</a></td>
-        <td class="n red">{{ r.charge.unpaid_cents|money }}</td><td>{{ r.charge.due_at|local('%a %d %b') }}</td></tr>{% endfor %}
+        <td class="n red">{{ r.charge.unpaid_cents|money }}</td><td>{{ r.charge.due_at|local('%a %-d %b') }}</td></tr>{% endfor %}
     </table></div>{% endif %}
   </div>{% endif %}
   {% if due_soon %}<div class="panel"><h2>Due in the next 2 days <span class="count">{{ due_soon|length }}</span></h2>
@@ -120,9 +120,9 @@
   <div class="panel"><h2>Top items</h2>
     <div class="scroll"><table>
       <tr><th>Today</th><th class="n">Sold</th></tr>
-      {% for it in sales.top_today %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet today.</td></tr>{% endfor %}
+      {% for it in sales.top_today %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="empty">Nothing yet today.</td></tr>{% endfor %}
       <tr><th>Last 7 school days</th><th class="n">Sold</th></tr>
-      {% for it in sales.top_week %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet.</td></tr>{% endfor %}
+      {% for it in sales.top_week %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="empty">Nothing yet.</td></tr>{% endfor %}
     </table></div>
   </div>
   <div class="panel"><h2>Latest sales</h2>

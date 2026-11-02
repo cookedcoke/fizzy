@@ -2,12 +2,13 @@
    reserved for the logo, the current page, and things that need attention. */
 :root {
   --red: #FE0001; --red-ink: #B30000; --red-wash: #FFF0F0;
-  --ink: #15171B; --fg: #1F2328; --muted: #6A717C; --faint: #6F7680;
-  --line: #E3E5E9; --line-strong: #CDD1D7; --bg: #F2F3F5; --surface: #FFFFFF; --hover: #F7F8FA;
+  --ink: #15171B; --fg: #1F2328; --muted: #5F6672; --faint: var(--muted);
+  --line: #E3E5E9; --line-strong: #CDD1D7; --bg: #F2F3F5; --surface: #FFFFFF; --hover: #F2F3F5; --row-hover: #EAECEF;
   --ok: #17703A; --ok-wash: #EAF6EE; --warn: #8A5A00; --warn-wash: #FFF5DB;
-  --ok-line: #B5DCC2; --red-line: #F2BDBD; --warn-line: #EBD59A; --warn-mark: #D9A21B;
+  --ok-line: #B5DCC2; --red-line: #F2BDBD; --warn-line: #EBD59A; --warn-mark: #B8830A;
   --on-ink: #FFFFFF; --ink-hover: #2C3038; --header: #15171B;
   --admin: #6D3FC0; --admin-line: #D5C6F2; --admin-wash: #F3EEFC;
+  --ghost: #8E949D; --ring: rgba(21, 23, 27, .14);
   color-scheme: light;
   --r: 4px; --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
@@ -19,7 +20,7 @@ body {
   font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-variant-numeric: tabular-nums;
 }
-a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px }
+a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px }
 a:hover { text-decoration-color: var(--fg) }
 code { font-family: var(--mono); font-size: 12.5px; background: var(--hover); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px }
 
@@ -60,10 +61,11 @@ h2 { font-size: 13px; margin: 0; font-weight: 650; text-transform: uppercase; le
 
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s4); margin-bottom: var(--s4) }
 .panel > h2 { margin-bottom: var(--s3) }
-.panel > h2 .count { color: var(--faint); font-weight: 500; margin-left: 6px }
+.panel > h2 .count { color: var(--faint); font-weight: 500; font-size: 12.5px; text-transform: none; letter-spacing: 0; margin-left: 6px }
+.panel > h2 > a.aside { float: right; font-size: 12.5px; font-weight: 500; text-transform: none; letter-spacing: 0 }
 .grid { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); margin-bottom: var(--s4) }
 .grid .panel { margin: 0 }
-.empty { color: var(--faint); margin: 0; font-size: 13px }
+.empty { color: var(--muted); margin: 0; font-size: 13px } td.empty { padding-top: 14px; padding-bottom: 14px }
 
 /* ---- numbers ---- */
 .stats { display: grid; gap: 1px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); background: var(--line);
@@ -73,7 +75,7 @@ h2 { font-size: 13px; margin: 0; font-weight: 650; text-transform: uppercase; le
 .stat .v { font-size: 24px; font-weight: 650; line-height: 1.25; margin-top: 2px; letter-spacing: -.01em }
 .stat .v.sm { font-size: 15px; font-weight: 600; padding-top: 6px }
 .stat .sub { color: var(--faint); font-size: 12px }
-.stat.alert::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--red) }
+.stat.alert::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--red) }
 .stat.alert .v { color: var(--red-ink) }
 .meter { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden }
 .meter i { display: block; height: 100%; background: var(--ink) }
@@ -88,7 +90,7 @@ th, td { text-align: left; padding: 8px var(--s3); border-top: 1px solid var(--l
 th { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; background: var(--hover); white-space: nowrap }
 th:first-child, td:first-child { padding-left: var(--s4) }
 th:last-child, td:last-child { padding-right: var(--s4) }
-tbody tr:hover td, tr:hover > td { background: var(--hover) }
+tbody tr:hover td, tr:hover > td { background: var(--row-hover) }
 td.n, th.n { text-align: right; white-space: nowrap }
 td.mono, .mono { font-family: var(--mono); font-size: 12.5px }
 td a { font-weight: 500 }
@@ -97,12 +99,17 @@ td a { font-weight: 500 }
 .muted { color: var(--muted) } .small { font-size: 12.5px } .red { color: var(--red-ink); font-weight: 600 }
 
 /* ---- messages ---- */
-.flash, .err, .notice { border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--r); padding: 10px var(--s3); margin-bottom: var(--s4); background: var(--surface) }
+.flash, .err, .notice { border: 1px solid var(--line); border-left-width: 4px; border-radius: var(--r); padding: 10px var(--s3); margin-bottom: var(--s4); background: var(--surface) }
 .flash { border-left-color: var(--ink) }
 .err { border-color: var(--red-line); border-left-color: var(--red); background: var(--red-wash); color: var(--red-ink) }
 .err a { color: inherit }
 .notice { border-color: var(--warn-line); border-left-color: var(--warn-mark); background: var(--warn-wash); white-space: pre-line }
 .notice a { margin-left: var(--s2) }
+.err a, .notice a, .flash a, .todo a { text-decoration-color: currentColor }
+/* A message or note that ends a panel: no double gap on top of the panel's own padding. */
+.panel > :is(.flash, .err, .notice, .hint, p):last-child { margin-bottom: 0 }
+/* Page-level messages stacked together: 8px between them, 16px before whatever follows. */
+main > :is(.flash, .err, .notice) + :is(.flash, .err, .notice) { margin-top: calc(-1 * var(--s2)) }
 
 /* ---- status tags ---- */
 .tag { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 3px; font-size: 12px; font-weight: 600;
@@ -123,21 +130,38 @@ input[type=text], input[type=password], input[type=number], input[type=search], 
   width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface);
 }
 textarea { height: auto; padding: 8px 10px; resize: vertical }
+::placeholder { color: var(--faint); opacity: 1 }
 input:hover, select:hover, textarea:hover { border-color: var(--faint) }
-input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible, summary:focus-visible, .tip:focus {
-  outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(21, 23, 27, .14)
+input:focus, select:focus, textarea:focus, button:focus-visible, .btn:focus-visible, .tip:focus {
+  outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--ring)
 }
+/* Links and disclosure rows: an outline that hugs the text instead of the boxed-control ring. */
+a:not(.btn):focus-visible, summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 3px; box-shadow: none }
+.results a.hit:focus-visible { outline-offset: -2px }  /* the results sheet clips anything outside it */
+/* The header is dark whatever the theme: tabs get an inset white outline (the nav clips anything
+   outside it); the boxed controls get a two-ring halo in header colours. */
+header nav a:focus-visible, .nav-more > summary:focus-visible, .nav-menu a:focus-visible, header .brand:focus-visible, .msearch:focus-visible {
+  outline: 2px solid #fff; outline-offset: -4px; box-shadow: none; border-color: transparent
+}
+header nav a.on:focus-visible, .nav-more.on > summary:focus-visible { border-bottom-color: var(--red) }
+header .who select:focus, header .who button:focus-visible { border-color: #fff; box-shadow: 0 0 0 2px var(--header), 0 0 0 4px #fff }
 input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--ink); margin: 0 }
+label.check, input[type=checkbox], select { cursor: pointer }
+input[type=checkbox]:disabled, select:disabled { cursor: default }
 button, .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px;
   border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface); cursor: pointer;
   font-weight: 550; text-decoration: none; white-space: nowrap; color: var(--fg);
 }
-button:hover, .btn:hover { background: var(--hover); border-color: var(--faint) }
+button:not(:disabled):hover, .btn:hover { background: var(--hover); border-color: var(--faint) }
 button.primary, .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--on-ink) }
-button.primary:hover, .btn.primary:hover { background: var(--ink-hover) }
+button.primary:not(:disabled):hover, .btn.primary:hover { background: var(--ink-hover) }
 button.danger { color: var(--red-ink); border-color: var(--red-line) }
-button.danger:hover { background: var(--red-wash); border-color: var(--red) }
+button.danger:not(:disabled):hover { background: var(--red-wash); border-color: var(--red) }
+button:disabled { opacity: .55; cursor: not-allowed }
+input:disabled, select:disabled, textarea:disabled { opacity: .6; background: var(--hover); cursor: not-allowed }
+button.primary:focus-visible, .btn.primary:focus-visible { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink) }
+button.danger:focus-visible { border-color: var(--red); box-shadow: 0 0 0 3px rgba(254, 0, 1, .18) }
 button.sm, .btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px }
 .row { display: flex; gap: var(--s2) var(--s3); flex-wrap: wrap; align-items: flex-end }
 .row > * { flex: 1 1 130px } .row > button, .row > .btn { flex: 0 0 auto }
@@ -150,7 +174,7 @@ form > :first-child, .tool-body > :first-child { margin-top: 0 }
 .search { position: relative; margin-bottom: var(--s4) }
 .search input {
   height: 52px; font-size: 18px; padding: 0 var(--s4) 0 46px; border-color: var(--line-strong);
-  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%236A717C' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 16px center;
+  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%235F6672' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 16px center;
 }
 .search > kbd { position: absolute; right: 14px; top: 16px; font: 11px var(--mono); color: var(--faint); border: 1px solid var(--line-strong); border-radius: 3px; padding: 1px 5px; pointer-events: none }
 .results:empty { display: none }
@@ -165,7 +189,7 @@ form > :first-child, .tool-body > :first-child { margin-top: 0 }
 
 /* ---- the counter answer: can this customer use their tab? ---- */
 .verdict { display: flex; gap: var(--s3); align-items: center; border: 1px solid; border-left-width: 4px; border-radius: var(--r); padding: var(--s3) var(--s4); margin-bottom: var(--s4); background: var(--surface) }
-.verdict .mark { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 17px }
+.verdict .mark { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--on-ink); font-weight: 700; font-size: 17px }
 .verdict b { display: block; font-size: 17px; line-height: 1.3 }
 .verdict span { font-size: 13px; color: var(--muted) }
 .verdict.yes { border-color: var(--ok-line); border-left-color: var(--ok); background: var(--ok-wash) } .verdict.yes .mark { background: var(--ok) } .verdict.yes b { color: var(--ok) }
@@ -178,7 +202,7 @@ details > summary::-webkit-details-marker { display: none }
 details > summary::before { content: ""; display: inline-block; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
   transform: rotate(-45deg); margin: 0 10px 2px 2px; transition: none }
 details[open] > summary::before { transform: rotate(45deg); margin-bottom: 4px }
-.more details { border-top: 1px solid var(--line) }
+.more details { border-top: 1px solid var(--line); margin: 0 calc(-1 * var(--s4)); padding: 0 var(--s4) }
 .more details:first-child { border-top: none }
 .more summary { padding: 10px 0; font-weight: 600 }
 .more details[open] { padding-bottom: var(--s3) }
@@ -187,15 +211,16 @@ details[open] > summary::before { transform: rotate(45deg); margin-bottom: 4px }
 /* ---- tools ---- */
 .toolgrid { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: flex-start }
 .toolcol { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: var(--s4) }
+@media (min-width: 840px) and (max-width: 1099px) { .toolcol { flex-basis: 240px } }  /* tablets: keep all three columns */
 .toolgrid .panel { margin: 0; padding-bottom: var(--s2) }
-.toolgrid .panel > h2 { margin-bottom: var(--s2) }
 details.tool { border-top: 1px solid var(--line); margin: 0 calc(-1 * var(--s4)); padding: 0 var(--s4) }
 details.tool > summary { display: flex; align-items: center; padding: 9px 0; font-weight: 500 }
 details.tool > summary > span:first-child { flex: 1 }
 details.tool:hover > summary { color: var(--ink) }
 details.tool[open] { background: var(--hover) }
 details.tool[open] > summary { font-weight: 650 }
-details.tool.danger > summary > span:first-child { color: var(--red-ink) }
+details.tool.danger > summary::before { border-color: var(--red) }   /* small red chevron = "careful" cue */
+details.tool.danger[open] > summary > span:first-child { color: var(--red-ink) }
 .tool-body { padding: 0 0 var(--s4) 18px }
 .tool-body .desc { color: var(--muted); font-size: 12.5px; margin: 0 0 var(--s2) }
 .tip { position: relative; flex: none; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line-strong); color: var(--muted);
@@ -208,6 +233,10 @@ details.tool.danger > summary > span:first-child { color: var(--red-ink) }
 }
 /* A tip near the left edge opens to the right instead (set by app.js), so it never runs off-screen. */
 .tip.tip-right:hover::after, .tip.tip-right:focus::after { right: auto; left: -6px }
+@media (pointer: coarse) {  /* a fingertip-sized tip; 6 + 28 + 6 keeps each tool row 40px */
+  .tip { width: 28px; height: 28px; font-size: 13px }
+  details.tool > summary { padding: 6px 0 }
+}
 
 /* ---- login ---- */
 .login { max-width: 360px; margin: 10vh auto 0 }
@@ -242,6 +271,8 @@ details.tool.danger > summary > span:first-child { color: var(--red-ink) }
 .grid { align-items: start }
 td a { text-decoration: none } td a:hover { text-decoration: underline }
 input[type=search]::-webkit-search-cancel-button { display: none }
+input[type=search] { -webkit-appearance: none; appearance: none }  /* Safari/iPad: our box, not the rounded search field */
+input[type=search]::-webkit-search-decoration { -webkit-appearance: none }
 .cols { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: flex-start }
 .col { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: var(--s4) }
 .col > .panel { margin: 0 }
@@ -249,10 +280,10 @@ input[type=search]::-webkit-search-cancel-button { display: none }
 /* ---- header search (every page except the ones with the big search) ---- */
 .hsearch { position: relative; align-self: center; flex: 0 1 240px; min-width: 120px; margin-left: auto }
 .hsearch + .who { margin-left: 0 }
-.hsearch input { height: 32px; background: #22252B; border-color: #3A3E46; color: #fff; font-size: 13.5px }
+.hsearch input { height: 30px; background: #22252B; border-color: #3A3E46; color: #fff; font-size: 13.5px }
 .hsearch input::placeholder { color: #8B919B }
 .hsearch input:focus { background: var(--surface); color: var(--fg); border-color: var(--surface); box-shadow: none }
-.hsearch .results { top: 38px; left: auto; right: 0; width: min(560px, 92vw) }
+.hsearch .results { top: 36px; left: auto; right: 0; width: min(560px, 92vw) }
 
 /* ---- keyboard hints ---- */
 kbd { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 3px;
@@ -329,12 +360,12 @@ header nav.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparen
 .legend { display: flex; gap: var(--s4); font-size: 12px; color: var(--muted); margin: calc(-1 * var(--s2)) 0 var(--s3) }
 .legend span { display: inline-flex; align-items: center; gap: 6px }
 .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block }
-.sw.now { background: var(--ink) } .sw.then { background: var(--line-strong) }
+.sw.now { background: var(--ink) } .sw.then { background: var(--ghost) }
 .bars { display: flex; align-items: stretch; gap: 4px; height: 170px }
 .bars .bar { flex: 1; display: flex; flex-direction: column; min-width: 0 }
 .bars .pair { flex: 1; display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--line-strong) }
 .bars .pair i { flex: 1; display: block; min-height: 0; border-radius: 4px 4px 0 0; background: var(--ink) }
-.bars .pair i.then { background: var(--line-strong) }
+.bars .pair i.then { background: var(--ghost) }
 .bars .lbl { text-align: center; font-size: 11.5px; color: var(--muted); padding-top: 4px; white-space: nowrap }
 .bars .val { text-align: center; font-size: 11.5px; font-weight: 600; height: 18px; white-space: nowrap; overflow: hidden }
 .bars.week { height: 190px; gap: var(--s3) }
@@ -394,21 +425,32 @@ header .hsearch { flex: 1 1 220px; min-width: 96px; max-width: 260px }
 .panel table td { vertical-align: middle }
 input[type=file] { font: inherit; font-size: 13px; padding: 6px; border: 1px dashed var(--line-strong); border-radius: var(--r); width: 100%; background: var(--surface) }
 input[type=file]::file-selector-button { font: inherit; font-size: 13px; margin-right: 10px; padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--hover); cursor: pointer }
-.lines .rm { border: 0; background: none; color: var(--faint); cursor: pointer; font-size: 16px; padding: 0 4px }
-.lines .rm:hover { color: var(--red-ink) }
+.lines .rm { border: 0; background: none; color: var(--faint); cursor: pointer; font-size: 18px; line-height: 1; padding: 0; min-width: 36px; height: 32px; border-radius: var(--r) }
+.lines .rm:hover, .lines .rm:focus-visible { color: var(--red-ink); background: var(--red-wash) }
 table.lines td:nth-child(2) { width: 56px } table.lines td:nth-child(2) input { min-width: 48px; text-align: center }
+table.lines th:nth-child(2) { text-align: center }  /* Qty header over the centred qty box */
+/* Narrow forms (tablet): fixed qty/cost boxes, the item takes what's left */
+@media (max-width: 1099px) {
+  table.lines td:first-child { width: auto }
+  table.lines td:nth-child(2) input { width: 52px }
+  table.lines td:nth-child(3) input { width: 76px }
+}
 /* Customer page: what needs doing, only what applies */
 .todos { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s4) }
 .todos:empty { display: none }
 .todo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s3); background: var(--surface); border: 1px solid var(--line);
-  border-left: 4px solid var(--ink); border-radius: var(--r); padding: 10px var(--s4); margin: 0 }
+  border-left: 4px solid var(--ink); border-radius: var(--r); padding: 10px var(--s4); margin: 0 0 var(--s4) }
+.todos .todo { margin: 0 }
 .todo span { color: var(--muted); font-size: 13.5px }
 .todo.bad { border-left-color: var(--red); background: var(--red-wash) } .todo.bad b { color: var(--red-ink) }
 .todo.go { border-left-color: var(--ok); background: var(--ok-wash) } .todo.go b { color: var(--ok) }
 .todo .inline-set { display: inline-flex; gap: var(--s2); margin-left: auto }
-.todo .inline-set input { width: 200px; height: 30px }
+.todo .inline-set input { width: 200px; height: 28px }
+/* The passcode strip carries a 28px field: trim its padding so it's as tall as the text-only strips. */
+@media (min-width: 721px) { .todo:has(.inline-set) { padding-top: 6.5px; padding-bottom: 6.5px } }
 .panel.attn { border-color: var(--line-strong); box-shadow: inset 4px 0 0 var(--ok) }
 form.panel.attn:has(.red), .panel.attn.bad { box-shadow: inset 4px 0 0 var(--red) }
+.panel.attn.warn { box-shadow: inset 4px 0 0 var(--warn-mark) }
 .more details > form { padding: var(--s3) 0 }
 .clip-more { margin: var(--s3) 0 0 var(--s4) } tr[hidden] { display: none }
 
@@ -427,13 +469,11 @@ form.panel.attn:has(.red), .panel.attn.bad { box-shadow: inset 4px 0 0 var(--red
 @media (max-width: 720px) {
   .todo .inline-set { display: flex; width: 100%; margin-left: 0 }
   .todo .inline-set input { flex: 1; width: auto; min-width: 0 }
-  table.lines td:first-child { width: auto }
-  table.lines td:nth-child(2) input { width: 52px }
-  table.lines td:nth-child(3) input { width: 76px }
 }
 .tag.kind-admin { color: var(--admin); border-color: var(--admin-line); background: var(--admin-wash) } .tag.kind-admin::before { background: var(--admin) }
 .tag.kind-test { color: var(--warn); border-color: var(--warn-line); background: var(--warn-wash) } .tag.kind-test::before { background: var(--warn-mark) }
 td.details { max-width: 420px; overflow-wrap: anywhere }
+@media (min-width: 721px) { .audit td:not(.details) { white-space: nowrap } }  /* short label cells stay on one line */
 @media (max-width: 720px) { td.details { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis } }
 .perms tr.group th { background: none; padding-top: 16px; color: var(--muted) }
 @media (max-width: 720px) { .perms tr.group { display: block; padding: 14px var(--s4) 2px; border-top: 1px solid var(--line) } .perms tr.group th { display: block; padding: 0 !important } }
@@ -483,6 +523,7 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 }
 .dash-tabs > .section-h:first-child { margin-top: var(--s2) }
 .dash-tabs .cols { margin: 0 }
+.dash-tabs .stats { grid-template-columns: repeat(3, 1fr) }  /* six tiles: always 3 x 2, never 5 + 1 */
 .tx-filters { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; margin-bottom: var(--s3) }
 .tx-filters .seg { display: flex; flex-wrap: wrap; gap: 6px }
 .tx-filters input[type=search] { flex: 1 1 200px; max-width: 320px; margin-left: auto }
@@ -510,9 +551,9 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 /* Header search: under 1600px it folds down to a magnifier so all the tabs fit, and opens over
    the tabs when clicked or when / or S is pressed. */
 @media (min-width: 721px) and (max-width: 1599px) {
-  header .hsearch { flex: 0 0 34px; min-width: 34px; max-width: 34px; height: 32px }
-  .hsearch input { position: absolute; right: 0; top: 0; width: 34px; padding: 0 0 0 32px; cursor: pointer; color: transparent;
-    background: #22252B url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23C9CDD3' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 9px center / 16px;
+  header .hsearch { flex: 0 0 30px; min-width: 30px; max-width: 30px; height: 30px }
+  .hsearch input { position: absolute; right: 0; top: 0; width: 30px; height: 30px; padding: 0 0 0 30px; cursor: pointer; color: transparent;
+    background: #22252B url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23C9CDD3' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 7px center / 16px;
     transition: width .18s ease, background-color .18s }
   .hsearch input::placeholder { color: transparent }
   .hsearch input:focus { width: 280px; cursor: text; color: var(--fg); background-color: var(--surface); z-index: 16 }
@@ -537,16 +578,19 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 .panel > .scroll:not(:last-child), .panel > table:not(:last-child) { margin-bottom: var(--s3); border-bottom: 1px solid var(--line) }
 .clip-more { margin: var(--s3) 0 0 }
 td.when { white-space: nowrap }
+td.when .small { white-space: normal }
 .todos:not(:has(*)) { display: none }
 dialog#keys #keys-page td:first-child { width: 40px }
 .toolgrid h2 kbd { display: none }
 .period input[type=date] { height: 36px }
-.tx-filters .seg .btn, .tx-filters .seg button { min-height: 32px }
+.tx-filters .seg .btn, .tx-filters .seg button { min-height: 36px }
 dialog.ask .err { margin: var(--s2) 0 0 }
 .stat .k { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .panel td code { white-space: nowrap }
 td select { border-color: transparent; background-color: transparent }
 tr:hover td select, td select:focus { border-color: var(--line-strong); background-color: var(--surface) }
+@media (hover: none) { td select { border-color: var(--line-strong); background-color: var(--surface) } }  /* touch: no hover to reveal it */
+td > form.inline > select { margin-left: -11px }  /* 10px padding + 1px border: the text lines up with the column header */
 form > input[type=hidden]:first-child + * { margin-top: 0 }
 @media (max-width: 480px) { .period .btn { flex: 1 1 40% } }
 @media (max-width: 720px) {
@@ -561,11 +605,12 @@ td.items { min-width: 180px }
 button, .btn { transition: background-color .12s, border-color .12s, transform .08s }
 button:active:not(:disabled), .btn:active { transform: translateY(1px) }
 html { -webkit-tap-highlight-color: transparent }
-/* Needs attention on a phone: one card per problem instead of a squashed table. */
-@media (max-width: 720px) {
+/* Needs attention on a phone or tablet: one card per problem instead of a squashed table. */
+@media (max-width: 1099px) {
   table.attn tr:first-child { display: none }
   table.attn tr { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s3); padding: var(--s3) var(--s4); border-top: 1px solid var(--line) }
   table.attn td { border: none; padding: 0 }
+  table.attn td:nth-child(3) { grid-column: 2; text-align: right }
   table.attn td:nth-child(4) { grid-column: 1 / -1 }
   table.attn td:last-child { grid-column: 1 / -1; text-align: left; margin-top: 6px }
   table.attn .assign input { width: 100%; max-width: none }
@@ -580,13 +625,20 @@ html { -webkit-tap-highlight-color: transparent }
     color-scheme: dark;
     --red: #FF3B3B; --red-ink: #FF8A80; --red-wash: #2E1717; --red-line: #5C2A2A;
     --ink: #E8EAED; --fg: #E3E5E8; --muted: #9AA1AB; --faint: #8C939D;
-    --line: #2B2F36; --line-strong: #3B4048; --bg: #111316; --surface: #1A1D21; --hover: #22262B;
+    --line: #2B2F36; --line-strong: #3B4048; --bg: #111316; --surface: #1A1D21; --hover: #22262B; --row-hover: #272B31;
     --ok: #4CC47F; --ok-wash: #142A1D; --ok-line: #24533A; --warn: #E3B25A; --warn-wash: #2B2414; --warn-line: #5A4920; --warn-mark: #D9A21B;
     --on-ink: #15171B; --ink-hover: #FFFFFF; --header: #0B0C0E;
     --admin: #B596F0; --admin-line: #4A3A6E; --admin-wash: #221B33;
+    --ghost: #646A73; --ring: rgba(232, 234, 237, .28);
   }
   dialog { background: var(--surface); color: var(--fg) }
   .hsearch input { background-color: #22252B }
+  /* Shadows and baked-in icon colours made for the light theme */
+  .results { box-shadow: 0 8px 24px rgba(0, 0, 0, .6); border-color: #4A5059 }
+  .claim-prompt { box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .8); border-color: #4A5059 }
+  dialog#keys, dialog.ask { box-shadow: 0 20px 60px rgba(0, 0, 0, .7) }
+  .search input { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%239AA1AB' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") }
+  .steps li.done::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='%2315171B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
 }
 /* Tabs that don't fit the header go in here. */
 .nav-more { position: relative; flex: none; display: flex; align-items: stretch }
@@ -634,11 +686,12 @@ header .clock.squeezed { display: none !important }
 @keyframes st-in { from { opacity: 0; transform: translateY(3px) } }
 .bubble.streaming { animation: fi .2s ease-out }
 @media (prefers-reduced-motion: reduce) { .chat > .enter, .fi, .bubble.thinking .st.swap, .bubble.streaming { animation: none } }
-.proposal { align-self: flex-start; width: min(100%, 560px); background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--warn-mark);
+.proposal { align-self: flex-start; width: min(100%, 560px); background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--warn-mark);
   border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; justify-items: start }
 .proposal .summary { font-size: 15px; line-height: 1.35 }
 .proposal .actions { margin: 4px 0 0 } .proposal details { width: 100% }
-.proposal.done { border-left-color: var(--ok) } .proposal.dismissed { opacity: .6; border-left-color: var(--line-strong) }
+.proposal.done { border-left-color: var(--ok) } .proposal.dismissed { color: var(--muted); border-left-color: var(--line-strong) }
+.proposal.dismissed .summary { font-weight: 500 }
 .proposal pre { white-space: pre-wrap; background: var(--hover); padding: 8px; border-radius: 8px; max-height: 300px; overflow: auto; margin: 6px 0 0 }
 .chat-empty { color: var(--muted) } .chat-empty .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px }
 .chat-empty .chip { height: auto; white-space: normal; text-align: left; padding: 10px 14px; font-weight: 500; border-radius: 12px; line-height: 1.35 }
@@ -653,9 +706,10 @@ header .clock.squeezed { display: none !important }
   .bubble { max-width: 90% } .bubble.them { max-width: 100% }
 }
 .rule-row { display: flex; gap: var(--s3); align-items: flex-start; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line) }
-.rule-row:first-of-type { border-top: none } .rule-row.paused { opacity: .6 }
+.rule-row:first-of-type { border-top: none } .rule-row.paused { color: var(--muted) }
+.rule-row.paused b { font-weight: 500 }
 /* background job bar */
-.jobbar { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-left: 3px solid var(--warn-mark); border-radius: var(--r);
+.jobbar { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-left: 4px solid var(--warn-mark); border-radius: var(--r);
   background: var(--surface); padding: 8px var(--s3); margin-bottom: var(--s4) }
 .jobbar .t { flex: 1 } .jobbar.ok { border-left-color: var(--ok); background: var(--ok-wash) } .jobbar.bad { border-left-color: var(--red); background: var(--red-wash) }
 .jobbar.ok .spin, .jobbar.bad .spin { display: none }
@@ -678,7 +732,6 @@ header .clock.squeezed { display: none !important }
 .closed-day .big { font-size: 1.35rem; font-weight: 600; margin: .2rem 0 .6rem; }
 .closed-day p { margin: .35rem 0; }
 [data-ask] button { transition: transform .12s ease, opacity .2s ease } [data-ask] button:active:not(:disabled) { transform: scale(.94) }
-[data-ask] button:disabled { opacity: .55 }
 
 /* ---- motion: quick and quiet. Everything settles in under a quarter of a second. ---- */
 :root { --ease: cubic-bezier(.2, .8, .2, 1) }

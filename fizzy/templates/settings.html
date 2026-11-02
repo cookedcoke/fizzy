@@ -106,7 +106,7 @@
     <tr><th>Key</th><th>Added</th><th>Last used</th><th></th></tr>
     {% for k in passkey_list %}<tr>
       <td>{{ k.name }} <span class="small muted">{{ k.rp_id }}</span></td>
-      <td class="small">{{ k.created_at|local('%d %b %Y') }} · {{ k.created_by }}</td>
+      <td class="small">{{ k.created_at|local('%-d %b %Y') }} · {{ k.created_by }}</td>
       <td class="small">{{ k.last_used_at|local if k.last_used_at else 'Never' }}</td>
       <td class="n"><form class="inline" method="post" action="/settings/passkeys/{{ k.id }}/remove">
         <button class="sm danger" data-confirm="Remove {{ k.name }}?">Remove</button></form></td>
@@ -131,7 +131,7 @@
     <tr><th>Device</th><th>Added</th><th>Last used</th><th></th></tr>
     {% for d in device_list %}<tr>
       <td>{{ d.name }}{% if d.revoked_at %} <span class="tag">Removed</span>{% endif %}</td>
-      <td class="small">{{ d.created_at|local('%d %b %Y') }} · {{ d.created_by }}</td>
+      <td class="small">{{ d.created_at|local('%-d %b %Y') }} · {{ d.created_by }}</td>
       <td class="small">{{ d.last_seen_at|local }}</td>
       <td class="n">{% if not d.revoked_at %}<form class="inline" method="post" action="/settings/devices/{{ d.id }}/revoke">
         <button class="sm danger" data-confirm="Remove {{ d.name }}?">Remove</button></form>{% endif %}</td>

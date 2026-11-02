@@ -31,7 +31,7 @@ def money(cents):
     return f"{'-' if cents < 0 else ''}${abs(cents) / 100:,.2f}"
 
 
-def local(ts, fmt="%a %d %b %H:%M"):
+def local(ts, fmt="%a %-d %b %H:%M"):
     if not ts:
         return ""
     return logic.parse_ts(ts).astimezone(config.TZ).strftime(fmt)
@@ -68,7 +68,7 @@ templates.env.filters["money"] = money
 templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else {}
 templates.env.filters["noicon"] = lambda d: {k: v for k, v in (d or {}).items() if k != "icon"}
 templates.env.filters["local"] = local
-templates.env.filters["ymd"] = lambda d, fmt="%a %d %b": datetime.strptime(d, "%Y-%m-%d").strftime(fmt) if d else ""
+templates.env.filters["ymd"] = lambda d, fmt="%a %-d %b": datetime.strptime(d, "%Y-%m-%d").strftime(fmt) if d else ""
 templates.env.globals["STATUS_LABELS"] = logic.STATUS_LABELS
 templates.env.globals["TZ"] = config.TZ.key
 

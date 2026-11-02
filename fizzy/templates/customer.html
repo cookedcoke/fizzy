@@ -10,7 +10,7 @@
     </div>
     <label for="rp-note">Note</label><input id="rp-note" type="text" name="note" placeholder="Optional">
     <label class="check"><input type="checkbox" name="confirm_dup" value="1"> This is a separate payment (not one already rung up in Square)</label>
-    <div class="actions"><button title="Enter in the amount box also saves">Record without Square <kbd>Enter</kbd></button></div>
+    <div class="actions"><button class="primary" title="Enter in the amount box also saves">Record without Square <kbd>Enter</kbd></button></div>
   </form>
 
 {% endmacro %}
@@ -76,7 +76,7 @@
   {% if led.has_overdue %}{% set _ = todos.append(1) %}<div class="todo bad"><b>{{ led.overdue_cents|money }} overdue.</b>
     <span>Ask {{ first }} to pay it off - ring it up as <b>Tab repayment</b> in Square.</span></div>
   {% elif led.owing_cents %}{% set _ = todos.append(1) %}<div class="todo"><b>Owes {{ led.owing_cents|money }}.</b>
-    <span>{% set due = led.charges|selectattr('unpaid_cents')|map(attribute='due_at')|min %}Due {{ due|local('%a %d %b') }}.</span></div>{% endif %}
+    <span>{% set due = led.charges|selectattr('unpaid_cents')|map(attribute='due_at')|min %}Due {{ due|local('%a %-d %b') }}.</span></div>{% endif %}
   {% if not c.passcode_set_at or (c.passcode_enc and not passcode_readable) %}{% set _ = todos.append(1) %}
   <form class="todo" method="post" action="/customers/{{ c.id }}/passcode" autocomplete="off">
     <b>{{ 'No student site passcode yet.' if not c.passcode_set_at else 'Passcode needs setting again.' }}</b>
@@ -126,10 +126,10 @@
   {% if led.charges %}<div class="scroll"><table>
     <tr><th>Charged</th><th>Items</th><th class="n">Amount</th><th class="n">Paid</th><th class="n">Unpaid</th><th>Due</th><th>Status</th></tr>
     {% for ch in led.charges|reverse %}<tr>
-      <td>{{ ch.charged_at|local }}</td><td class="small">{{ ch['items'] or '' }}{% if ch.breach %}<br><span class="red">{{ ch.breach }}</span>{% endif %}</td>
+      <td class="when">{{ ch.charged_at|local }}</td><td class="small">{{ ch['items'] or '' }}{% if ch.breach %}<br><span class="red">{{ ch.breach }}</span>{% endif %}</td>
       <td class="n">{{ ch.net_cents|money }}{% if ch.refunded_cents %}<br><span class="muted small">{{ ch.refunded_cents|money }} refunded</span>{% endif %}</td>
       <td class="n">{{ ch.paid_cents|money }}</td><td class="n">{{ ch.unpaid_cents|money }}</td>
-      <td>{{ ch.due_at|local('%a %d %b') }}</td>
+      <td class="when">{{ ch.due_at|local('%a %-d %b') }}</td>
       <td>{% if ch.overdue %}<span class="tag red">Overdue</span>{% elif ch.unpaid_cents > 0 %}<span class="tag">Open</span>
           {% elif ch.paid_late %}<span class="tag eligible">Paid late</span>
           {% else %}<span class="tag approved">Paid</span>{% endif %}</td></tr>{% endfor %}
@@ -140,7 +140,7 @@
   {% if led.repayments %}<div class="panel"><h2>Repayments <span class="count">{{ led.repayments|length }}</span></h2>
     {% if led.repayments %}<div class="scroll"><table>
       <tr><th>When</th><th class="n">Amount</th><th>Method</th><th>By</th></tr>
-      {% for r in led.repayments|reverse %}<tr><td>{{ r.created_at|local }}{% if r.note %}<br><span class="muted small">{{ r.note }}</span>{% endif %}</td>
+      {% for r in led.repayments|reverse %}<tr><td class="when">{{ r.created_at|local }}{% if r.note %}<br><span class="muted small">{{ r.note }}</span>{% endif %}</td>
         <td class="n">{{ r.amount_cents|money }}</td><td>{{ 'write-off' if r.method == 'writeoff' else r.method }}{% if r.square_payment_id %} <span class="muted small" title="Matched to a Square payment">· Square</span>{% endif %}</td>
         <td>{{ r.staff or 'Square' }}</td></tr>{% endfor %}
     </table></div>{% endif %}
@@ -148,7 +148,7 @@
   <div class="panel"><h2>Points history</h2>
     {% if points %}<div class="scroll"><table data-clip="8">
       <tr><th>When</th><th class="n">Points</th><th>Why</th></tr>
-      {% for p in points %}<tr><td>{{ p.created_at|local }}</td><td class="n">{{ '%+d'|format(p.delta) }}</td>
+      {% for p in points %}<tr><td class="when">{{ p.created_at|local }}</td><td class="n">{{ '%+d'|format(p.delta) }}</td>
         <td class="small">{{ p.note or p.reason }}{% if p.staff and p.staff != 'square' %} <span class="muted">· {{ p.staff }}</span>{% endif %}</td></tr>{% endfor %}
     </table></div>{% else %}<p class="empty">No points yet.</p>{% endif %}
   </div>
@@ -157,7 +157,7 @@
 {% if payments %}<div class="panel"><h2>Square payments</h2>
   {% if payments %}<div class="scroll"><table data-clip="8">
     <tr><th>When</th><th>Type</th><th class="n">Amount</th><th>Tender</th><th class="hide-sm">Items</th></tr>
-    {% for p in payments %}<tr><td>{{ p.created_at|local }}</td><td>{{ p.kind.replace('_', ' ') }}</td><td class="n">{{ p.amount_cents|money }}</td>
+    {% for p in payments %}<tr><td class="when">{{ p.created_at|local }}</td><td>{{ p.kind.replace('_', ' ') }}</td><td class="n">{{ p.amount_cents|money }}</td>
       <td class="small">{{ p.tender }}</td><td class="small hide-sm">{{ p['items'] }}</td></tr>{% endfor %}
   </table></div>{% endif %}
 </div>{% endif %}
@@ -165,13 +165,13 @@
 <div class="panel more">
   {% if not owing_panel %}<details data-key="r" data-key-label="Record money that didn't go through Square"><summary>Repayment without Square <span class="muted">(nothing owing)</span> <kbd>R</kbd></summary>{{ repay_form(false) }}</details>{% endif %}
   <details data-key="h" data-key-label="Tab decision history"><summary>Tab history <span class="muted">({{ decisions|length }})</span> <kbd>H</kbd></summary>
-    {% if decisions %}<table>{% for d in decisions %}<tr><td>{{ d.created_at|local }}</td><td>{{ d.decision }}</td><td>{{ d.note or '' }}</td><td>{{ d.staff }}</td></tr>{% endfor %}</table>
+    {% if decisions %}<table>{% for d in decisions %}<tr><td class="when">{{ d.created_at|local }}</td><td>{{ d.decision }}</td><td>{{ d.note or '' }}</td><td>{{ d.staff }}</td></tr>{% endfor %}</table>
     {% else %}<p class="empty">None.</p>{% endif %}
   </details>
   <details data-key="l" data-key-label="Activity log"><summary>Activity log <kbd>L</kbd></summary>
-    <table>{% for a in audit_rows %}<tr><td>{{ a.created_at|local }}</td><td>{{ a.staff }}</td><td>{{ a.action }}</td><td class="small">{{ a.details }}</td></tr>{% endfor %}</table>
+    <table>{% for a in audit_rows %}<tr><td class="when">{{ a.created_at|local }}</td><td>{{ a.staff }}</td><td>{{ a.action }}</td><td class="small">{{ a.details }}</td></tr>{% endfor %}</table>
   </details>
-  {% if c.passcode_set_at %}<details id="passcode"><summary>Student site passcode <span class="muted">({{ 'set ' ~ c.passcode_set_at|local('%d %b') if c.passcode_set_at else 'not set' }})</span></summary>
+  {% if c.passcode_set_at %}<details id="passcode"><summary>Student site passcode <span class="muted">({{ 'set ' ~ c.passcode_set_at|local('%-d %b') if c.passcode_set_at else 'not set' }})</span></summary>
     <form method="post" action="/customers/{{ c.id }}/passcode" style="max-width:420px" autocomplete="off">
       {% if c.passcode_enc %}<p style="margin-top:0">Current passcode:
         {% if passcode_readable %}<button type="button" class="sm" data-reveal="/customers/{{ c.id }}/passcode/reveal"
@@ -187,7 +187,7 @@
       <label for="ed-name">Name</label><input id="ed-name" type="text" name="name" value="{{ c.name }}">
       <label for="ed-sq">Square customer ID</label><input id="ed-sq" type="text" name="square_customer_id" value="{{ c.square_customer_id or '' }}" class="mono">
       <label class="check"><input type="checkbox" name="archived" value="1" {{ 'checked' if c.archived_at }}> Archived - hidden from search</label>
-      <div class="actions"><button>Save</button>
+      <div class="actions"><button class="primary">Save</button>
         <button formaction="/customers/{{ c.id }}/passcode/signout" formnovalidate data-confirm="Sign {{ c.name }} out of the student site on every phone?">Sign out their phones</button></div>
     </form>
     <form method="post" action="/customers/{{ c.id }}/kind" style="max-width:420px">
@@ -215,7 +215,7 @@
   <form class="panel" method="post" action="/customers/{{ c.id }}/points"><h2>Adjust points <kbd>P</kbd></h2>
     <div class="row"><div style="flex:0 1 130px"><label for="pt-delta">Points</label><input id="pt-delta" type="number" name="delta" step="1" placeholder="+100 or -50" required data-key="p" data-key-label="Adjust points"></div>
       <div style="flex:2 1 180px"><label for="pt-note">Reason</label><input id="pt-note" type="text" name="note" placeholder="Required" required></div></div>
-    <div class="actions"><button title="Enter in either box also applies">Apply <kbd>Enter</kbd></button></div>
+    <div class="actions"><button class="primary" title="Enter in either box also applies">Apply <kbd>Enter</kbd></button></div>
   </form>
 </div>
 </div>
