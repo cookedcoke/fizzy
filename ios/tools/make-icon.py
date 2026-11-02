@@ -3,7 +3,7 @@ branding-assets/cookedcoke-brand-final/cookedcoke-small-logo-1024-white.png) on 
 Fizzy red gradient. iOS rounds the corners itself.
 
 Run:  python3 make-icon.py   (needs Pillow and numpy). Writes the 1024px icon into the asset catalog.
-      python3 make-icon.py --student   The student app's: the same mark in Fizzy red on white."""
+      python3 make-icon.py --student   The student app's (My CCC): the mark in black on the student site's sun yellow."""
 import sys
 
 import numpy as np
@@ -23,19 +23,24 @@ c0, c1 = np.array([255, 0, 2], np.float32), np.array([176, 0, 0], np.float32)
 red = (c0 * (1 - d[..., None]) + c1 * d[..., None]).astype(np.uint8)
 img = Image.fromarray(red).convert("RGBA")
 if STUDENT:
-    img = Image.new("RGBA", (N, N), (255, 255, 255, 255))
-
-# the white file is the mark filling its canvas: crop to the mark, then centre it at MARK size
-mark = Image.open(HERE / "cookedcoke-mark-white-1024.png").convert("RGBA")
-mark = mark.crop(mark.getchannel("A").getbbox())
-scale = N * MARK / max(mark.size)
-mark = mark.resize((round(mark.width * scale), round(mark.height * scale)), Image.LANCZOS)
-if STUDENT:   # the white mark's shape, filled with the red gradient from where it sits
-    at = ((N - mark.width) // 2, (N - mark.height) // 2)
-    fill = Image.fromarray(red).convert("RGBA").crop((at[0], at[1], at[0] + mark.width, at[1] + mark.height))
+    # sun-yellow glow at the upper left (the site's --sun) to warm orange in the far corner
+    sun0, sun1 = np.array([255, 214, 92], np.float32), np.array([255, 150, 50], np.float32)
+    img = Image.fromarray((sun0 * (1 - d[..., None]) + sun1 * d[..., None]).astype(np.uint8)).convert("RGBA")
+    # the same mark as the staff app, in the student site's ink black
+    mark = Image.open(HERE / "cookedcoke-mark-white-1024.png").convert("RGBA")
+    mark = mark.crop(mark.getchannel("A").getbbox())
+    scale = N * MARK / max(mark.size)
+    mark = mark.resize((round(mark.width * scale), round(mark.height * scale)), Image.LANCZOS)
+    fill = Image.new("RGBA", mark.size, (27, 26, 31, 255))
     fill.putalpha(mark.getchannel("A"))
-    mark = fill
-img.alpha_composite(mark, ((N - mark.width) // 2, (N - mark.height) // 2))
+    img.alpha_composite(fill, ((N - mark.width) // 2, (N - mark.height) // 2))
+else:
+    # the white file is the mark filling its canvas: crop to the mark, then centre it at MARK size
+    mark = Image.open(HERE / "cookedcoke-mark-white-1024.png").convert("RGBA")
+    mark = mark.crop(mark.getchannel("A").getbbox())
+    scale = N * MARK / max(mark.size)
+    mark = mark.resize((round(mark.width * scale), round(mark.height * scale)), Image.LANCZOS)
+    img.alpha_composite(mark, ((N - mark.width) // 2, (N - mark.height) // 2))
 
 img.convert("RGB").save(OUT)   # app icons have no transparency
 print("wrote", OUT)
