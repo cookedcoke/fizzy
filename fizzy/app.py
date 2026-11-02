@@ -699,6 +699,7 @@ def register(app):
                 key = keys[i] if i < len(keys) else stats.item_key(name)
                 base = bases[i] if i < len(bases) else key
                 value = value.strip().replace("$", "")
+                value = re.sub(r",(\d{1,2})$", r".\1", value).replace(",", "")  # "1,20" is $1.20, as everywhere else
                 cents_v = None
                 if value:
                     try:
@@ -706,9 +707,9 @@ def register(app):
                         if cents_v > 10_000_000:
                             raise OverflowError
                     except (ValueError, OverflowError):
-                        return back(request, request.headers.get("referer") or "/profit", f"'{value}' isn't a dollar amount ({name}).")
+                        return back(request, request.headers.get("referer") or "/profit", f"'{value}' isn't a dollar amount ({name}).", "bad")
                     if cents_v < 0:
-                        return back(request, request.headers.get("referer") or "/profit", f"A cost can't be negative ({name}).")
+                        return back(request, request.headers.get("referer") or "/profit", f"A cost can't be negative ({name}).", "bad")
                 if stats.cost_of(have, key, base) == cents_v:
                     continue
                 if cents_v is None and have.get(key) is None:
@@ -940,7 +941,7 @@ def register(app):
                 (" ".join(name.split()), sid, (c["archived_at"] or db.now_iso()) if archived else None, cid),
             )
         except Exception:
-            return back(request, f"/customers/{cid}", "That Square customer ID is already linked to someone else.")
+            return back(request, f"/customers/{cid}", "That Square customer ID is already linked to someone else.", "bad")
         db.audit(conn, who, "customer_edit", cid, f"name={name!r} square={sid} archived={bool(archived)}")
         square.link_pending(conn)
         conn.commit()

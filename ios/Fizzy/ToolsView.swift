@@ -247,5 +247,6 @@ struct ReportSheet: View {
             .fizzyDestinations()
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
+        .passcodeHost()   // a customer opened from the report can need the passcode
     }
 }

@@ -171,7 +171,8 @@ MAX_DOLLARS = 10_000
 
 
 def cents(value: str) -> int:
-    v = (value or "").replace("$", "").replace(",", "").strip()
+    v = (value or "").replace("$", "").strip()
+    v = re.sub(r",(\d{1,2})$", r".\1", v).replace(",", "")  # "12,50" is $12.50 (a phone's decimal pad in some regions), "1,200" is $1,200
     try:
         n = float(v)
     except ValueError:

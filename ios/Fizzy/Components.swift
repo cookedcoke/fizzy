@@ -26,23 +26,35 @@ final class Page {
     var error: String?
     var flash: Flash?
     var offlineSince: Date?      // showing the copy saved then, because there's no connection
+    private var loading = 0      // the latest load: an older answer arriving after it is ignored
 
     init(_ path: String, query: [String: String] = [:]) {
         self.path = path
         self.query = query
     }
 
-    func load() async {
+    /// Loads the page. True when fresh data landed (not a saved copy, not an error).
+    @discardableResult
+    func load() async -> Bool {
+        loading += 1
+        let mine = loading
         do {
             let d = try await AppModel.shared.call { try await API.shared.get(path, query) }
+            let fresh = d.flash.optString.map { Flash(text: $0, ok: d.flash_kind.string != "bad") }
+            guard mine == loading else {   // a newer load is on its way with newer data; the message here is still the latest
+                if let fresh { flash = fresh }
+                return true
+            }
             data = d
             loaded = true
             error = nil
             offlineSince = nil
-            if let text = d.flash.optString { flash = Flash(text: text, ok: d.flash_kind.string != "bad") }
+            flash = fresh   // an older message doesn't linger
+            return true
         } catch is CancellationError {
         } catch let e as URLError where e.code == .cancelled {
         } catch where isOffline(error) {
+            guard mine == loading else { return false }
             if let (saved, when) = PageCache.load(path, query) {
                 data = saved
                 loaded = true
@@ -54,13 +66,15 @@ final class Page {
                 offlineSince = offlineSince ?? Date()
             }
         } catch {
+            guard mine == loading else { return false }
             if !loaded || self.error != nil { self.error = error.localizedDescription } else { flash = Flash(text: error.localizedDescription, ok: false) }
         }
+        return false
     }
 
     /// Posts a change, then reloads to pick up the server's message and the new numbers.
-    @discardableResult
     /// `queue`: if there's no connection, keep it on the phone under this name and send it later.
+    @discardableResult
     func submit(_ path: String, _ form: Params = [], files: [FilePart] = [], query: [String: String] = [:], reload: Bool = true,
                 queue: String? = nil) async -> Outcome {
         flash = nil
@@ -71,11 +85,19 @@ final class Page {
             if http.statusCode == 200, let page = try? JSONDecoder().decode(J.self, from: body), !page.headers.isNull {
                 return Outcome(ok: true, message: nil, body: page)   // a report: nothing to reload
             }
-            if reload { await load() }
-            let ok = flash?.ok ?? true
-            return Outcome(ok: ok, message: flash?.text, body: nil)
+            // The post went through (a redirect). The reload brings the server's message, which may still be a
+            // refusal. If the reload itself fails the change is in all the same: don't invite a second go.
+            guard reload else { return Outcome(ok: true, message: nil, body: nil) }
+            if await load() {
+                return Outcome(ok: flash?.ok ?? true, message: flash?.text, body: nil)
+            }
+            let m = "Saved, but the page couldn't refresh. Pull down to refresh."
+            flash = Flash(text: m, ok: true)
+            return Outcome(ok: true, message: m, body: nil)
         } catch where queue != nil && isOffline(error) {
-            OfflineQueue.shared.add(title: queue!, path: path, form: form, files: files)
+            guard OfflineQueue.shared.add(title: queue!, path: path, form: form, files: files) else {
+                return Outcome(ok: false, message: "No connection, and it couldn't be saved on this phone either. Try again.", body: nil)
+            }
             let m = "No connection, so it's saved on this phone. It sends by itself when there's signal."
             flash = Flash(text: m, ok: true)
             return Outcome(ok: true, message: m, body: nil)
@@ -94,11 +116,21 @@ final class Page {
 }
 
 /// A list screen for a page: loads it, pulls to refresh, shows the server's message on top.
-struct PageList<Content: View>: View {
+/// `above` shows whether or not the page has loaded (what's waiting to be sent, say).
+struct PageList<Above: View, Content: View>: View {
     let page: Page
     var title: String
     var staffMenu = false
-    @ViewBuilder var content: (J) -> Content
+    let above: Above
+    let content: (J) -> Content
+
+    init(page: Page, title: String, staffMenu: Bool = false, @ViewBuilder above: () -> Above, @ViewBuilder content: @escaping (J) -> Content) {
+        self.page = page
+        self.title = title
+        self.staffMenu = staffMenu
+        self.above = above()
+        self.content = content
+    }
 
     var body: some View {
         List {
@@ -108,6 +140,7 @@ struct PageList<Content: View>: View {
                     .foregroundStyle(.orange)
             }
             if let error = page.error { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+            above
             if page.loaded { content(page.data) }
         }
         .overlay { if !page.loaded && page.error == nil { ProgressView() } }
@@ -120,6 +153,12 @@ struct PageList<Content: View>: View {
             if staffMenu { ToolbarItem(placement: .topBarLeading) { StaffMenu() } }
             KeyboardDoneButton()
         }
+    }
+}
+
+extension PageList where Above == EmptyView {
+    init(page: Page, title: String, staffMenu: Bool = false, @ViewBuilder content: @escaping (J) -> Content) {
+        self.init(page: page, title: title, staffMenu: staffMenu, above: { EmptyView() }, content: content)
     }
 }
 
@@ -291,7 +330,7 @@ struct FormSheet<Content: View>: View {
             .disabled(busy)
             .toolbar {
                 KeyboardDoneButton()
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) }   // it's on its way: see it through
                 ToolbarItem(placement: .confirmationAction) {
                     if busy { ProgressView() } else {
                         Button(action, role: destructive ? .destructive : nil) { submit() }.disabled(!ready)
@@ -299,6 +338,8 @@ struct FormSheet<Content: View>: View {
                 }
             }
         }
+        .interactiveDismissDisabled(busy)
+        .passcodeHost()
     }
 
     private func submit() {
@@ -319,6 +360,25 @@ struct FormSheet<Content: View>: View {
 }
 
 // MARK: passcode
+
+/// Only one sheet can be up per presenter, so the passcode prompt can't come from the root while a form
+/// sheet is open: every sheet that posts changes hosts the prompt itself while it's up.
+struct PasscodeHost: ViewModifier {
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { model.sheetDepth += 1 }
+            .onDisappear { model.sheetDepth -= 1 }
+            .sheet(item: Binding(get: { model.sheetDepth > 0 ? model.passcodeAsk : nil }, set: { if $0 == nil { model.passcodeAsk = nil } })) { ask in
+                PasscodeSheet(ask: ask)
+            }
+    }
+}
+
+extension View {
+    func passcodeHost() -> some View { modifier(PasscodeHost()) }
+}
 
 struct PasscodeSheet: View {
     let ask: PasscodeAsk

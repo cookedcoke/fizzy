@@ -70,6 +70,7 @@ enum Fmt {
     /// Cents -> "$1,234.56" (or "-$1.00").
     static func money(_ cents: Int) -> String {
         let n = NumberFormatter()
+        n.locale = Locale(identifier: "en_AU")   // as the server writes it, whatever region the phone is set to
         n.numberStyle = .decimal
         n.minimumFractionDigits = 2
         n.maximumFractionDigits = 2
@@ -79,9 +80,26 @@ enum Fmt {
 
     static func number(_ n: Int) -> String {
         let f = NumberFormatter()
+        f.locale = Locale(identifier: "en_AU")
         f.numberStyle = .decimal
         return f.string(from: NSNumber(value: n)) ?? String(n)
     }
+
+    /// Dollars typed by hand: "$12.50", "12,50" (a comma before one or two final digits is a decimal
+    /// point, as on some regions' decimal pads), "1,200". nil when it isn't an amount, or is absurd.
+    static func amount(_ s: String) -> Double? {
+        var v = s.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "$", with: "")
+        if let r = v.range(of: #",\d{1,2}$"#, options: .regularExpression) { v.replaceSubrange(r, with: "." + v[r].dropFirst()) }
+        v = v.replacingOccurrences(of: ",", with: "")
+        guard let d = Double(v), d.isFinite, abs(d) < 10_000_000 else { return nil }
+        return d
+    }
+
+    /// The same, written as the server reads it ("12.50"); what was typed if it isn't an amount, so the server can say so.
+    static func normalised(_ s: String) -> String { amount(s).map { String(format: "%.2f", $0) } ?? s }
+
+    /// Typed dollars as cents, 0 if it isn't an amount.
+    static func cents(_ s: String) -> Int { amount(s).map { Int(($0 * 100).rounded()) } ?? 0 }
 
     static func points(_ n: Int) -> String { (n > 0 ? "+" : "") + number(n) }
 

@@ -148,6 +148,9 @@ def delete_restock(conn, rid, staff_name):
     r = conn.execute("SELECT * FROM restocks WHERE id = ?", (rid,)).fetchone()
     if r is None:
         return
+    if r["client_id"]:   # the phone that saved it may send it again (lost answer): it mustn't come back
+        conn.execute("INSERT OR REPLACE INTO restock_tombstones(client_id, deleted_at) VALUES (?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+                     (r["client_id"],))
     conn.execute("DELETE FROM restock_items WHERE restock_id = ?", (rid,))
     conn.execute("DELETE FROM restocks WHERE id = ?", (rid,))
     if r["receipt"]:
@@ -278,6 +281,8 @@ async def restock_add(request: Request, who=Depends(staff), conn=Depends(get_con
     client_id = (form.get("client_id") or "").strip()[:64] or None
     if client_id and conn.execute("SELECT 1 FROM restocks WHERE client_id = ?", (client_id,)).fetchone():
         return back(request, "/money", "Restock saved.")
+    if client_id and conn.execute("SELECT 1 FROM restock_tombstones WHERE client_id = ?", (client_id,)).fetchone():
+        return back(request, "/money", "That restock was saved earlier and has since been deleted, so it wasn't added again.")
     try:
         lines = []
         for n, q, c in zip(names, qtys, costs):

@@ -16,11 +16,14 @@ final class AskLive {
     var lost = false            // it never got there: back in the box
     var finished = 0            // goes up when an answer ends, so the screen reloads the saved chat
     var changed = 0             // goes up when the saved chat changed mid-answer (the question saved, a part finished)
+    var settled = ""            // a part Fizzy finished before looking things up: saved, shown until the reload brings it
     private var jobID: String?
+    private var nonce = ""      // this device's tag for the question, echoed in the stream's "start" event
     private var task: Task<Void, Never>?
 
     func send(_ question: String) {
         begin(question)
+        nonce = UUID().uuidString
         task = Task { await run(asking: question) }
     }
 
@@ -43,6 +46,7 @@ final class AskLive {
         answer = ""
         status = nil
         error = nil
+        settled = ""
         active = false
         accepted = false
         lost = false
@@ -55,6 +59,7 @@ final class AskLive {
         question = nil
         answer = ""
         status = nil
+        settled = ""
         lost = false
     }
 
@@ -64,6 +69,7 @@ final class AskLive {
         answer = ""
         status = nil
         error = nil
+        settled = ""
         active = true
         accepted = false
         lost = false
@@ -77,18 +83,18 @@ final class AskLive {
             let joining = ask == nil
             do {
                 try await AppModel.shared.call {
-                    let events = ask.map { API.shared.stream("ask/stream", [("text", $0)]) }
+                    let events = ask.map { API.shared.stream("ask/stream", [("text", $0), ("client", nonce)]) }
                         ?? API.shared.stream("ask/stream", method: "GET")
                     var buffer = ""                              // a join replays from the start...
-                    var caughtUp = !joining || answer.isEmpty    // ...and shows once it has caught up with what's on screen
+                    var caughtUp = !joining || answer.isEmpty    // ...silently, until it has caught up with what's on screen
                     var complete = false
                     stream: for try await event in events {
                         switch event.t.string {
                         case "start":
-                            // Which question this is. Joining with no id of our own, it's ours only if it's our words:
-                            // the question may never have got there, and this be an older answer.
+                            // Which question this is. Joining with no id of our own, it's ours only if it carries our
+                            // tag: the question may never have got there, and this be an older answer.
                             let id = event.id.string
-                            let ours = jobID.map { $0 == id } ?? (joining ? event.text.string == question : true)
+                            let ours = jobID.map { $0 == id } ?? (joining ? event.client.string == nonce : true)
                             if !ours {
                                 complete = true
                                 if jobID == nil {
@@ -104,14 +110,20 @@ final class AskLive {
                             if !caughtUp, buffer.count >= answer.count { caughtUp = true }
                             if caughtUp { answer = buffer; status = nil }
                         case "status":
-                            caughtUp = true
-                            answer = buffer
-                            status = event.text.string
+                            if caughtUp || buffer.count >= answer.count {   // replayed steps from before what's on screen stay quiet
+                                caughtUp = true
+                                answer = buffer
+                                status = event.text.string
+                            }
                         case "reset":   // it wrote a bit, then went to look things up: that bit is saved as its own message
+                            if caughtUp {
+                                settled += (settled.isEmpty ? "" : "\n\n") + buffer   // kept on screen until the reload brings it
+                                answer = ""
+                                changed += 1
+                            } else {
+                                caughtUp = answer.isEmpty                     // a part already in the chat: nothing to redraw
+                            }
                             buffer = ""
-                            caughtUp = true
-                            answer = ""
-                            changed += 1
                         case "done":
                             complete = true
                             break stream
@@ -134,7 +146,11 @@ final class AskLive {
                 break
             } catch APIError.message(let message) {
                 self.error = message
-                if !accepted { lost = true }     // refused before it was taken (busy, not set up, passcode cancelled): back in the box
+                if !accepted { lost = true }     // refused before it was taken (busy, not set up): back in the box
+                break
+            } catch APIError.cancelled {
+                self.error = APIError.cancelled.localizedDescription
+                lost = true                      // the passcode prompt was put away: back in the box
                 break
             } catch APIError.signedOut {
                 break
@@ -201,6 +217,7 @@ struct AskView: View {
                     }
                     ForEach(Array(timeline.enumerated()), id: \.offset) { _, t in item(t) }
                     if let q = live.question, !questionInChat { bubble(q, mine: true) }
+                    if !live.settled.isEmpty { bubble(live.settled, mine: false) }
                     if !liveAnswer.isEmpty {
                         bubble(live.answer, mine: false, streaming: live.active)
                     } else if live.active {
@@ -236,16 +253,31 @@ struct AskView: View {
         .refreshable { await page.load() }
         .task {
             await page.load()
-            if !live.active { settle(); live.shown() }
+            settleAfterLoad()
         }
-        .onChange(of: live.changed) { Task { await page.load() } }
+        .onChange(of: live.changed) {
+            Task {
+                await page.load()   // the question, or a part of the answer, is in the saved chat now
+                if landed { live.settled = "" }
+            }
+        }
         .onChange(of: live.finished) {
             Task {
                 await page.load()   // the saved conversation, with any change it proposes
-                settle()
-                live.shown()
+                settleAfterLoad()
             }
         }
+    }
+
+    /// The last load brought the saved chat (not a copy from the cache, not an error).
+    private var landed: Bool { page.loaded && page.offlineSince == nil && page.error == nil }
+
+    /// After an answer ended and the chat reloaded: a lost question goes back in the box, and the live
+    /// copy goes once the saved chat is really on screen (a cached copy wouldn't have the answer yet).
+    private func settleAfterLoad() {
+        guard !live.active else { return }
+        settle()
+        if landed { live.shown() }
     }
 
     /// An answer still being written when the page opens (asked here earlier, or on the website) is joined.
@@ -253,6 +285,7 @@ struct AskView: View {
     private func joinIfPending() {
         let p = page.data.pending
         if !p.isNull, page.offlineSince == nil, !live.active { live.join(p) }
+        else if p.isNull, !live.active, live.question != nil, landed { live.shown() }   // a later load after a reload that missed
     }
 
     /// A question that never reached Fizzy goes back in the box, to send again.

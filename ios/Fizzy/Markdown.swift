@@ -300,6 +300,9 @@ enum MD {
         var t = s
         if (t.components(separatedBy: "**").count - 1) % 2 == 1, let r = t.range(of: "**", options: .backwards) { t = String(t[..<r.lowerBound]) }
         if t.filter({ $0 == "`" }).count % 2 == 1, let r = t.range(of: "`", options: .backwards) { t = String(t[..<r.lowerBound]) }
+        let lineStart = t.lastIndex(of: "\n").map { t.index(after: $0) } ?? t.startIndex
+        let last = t[lineStart...].trimmingCharacters(in: .whitespaces)
+        if last.hasPrefix("|") || isBareMarker(last) { t = String(t[..<lineStart]) }
         let blockStart = t.range(of: "\n\n", options: .backwards)?.upperBound ?? t.startIndex
         let block = t[blockStart...]
         if block.trimmingCharacters(in: .whitespaces).hasPrefix("|") {
@@ -312,9 +315,6 @@ enum MD {
             }
             if !hasSeparator { t = String(t[..<blockStart]) }
         }
-        let lineStart = t.lastIndex(of: "\n").map { t.index(after: $0) } ?? t.startIndex
-        let last = t[lineStart...].trimmingCharacters(in: .whitespaces)
-        if last.hasPrefix("|") || isBareMarker(last) { t = String(t[..<lineStart]) }
         return t
     }
 

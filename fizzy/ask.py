@@ -410,7 +410,7 @@ STATUS = {"sales_summary": lambda a: f"Adding up sales by {a.get('group_by', '..
           "propose": lambda a: "Writing up a suggestion"}
 
 
-def steps(conn, who, text, stream=True):
+def steps(conn, who, text, stream=True, stop=lambda: False):
     """Answer a question, yielding what's happening: ("status", "Adding up sales by weekday"),
     ("delta", next bit of the answer), ("reset", None) when a draft turns into lookups, and
     finally ("done", whole answer). Everything is saved as it goes."""
@@ -424,6 +424,8 @@ def steps(conn, who, text, stream=True):
     contents = _history(conn, who)
 
     for _ in range(MAX_STEPS):
+        if stop():  # given up on: write nothing more into the conversation
+            return
         if stream:  # pass the words through as they arrive
             content = None
             for kind, value in _stream(contents, system):
@@ -447,12 +449,16 @@ def steps(conn, who, text, stream=True):
         for c in calls:
             yield "status", STATUS.get(c["name"], lambda a: "Looking things up")(c.get("args") or {})
             answers.append({"functionResponse": {"name": c["name"], "response": run_tool(conn, who, c["name"], c.get("args") or {})}})
+        if stop():
+            return
         _save(conn, who, "tool", answers)
         contents.append({"role": "user", "parts": answers})
     # Out of steps: have it answer from what it found rather than give up.
     contents.append({"role": "user", "parts": [{"text": "(Fizzy: no more lookups. Answer now from what you've found, and say if it's incomplete.)"}]})
     yield "status", "Putting it together"
     content = _call(contents, system, tools=False)
+    if stop():
+        return
     said = "".join(p.get("text", "") for p in content["parts"] if "text" in p and not p.get("thought")).strip() \
         or "I couldn't get to an answer. Try asking a narrower question."
     _save(conn, who, "model", [{"text": said}], said)
@@ -573,13 +579,14 @@ STUCK_AFTER = 15 * 60        # seconds before an answer that never finished is g
 
 
 class _Job:
-    def __init__(self, who, text):
+    def __init__(self, who, text, client=""):
         self.who, self.text, self.started = who, text, db.now_iso()
         self.id, self.t0 = uuid.uuid4().hex[:12], time.time()
         # Every event so far, so a client joining late gets the whole answer. The first says which
-        # question this is, so a client can tell it from an older one.
-        self.events = [{"t": "start", "id": self.id, "text": text}]
+        # question this is (and the asking client's own tag), so a client can tell it from an older one.
+        self.events = [{"t": "start", "id": self.id, "text": text, "client": client}]
         self.answer, self.status, self.done = "", None, False
+        self.abandoned = False      # given up on: its thread stops writing into the conversation
         self.cond = threading.Condition()
 
     def push(self, ev):
@@ -627,22 +634,26 @@ def pending(who):
     return {"id": j.id, "text": j.text, "answer": j.answer, "status": j.status, "at": j.started}
 
 
-def start(who, text):
-    """Start answering in the background. One question at a time per person."""
+def start(who, text, client=""):
+    """Start answering in the background. One question at a time per person. `client` is the asker's
+    own tag for the question, echoed in the stream's first event."""
     text = text.strip()[:4000]   # as steps() saves it
     with _jobs_lock:
         j = _jobs.get(who)
         if j is not None and not j.done:
             if time.time() - j.t0 < STUCK_AFTER:
                 raise AskError("Still answering your last question. Wait for it, then ask again.")
+            j.abandoned = True
             j.push({"t": "error", "text": "That took too long and was given up on. Ask again."})
-        j = _jobs[who] = _Job(who, text)
+        j = _jobs[who] = _Job(who, text, client)
 
     def run():
         conn = None
         try:
             conn = db.connect()
-            for kind, value in steps(conn, who, text):
+            for kind, value in steps(conn, who, text, stop=lambda: j.abandoned):
+                if j.abandoned:
+                    break
                 if kind == "delta":  # raw text: the page reveals it smoothly and formats it as it goes
                     j.push({"t": "delta", "text": value})
                 elif kind == "status":
@@ -675,10 +686,10 @@ def _events(gen):
 
 
 @router.post("/ask/stream")
-def send_stream(request: Request, text: str = Form(""), who=Depends(staff)):
+def send_stream(request: Request, text: str = Form(""), client: str = Form(""), who=Depends(staff)):
     """The answer as it's written, as server-sent events (one JSON object per event)."""
     try:
-        job = start(who, text)
+        job = start(who, text, client[:64])
     except AskError as e:
         return _events(iter([_sse({"t": "error", "text": str(e)})]))
     return _events(job.follow())

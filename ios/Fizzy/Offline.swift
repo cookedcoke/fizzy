@@ -13,8 +13,12 @@ struct Pending: Codable, Identifiable {
     let form: [[String]]          // [name, value] pairs, in order
     let files: [File]
     let created: Date
+    var host: String?             // which Fizzy it's for (the address can point at a test server)
+    var staff: String?            // who saved it: Fizzy records whoever is signed in when it's sent
     var problem: String?          // the server said no: needs changing on the website, or deleting
     var needsPasscode = false
+    var lastError: String?        // couldn't be sent last time for a reason other than no signal
+    var lastTry: Date?
 }
 
 @Observable
@@ -24,6 +28,7 @@ final class OfflineQueue {
 
     private(set) var items: [Pending] = []
     private(set) var sending = false
+    private(set) var sendingID: UUID?   // the one on its way right now
     var lastSent: String?
 
     private let dir: URL = {
@@ -52,57 +57,86 @@ final class OfflineQueue {
         }
     }
 
-    private func save() {
-        if let data = try? JSONEncoder().encode(items) { try? data.write(to: listFile, options: .atomic) }
+    private func save() -> Bool {
+        guard let data = try? JSONEncoder().encode(items) else { return false }
+        do { try data.write(to: listFile, options: .atomic) } catch { return false }
+        return true
     }
 
-    func add(title: String, path: String, form: Params, files: [FilePart]) {
-        let stored = files.map { f -> Pending.File in
+    /// Keeps a change on the phone. False if it couldn't be written: then it isn't saved anywhere.
+    func add(title: String, path: String, form: Params, files: [FilePart]) -> Bool {
+        var stored: [Pending.File] = []
+        for f in files {
             let name = UUID().uuidString
-            try? f.data.write(to: dir.appendingPathComponent(name), options: .atomic)
-            return Pending.File(field: f.field, filename: f.filename, mime: f.mime, stored: name)
+            do { try f.data.write(to: dir.appendingPathComponent(name), options: .atomic) } catch { return false }
+            stored.append(Pending.File(field: f.field, filename: f.filename, mime: f.mime, stored: name))
         }
-        items.append(Pending(title: title, path: path, form: form.map { [$0.0, $0.1] }, files: stored, created: Date()))
-        save()
+        items.append(Pending(title: title, path: path, form: form.map { [$0.0, $0.1] }, files: stored, created: Date(),
+                             host: API.shared.baseURL.host, staff: AppModel.shared.staff))
+        return save()
     }
 
     func remove(_ p: Pending) {
         for f in p.files { try? FileManager.default.removeItem(at: dir.appendingPathComponent(f.stored)) }
         items.removeAll { $0.id == p.id }
-        save()
+        _ = save()
     }
 
     /// Sends what's waiting, oldest first. Stops at the first one that can't go yet, so they
-    /// arrive in order. `asking` is true when someone tapped Send: then a passcode is asked for.
+    /// arrive in order. `asking` is true when someone tapped Send: then a passcode is asked for,
+    /// and something saved by someone else goes too (as whoever is signed in now).
     func send(asking: Bool = false) async {
         guard !sending, !items.isEmpty else { return }
         sending = true
-        defer { sending = false }
-        for p in items where p.problem == nil && (asking || !p.needsPasscode) {
-            let files = p.files.compactMap { f -> FilePart? in
-                guard let data = try? Data(contentsOf: dir.appendingPathComponent(f.stored)) else { return nil }
-                return FilePart(field: f.field, filename: f.filename, mime: f.mime, data: data)
+        defer { sending = false; sendingID = nil }
+        let host = API.shared.baseURL.host
+        let who = AppModel.shared.staff
+        for id in items.map(\.id) {
+            guard let p = items.first(where: { $0.id == id }), p.problem == nil else { continue }   // deleted meanwhile
+            if let h = p.host, h != host { continue }                                         // saved for another Fizzy
+            if !asking {
+                if p.needsPasscode { continue }
+                if let s = p.staff, s != who { continue }                                      // theirs to send, or a tap
+                if let t = p.lastTry, p.lastError != nil, Date().timeIntervalSince(t) < 120 { continue }   // give it a couple of minutes
             }
+            var files: [FilePart] = []
+            var missing = false
+            for f in p.files {
+                guard let data = try? Data(contentsOf: dir.appendingPathComponent(f.stored)) else { missing = true; break }
+                files.append(FilePart(field: f.field, filename: f.filename, mime: f.mime, data: data))
+            }
+            if missing { update(id) { $0.problem = "Its receipt photo is missing from this phone." }; continue }
             let form: Params = p.form.map { ($0[0], $0[1]) }
+            sendingID = id
             do {
                 if asking {
                     try await AppModel.shared.call { try await API.shared.post(p.path, form, files: files) }
                 } else {
                     try await API.shared.post(p.path, form, files: files)
                 }
-                // The post answers with a redirect; the message it left says whether it worked.
-                let page = try await API.shared.get("money")
+                // It's in (a redirect). The message it left says whether Fizzy took it or said no. If that can't
+                // be read yet, it stays until it can: sending it again is safe (a restock has its own id).
+                let page: J
+                do { page = try await API.shared.get("money") } catch { update(id) { $0.lastTry = Date() }; return }
+                guard items.contains(where: { $0.id == id }) else { continue }   // deleted while on its way: it's in anyway
                 if page.flash_kind.string == "bad", let m = page.flash.optString {
-                    update(p.id) { $0.problem = m }
+                    update(id) { $0.problem = m }
                     continue
                 }
                 lastSent = "\(p.title) sent."
                 remove(p)
             } catch APIError.passcode {
-                update(p.id) { $0.needsPasscode = true }
+                update(id) { $0.needsPasscode = true }
                 return
+            } catch APIError.cancelled {   // the passcode prompt was put away: nothing wrong, stop here
+                update(id) { $0.needsPasscode = true }
+                return
+            } catch APIError.signedOut {
+                return
+            } catch where isOffline(error) {
+                return   // still no signal: try again later
             } catch {
-                return   // still no signal (or signed out): try again later
+                update(id) { $0.lastError = error.localizedDescription; $0.lastTry = Date() }   // Fizzy had a problem: say so, try later
             }
         }
     }
@@ -110,7 +144,7 @@ final class OfflineQueue {
     private func update(_ id: UUID, _ change: (inout Pending) -> Void) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         change(&items[i])
-        save()
+        _ = save()
     }
 }
 

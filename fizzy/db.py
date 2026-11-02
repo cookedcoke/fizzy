@@ -249,6 +249,13 @@ CREATE TABLE IF NOT EXISTS restocks (
     created_at TEXT NOT NULL
 );
 
+-- Restocks deleted on purpose, by the id the phone gave them: the phone sends a restock again when it
+-- never heard back, and a deleted one mustn't come back that way.
+CREATE TABLE IF NOT EXISTS restock_tombstones (
+    client_id TEXT PRIMARY KEY,
+    deleted_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS restock_items (
     id INTEGER PRIMARY KEY,
     restock_id INTEGER NOT NULL REFERENCES restocks(id),
