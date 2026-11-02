@@ -22,6 +22,8 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Fizzy/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Fizzy
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO   # HTTPS only, which is exempt
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.business
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "To save a receipt photo from Fizzy to your photos."
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "To reach a test Fizzy server on the local network, if you set one in This app."
