@@ -15,6 +15,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Fizzy">
 <link rel="stylesheet" href="/static/style.css?v={{ V }}">
+{# No ?v here: style.css asks for the font by its plain URL (as the student site does), and a preload only helps if the URLs match. #}
+<link rel="preload" href="/static/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
 <script>try { if (sessionStorage.getItem("fizzy-autorefresh-y")) { document.documentElement.classList.add("quiet");  /* the dashboard's own refresh: no animations */
 } } catch (e) {}</script>
 </head>

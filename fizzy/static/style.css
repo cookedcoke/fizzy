@@ -1,5 +1,14 @@
 /* Fizzy - industrial console. Neutral surfaces, hairline borders, one accent (brand red)
    reserved for the logo, the current page, and things that need attention. */
+/* Display face (the student site's Bricolage Grotesque, OFL - see bricolage-OFL.txt): only for the
+   few things you read at a glance - page titles, the big numbers, the counter answer, the wordmark.
+   Everything you work in (tables, forms, buttons, nav, section labels) stays system-ui. */
+@font-face { font-family: "Bricolage"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url(bricolage-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD }
+@font-face { font-family: "Bricolage"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url(bricolage-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF }
 :root {
   --red: #FE0001; --red-ink: #B30000; --red-wash: #FFF0F0;
   --ink: #15171B; --fg: #1F2328; --muted: #5F6672; --faint: var(--muted);
@@ -12,12 +21,19 @@
   color-scheme: light;
   --r: 4px; --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --display: "Bricolage", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Depth: cards sit a hair off the page; buttons get a hairline underside so they read as pressable. */
+  --r-card: 6px;
+  --shadow-card: 0 1px 2px rgba(21, 23, 27, .05);
+  --shadow-btn: inset 0 -1px 0 rgba(21, 23, 27, .07);
+  --shadow-btn-primary: inset 0 1px 0 rgba(255, 255, 255, .1);
 }
 * { box-sizing: border-box }
 html { -webkit-text-size-adjust: 100% }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 14px/1.5 var(--sans);
   font-variant-numeric: tabular-nums;
 }
 a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px }
@@ -630,6 +646,9 @@ html { -webkit-tap-highlight-color: transparent }
     --on-ink: #15171B; --ink-hover: #FFFFFF; --header: #0B0C0E;
     --admin: #B596F0; --admin-line: #4A3A6E; --admin-wash: #221B33;
     --ghost: #646A73; --ring: rgba(232, 234, 237, .28);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, .28);
+    --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, .04);
+    --shadow-btn-primary: inset 0 -1px 0 rgba(0, 0, 0, .14);
   }
   dialog { background: var(--surface); color: var(--fg) }
   .hsearch input { background-color: #22252B }
@@ -767,3 +786,25 @@ html.quiet .bars .pair i, html.quiet .flash { animation: none }
 .tab-limit .bands { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s3) }
 .tab-limit .bands button { flex: 1 1 0; min-width: 72px; font-variant-numeric: tabular-nums }
 .tab-limit .bands button.on, .tab-limit .bands button.on:hover { background: var(--ink); border-color: var(--ink); color: var(--on-ink); cursor: default; opacity: 1; transform: none }
+
+/* ---- type and depth ---- */
+/* Display face: page titles, the big numbers, the counter answer, the wordmark. Nothing else. */
+h1 { font-family: var(--display); font-size: 23px; font-weight: 700; line-height: 1.2; letter-spacing: -.02em }
+h1 .tag { font-family: var(--sans); letter-spacing: 0 }  /* status tags beside a name stay console type */
+.bubble h1 { font-family: var(--sans); font-weight: 650; letter-spacing: 0; line-height: 1.5 }  /* markdown in Ask answers */
+header .brand span { font-family: var(--display); font-size: 17px; font-weight: 750; letter-spacing: -.015em }
+.stat .v { font-family: var(--display); font-size: 26px; font-weight: 650; line-height: 1.2; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 3px }
+.stat .v.sm { font-family: var(--sans); font-size: 15px; font-weight: 600; letter-spacing: 0; line-height: 1.25; padding-top: 7px; margin-top: 2px }
+.verdict b { font-family: var(--display); font-size: 19px; font-weight: 700; line-height: 1.25; letter-spacing: -.015em; font-variant-numeric: tabular-nums }
+.score-num { font-family: var(--display); font-size: 23px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums }
+.login .mark b { font-family: var(--display); font-size: 26px; font-weight: 750; letter-spacing: -.025em; line-height: 1.05 }
+/* Depth: a slightly softer corner and a hairline lift on the cards; borders stay. */
+.panel, .stats, .verdict, .todo, .offer, .claim, .flash, .err, .notice, .jobbar { border-radius: var(--r-card) }
+.panel, .stats, .verdict, .todo, .offer, .claim { box-shadow: var(--shadow-card) }
+.panel.attn { box-shadow: inset 4px 0 0 var(--ok), var(--shadow-card) }
+form.panel.attn:has(.red), .panel.attn.bad { box-shadow: inset 4px 0 0 var(--red), var(--shadow-card) }
+.panel.attn.warn { box-shadow: inset 4px 0 0 var(--warn-mark), var(--shadow-card) }
+button, .btn { box-shadow: var(--shadow-btn) }
+button.primary, .btn.primary { box-shadow: var(--shadow-btn-primary) }
+.lines .rm, header .who button, .keys-btn { box-shadow: none }
+@media print { .panel, .stats, .verdict, .todo, .offer, .claim { box-shadow: none } }
