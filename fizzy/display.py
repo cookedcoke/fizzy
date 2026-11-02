@@ -62,14 +62,16 @@ async def save_message(request: Request, who=Depends(staff), conn=Depends(get_co
 def idle(who=Depends(staff), conn=Depends(get_conn)):
     """What's on: shown between customers."""
     start, end = stats.day_bounds(stats.today())
-    board, _ = portal.leaderboard(conn, since=portal.month_start(), limit=3)
+    board, _ = portal.leaderboard(conn, since=portal.month_start(), limit=3, ties=True)   # everyone tied for the top 3 places
+    more = max(0, len(board) - 12)
+    board = board[:12]
     hide = hidden_items(conn)
     menu = [m for m in menu_items(conn) if m["item_id"] not in hide][:12]  # the item, not "Coke (Mini)"
     return JSONResponse({
         "events": [{"name": e["name"], "multiplier": e["multiplier"]} for e in events.on(conn)],
         "soon": _soon(conn),
         "rewards": [{"name": r["name"], "points": r["points_cost"]} for r in rewards.active(conn)][:6],
-        "leaders": [{"rank": b["rank"], "name": b["name"], "points": b["points"]} for b in board],
+        "leaders": [{"rank": b["rank"], "name": b["name"], "points": b["points"]} for b in board], "leaders_more": more,
         "popular": [i["name"] for i in stats.top_items(stats.checkouts(conn, start, end), 3)],
         "menu": [{"name": m["item_name"], "price": money(m["price"])} for m in menu],
         "message": db.get_setting(conn, "display_message", "") or "",

@@ -58,6 +58,10 @@ def _poller():
                 square.sync(conn)
             events.reconcile(conn)
             conn.commit()
+            swept = db.get_setting(conn, "badges_swept_at")
+            if not swept or datetime.now(timezone.utc) - logic.parse_ts(swept) >= timedelta(hours=1):
+                badges.sweep(conn)   # badges earned but not yet paid (e.g. a sale assigned later)
+                conn.commit()
             if config.BACKUP_DIR:
                 last_b = db.get_setting(conn, "last_backup")
                 tried = db.get_setting(conn, "backup_last_attempt")

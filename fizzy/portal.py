@@ -371,10 +371,12 @@ def short_name(name):
     return parts[0] if len(parts) < 2 else f"{parts[0]} {parts[-1][0].upper()}."
 
 
-def leaderboard(conn, since=None, limit=10, me=None):
+def leaderboard(conn, since=None, limit=10, me=None, ties=False):
+    """Top of the month: points from buying (and double points days), not badges. ties=True shows
+    everyone who shares a place inside the top `limit` places, so nobody tied is left off."""
     rows = conn.execute(
         "SELECT c.id, c.name, SUM(p.delta) AS pts FROM points_ledger p JOIN customers c ON c.id = p.customer_id "
-        "WHERE p.reason NOT IN ('redeem', 'redeem_undo') AND c.archived_at IS NULL AND c.merged_into IS NULL "
+        "WHERE p.reason NOT IN ('redeem', 'redeem_undo', 'badge', 'rule') AND c.archived_at IS NULL AND c.merged_into IS NULL "
         "AND c.passcode_enc IS NOT NULL AND c.kind IS NOT 'test' "
         "AND p.created_at >= ? GROUP BY c.id HAVING pts > 0 ORDER BY pts DESC, MIN(p.created_at)",
         (since or "",)).fetchall()
@@ -384,7 +386,7 @@ def leaderboard(conn, since=None, limit=10, me=None):
             rank, prev = i, r["pts"]
         if r["id"] == me:
             my_rank = {"rank": rank, "points": r["pts"], "of": len(rows)}
-        if i <= limit:
+        if i <= limit or (ties and rank <= limit):
             board.append({"rank": rank, "name": short_name(r["name"]), "points": r["pts"], "me": r["id"] == me})
     return board, my_rank
 

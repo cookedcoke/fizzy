@@ -105,6 +105,17 @@ def award(conn, cid):
     return new + rules.award(conn, cid)
 
 
+def sweep(conn):
+    """Pay every earned badge for everyone who's bought anything, so points never wait for someone
+    to open a page. Cheap enough to run every hour. Returns how many badges were paid."""
+    n = 0
+    for (cid,) in conn.execute("SELECT DISTINCT customer_id FROM points_ledger WHERE reason = 'purchase' "
+                               "UNION SELECT DISTINCT customer_id FROM tab_charges").fetchall():
+        n += len(award(conn, cid))
+    set_setting(conn, "badges_swept_at", now_iso())
+    return n
+
+
 def baseline(conn):
     """The first time badges pay points: badges people already had are marked as paid with 0 points,
     so switching it on doesn't suddenly hand out a pile of free rewards. Runs once."""
