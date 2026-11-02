@@ -456,9 +456,9 @@ async def save_permissions(request: Request, who=Depends(staff), conn=Depends(ge
         try:
             n = int(float(str(form.get(k, "")).replace(",", "").replace("$", "")))
         except ValueError:
-            return back(request, "/settings#permissions", "The limits must be whole numbers.")
+            return back(request, "/settings#permissions", "The limits must be whole numbers.", "bad")
         if not 0 <= n <= top:
-            return back(request, "/settings#permissions", f"Keep that limit between 0 and {top:,}.")
+            return back(request, "/settings#permissions", f"Keep that limit between 0 and {top:,}.", "bad")
         perms[k] = n
     db.set_setting(conn, "permissions", json.dumps(perms))
     db.audit(conn, who, "permissions", None, json.dumps(perms))

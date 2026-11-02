@@ -70,6 +70,11 @@ TOOLS = [
     ]),
 ]
 
+# Tools that answer with a page (a report, the raffle draw, the raw Square payment) rather than a redirect
+# back to /tools. Their forms load the classic way (data-turbo="false"): Turbo only draws a form's answer
+# when it's a redirect, so these would look like nothing happened (and a second click draws the raffle again).
+PAGE_TOOLS = {"takings", "chase", "balances", "leaderboard", "raffle", "integrity", "find_payment"}
+
 EXPORTS = {
     "customers": "SELECT id, name, email, square_customer_id, tab_decision, tab_decision_note, created_at, archived_at FROM customers",
     "points": "SELECT p.*, c.name FROM points_ledger p JOIN customers c ON c.id = p.customer_id",
@@ -180,8 +185,8 @@ def _nice_day(iso):
         return iso
 
 
-def done(request, tool, msg):
-    return back(request, f"/tools#{tool}", msg)
+def done(request, tool, msg, kind="ok"):
+    return back(request, f"/tools#{tool}", msg, kind)
 
 
 def tool_names():
@@ -198,7 +203,7 @@ def tools_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
     week_ago = (datetime.now(config.TZ).date() - timedelta(days=7)).isoformat()
     return render(request, "tools.html", tools=TOOLS, people=[p for p in people if not p["archived_at"]],
                   archived=archived, cfg=logic.settings(conn), notice=db.get_setting(conn, "notice", ""),
-                  exports=list(EXPORTS), today=today, week_ago=week_ago, square_on=bool(config.SQUARE_TOKEN),
+                  exports=list(EXPORTS), page_tools=PAGE_TOOLS, today=today, week_ago=week_ago, square_on=bool(config.SQUARE_TOKEN),
                   history_before=local(db.get_setting(conn, "history_before", ""), "%Y-%m-%d") if db.get_setting(conn, "history_before", "") else "")
 
 
@@ -220,7 +225,7 @@ async def run_tool(tool: str, request: Request, who=Depends(staff), conn=Depends
         return result
     except (ToolError, ValueError) as e:  # ValueError: rule checks in logic.py (e.g. a 0-point change)
         conn.rollback()
-        return done(request, tool, f"{tool_names()[tool]}: {e}")
+        return done(request, tool, f"{tool_names()[tool]}: {e}", "bad")
 
 
 @router.get("/export/{name}.csv")
@@ -634,7 +639,7 @@ def h_raffle(request, conn, who, form):
 def h_sync_now(request, conn, who, form):
     if not config.SQUARE_TOKEN:
         raise ToolError("Square isn't configured (SQUARE_ACCESS_TOKEN).")
-    return _background(request, "sync_now", "Syncing with Square", lambda c: square.describe_sync(square.sync(c, wait=True, catalog=True)), who)
+    return _background(request, "sync_now", "Syncing with Square", lambda c: square.sync_job(square.sync(c, wait=True, catalog=True)), who)
 
 
 def h_resync(request, conn, who, form):
@@ -644,7 +649,7 @@ def h_resync(request, conn, who, form):
     db.audit(conn, who, "square_resync", None, f"from {form.get('start')}")
     conn.commit()
     return _background(request, "resync", f"Re-syncing from {form['start']}",
-                       lambda c: f"Re-sync from {form['start']}: " + square.describe_sync(square.sync(c, wait=True)), who)
+                       lambda c: square.sync_job(square.sync(c, wait=True), f"Re-sync from {form['start']}: "), who)
 
 
 def _background(request, tool, name, fn, who):
@@ -666,7 +671,7 @@ def h_history(request, conn, who, form):
     db.audit(conn, who, "square_history", None, f"from {form.get('start')}, launch {form.get('launch')}")
     conn.commit()
     return _background(request, "history", f"Importing sales history from {form['start']}",
-                       lambda c: f"History imported (sales before {form['launch']} earn nothing): " + square.describe_sync(square.sync(c, wait=600)), who)
+                       lambda c: square.sync_job(square.sync(c, wait=600), f"History imported (sales before {form['launch']} earn nothing): "), who)
 
 
 def h_find_payment(request, conn, who, form):
@@ -712,6 +717,7 @@ def h_sign_out_all(request, conn, who, form):
     _confirm(form, "SIGN OUT")
     db.set_setting(conn, "session_gen", secrets.token_hex(4))
     db.audit(conn, who, "sign_out_all")
+    request.session.clear()  # this device too, now: the sign-in page shouldn't still show who was on
     return RedirectResponse("/login", status_code=303)
 
 

@@ -16,7 +16,7 @@ from datetime import date, timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from markupsafe import Markup, escape
 
 from . import config, db, events, rewards, rules, stats
@@ -561,12 +561,12 @@ def page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
 def send(request: Request, text: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
     """The plain form (no script): waits for the whole answer."""
     if pending(who):
-        return back(request, "/ask#end", "Still answering your last question. Wait for it, then ask again.", "bad")
+        return back(request, "/ask#end", "Still answering your last question. Wait for it, then ask again.", "bad", jump=False)
     try:
         ask(conn, who, text)
     except AskError as e:
-        return back(request, "/ask#end", str(e), "bad")
-    return RedirectResponse("/ask#end", status_code=303)
+        return back(request, "/ask#end", str(e), "bad", jump=False)
+    return back(request, "/ask#end", jump=False)
 
 
 # ---- answering in the background ------------------------------------------------------------------------
@@ -729,16 +729,16 @@ def do_it(request: Request, pid: int, who=Depends(staff), conn=Depends(get_conn)
         summary = apply(conn, pid, who)
     except (AskError, rules.RuleError, KeyError, ValueError) as e:
         conn.rollback()
-        return back(request, "/ask#end", f"Couldn't do that: {e}", "bad")
+        return back(request, "/ask#end", f"Couldn't do that: {e}", "bad", jump=False)
     conn.commit()
-    return back(request, "/ask#end", f"Done: {summary}")
+    return back(request, "/ask#end", f"Done: {summary}", jump=False)
 
 
 @router.post("/ask/dismiss/{pid:int}")
 def dismiss(request: Request, pid: int, who=Depends(staff), conn=Depends(get_conn)):
     conn.execute("UPDATE ask_proposals SET status = 'dismissed' WHERE id = ? AND status = 'pending'", (pid,))
     conn.commit()
-    return RedirectResponse("/ask#end", status_code=303)
+    return back(request, "/ask#end", jump=False)
 
 
 # ---- the key, from Settings ---------------------------------------------------------------------------------

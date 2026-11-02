@@ -1060,7 +1060,9 @@ FIZZY_PASSWORD=dev FIZZY_SECRET_KEY=dev FIZZY_SECURE_COOKIES=0 uvicorn fizzy.app
 
 **Stack:** Python 3.13, FastAPI, Jinja templates, SQLite (WAL mode). One process with a
 background thread for Square polling and backups; server-rendered pages; two small
-dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
+dependency-free scripts plus [Turbo](https://turbo.hotwired.dev) 8 (Drive only; vendored as
+`fizzy/static/turbo.js`, MIT) so the staff site swaps pages in place instead of reloading them;
+no build step. Runs comfortably on a Raspberry Pi.
 
 | File | What's in it |
 |---|---|
@@ -1069,6 +1071,7 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
 | `fizzy/fuzzy.py` | Name matching (fzf scoring + typo tolerance) |
 | `fizzy/static/fuzzy.js` | Browser copy of `fuzzy.py`. **Change both together**; a test compares them |
 | `fizzy/static/app.js` | In-browser search, card scans, confirm and passcode boxes, the New sale pop-up |
+| `fizzy/static/turbo.js` | Turbo 8.0.12, unmodified (MIT, © 37signals). Staff site only, not the student site or the customer display |
 | `fizzy/tools.py` | The Tools page: each tool is a `TOOLS` entry plus an `h_<id>` handler |
 | `fizzy/app.py` | Routes, login, background jobs |
 | `fizzy/customers.py` | CSV import, search, Square export |
@@ -1084,6 +1087,23 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
 - Anything that changes data writes to `audit_log`.
 - No keyboard shortcuts (removed: nobody used them). A button that needs a second look gets
   `data-confirm="Question?"`, and Fizzy asks in its own box first.
+
+**Writing page scripts** (staff site). Turbo keeps the browser tab's `window`, `document` and the
+scripts in `<head>` from page to page; only `<body>` is swapped. So:
+- Per-page code goes in `init()` in `app.js`, which runs on the first load and after every Turbo
+  page change. Anything there that outlives the page's own elements (a timer, a listener on `window`
+  or `document`) must use `listen(target, type, fn)` / `every(fn, ms)` / `later(fn)`, which are
+  undone before the next page is drawn. Plain `addEventListener`/`setInterval` there leaks: the
+  handler keeps running on every later page.
+- An inline `<script>` in a page runs each time that page is shown. It may bind to that page's own
+  elements freely; anything on `window`/`document`, or a timer, needs removing on `turbo:before-render`.
+- A form whose POST answers with a page (not a redirect) needs `data-turbo="false"` (Turbo only
+  draws redirects and errors), as does any download that isn't a `.csv`. Redirect with `back()`:
+  it keeps a `#section` anchor, which Turbo would otherwise lose.
+- Turbo's page cache is off for every page (`base.html`): Back and Forward ask Fizzy again, as they did
+  before Turbo, since any page can show points, tabs or who's on the counter that changed elsewhere.
+- A control that sends its form as soon as it changes keeps the saved value in `data-was`; if the
+  passcode box for that form is cancelled, `app.js` puts it back.
 
 ---
 

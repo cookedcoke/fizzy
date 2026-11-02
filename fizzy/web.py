@@ -4,6 +4,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -93,17 +94,25 @@ def session_gen(conn):
 
 
 
+def _signed_in(request):
+    """A session that still counts: not from before "sign everyone out" or a password change, and for
+    someone still on FIZZY_STAFF."""
+    if not request.session.get("auth") or request.session.get("staff") not in config.STAFF_NAMES:
+        return False
+    conn = db.connect()
+    try:
+        return request.session.get("gen") == session_gen(conn)
+    finally:
+        conn.close()
+
+
 def staff(request: Request):
     name = request.session.get("staff")
     if not request.session.get("auth") or name not in config.STAFF_NAMES:  # also anyone taken off FIZZY_STAFF
         raise LoginRequired()
-    conn = db.connect()
-    try:
-        if request.session.get("gen") != session_gen(conn):
-            request.session.clear()
-            raise LoginRequired()
-    finally:
-        conn.close()
+    if not _signed_in(request):  # signed out by "sign everyone out", or a password change
+        request.session.clear()
+        raise LoginRequired()
     return name
 
 
@@ -150,12 +159,26 @@ def _plain(v):
     return str(v)
 
 
+def take(request, key, default=None):
+    """A one-time value from the session (a message, a new device link): read and forgotten.
+
+    Except for a Turbo fetch from a tab still running the scripts from before an update (app.js sends
+    its ?v=): Turbo throws that page away and loads it again for real (data-turbo-track), so the value
+    is left for that load."""
+    v = request.headers.get("x-fizzy-v")
+    return (request.session.get if v and v != templates.env.globals["V"] else request.session.pop)(key, default)
+
+
 def render(request, name, **ctx):
-    ctx.setdefault("staff", request.session.get("staff"))
+    signed_in = _signed_in(request)
+    ctx.setdefault("staff", request.session.get("staff") if signed_in else None)
     ctx["staff_names"] = config.STAFF_NAMES
-    ctx["flash"] = request.session.pop("flash", None)
-    ctx["flash_kind"] = request.session.pop("flash_kind", "ok")
-    if request.session.get("auth"):
+    ctx["flash"] = take(request, "flash")
+    ctx["flash_kind"] = take(request, "flash_kind", "ok")
+    jump = take(request, "jump")  # set by back(): the section to land on (see there)
+    if jump and jump[0] == request.url.path:
+        ctx["jump"] = jump[1]
+    if signed_in:
         from . import pin
         conn = db.connect()
         try:
@@ -171,13 +194,26 @@ def render(request, name, **ctx):
         return JSONResponse(_plain(ctx), headers={"Cache-Control": "no-store", "Vary": "X-Fizzy-Format"})
     response = templates.TemplateResponse(request, name, ctx)
     response.headers["Vary"] = "X-Fizzy-Format"  # same address, HTML or JSON: never cache one for the other
+    # Says "this page is from Fizzy itself". An error page without it came from Cloudflare (the home PC
+    # is down), and the page script then loads it for real so the service worker can show its own page.
+    response.headers.setdefault("X-Fizzy", "page")
     return response
 
 
-def back(request, url, msg=None, kind="ok"):
-    """Redirect with a message for the next page. kind "bad" shows it as a problem."""
+def back(request, url, msg=None, kind="ok", jump=True):
+    """Redirect with a message for the next page. kind "bad" shows it as a problem.
+
+    A "#section" on the URL is also kept in the session and drawn as <body data-jump>: pages change
+    without a full load (Turbo), and a redirect followed that way loses the # part, so the page
+    script scrolls to (and opens) that section itself, with the message next to it. jump=False for a
+    page that always loads in full (Ask), where the browser keeps the # itself."""
     if msg:
         request.session["flash"], request.session["flash_kind"] = msg, kind
+    path, _, section = url.partition("#")
+    if section and jump:
+        request.session["jump"] = [urlsplit(path).path or "/", section]
+    else:
+        request.session.pop("jump", None)
     return RedirectResponse(url, status_code=303)
 
 

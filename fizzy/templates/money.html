@@ -24,7 +24,7 @@
         <td class="when">{{ r.day|ymd('%a %-d %b') }}</td><td>{{ r.shop or '' }}{% if r.note %}<br><span class="muted small">{{ r.note }}</span>{% endif %}</td>
         <td class="small">{% for it in items.get(r.id, []) %}{{ it.qty }}× {{ it.name }} <span class="muted">({{ it.cost_cents|money }})</span>{{ '<br>'|safe if not loop.last }}{% endfor %}</td>
         <td class="n">{{ r.total_cents|money }}</td>
-        <td class="n">{% if r.receipt %}<a class="btn sm" href="/money/receipts/{{ r.receipt }}" target="_blank" rel="noopener">Receipt</a>{% endif %}
+        <td class="n">{% if r.receipt %}<a class="btn sm" href="/money/receipts/{{ r.receipt }}" data-turbo="false" target="_blank" rel="noopener">Receipt</a>{% endif %}
           <a class="btn sm" href="/money?start={{ start }}&end={{ end }}&edit={{ r.id }}#restock">Edit</a>
           <form class="inline" method="post" action="/money/restock/{{ r.id }}/delete"><button class="sm danger" data-confirm="Delete this restock ({{ r.total_cents|money }})?">Delete</button></form></td></tr>{% endfor %}
     </table></div>{% endif %}

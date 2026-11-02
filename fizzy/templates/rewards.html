@@ -33,7 +33,7 @@
       <div class="actions" style="margin:0;flex:none">
         <form class="inline" method="post" action="/rules/{{ r.id }}/{{ 'resume' if r.paused else 'pause' }}"><button class="sm">{{ 'Restart' if r.paused else 'Pause' }}</button></form>
         <form class="inline" method="post" action="/rules/{{ r.id }}/delete"><button class="sm danger" data-confirm="Delete {{ r.name }}? Points already given stay.">Delete</button></form></div>
-    </div>{% else %}<p class="empty">None yet. Make one in <a href="/ask">Ask</a>.</p>{% endfor %}
+    </div>{% else %}<p class="empty">None yet. Make one in <a href="/ask" data-turbo="false">Ask</a>.</p>{% endfor %}
   </div>
   {% if events %}<div class="panel" id="events"><h2>Double points days <span class="count">{{ events|length }}</span></h2>
     {% if events %}<div class="scroll"><table>

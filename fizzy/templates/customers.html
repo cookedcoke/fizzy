@@ -2,8 +2,8 @@
 {% block body %}
 <div class="pagehead"><div><h1>Customers</h1><div class="meta">{{ '{:,}'.format(count) }} active</div></div>
   <div class="actions" style="margin:0">
-    <a class="btn" href="/export/square-customers.csv?only=new" title="A file to add the people Square doesn't have yet (Square Dashboard → Customers → Import)">Export new people for Square ({{ not_in_square }})</a>
-    <a class="btn" href="/export/square-customers.csv" title="Everyone. Only for the first import - doing it again makes duplicates in Square"
+    <a class="btn" href="/export/square-customers.csv?only=new" data-turbo="false" title="A file to add the people Square doesn't have yet (Square Dashboard → Customers → Import)">Export new people for Square ({{ not_in_square }})</a>
+    <a class="btn" href="/export/square-customers.csv" data-turbo="false" title="Everyone. Only for the first import - doing it again makes duplicates in Square"
       data-confirm="This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them. Download everyone anyway?">Export everyone</a></div></div>
 {% include "_search.html" %}
 {% if q and not results %}<p class="empty">No one matches “{{ q }}”.</p>{% endif %}

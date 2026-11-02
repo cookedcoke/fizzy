@@ -1,4 +1,7 @@
 {% extends "base.html" %}{% block title %}Ask{% endblock %}
+{# Ask always loads the classic way, in and out: its answer stream and scrolling belong to this one page. #}
+{% block head %}<meta name="turbo-visit-control" content="reload">{% endblock %}
+{% block body_attrs %} data-turbo="false"{% endblock %}
 {% block body %}
 <div class="ask-page">
 <div class="ask-head">

@@ -14,13 +14,26 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Fizzy">
-<link rel="stylesheet" href="/static/style.css?v={{ V }}">
+<link rel="stylesheet" href="/static/style.css?v={{ V }}" data-turbo-track="reload">
 {# No ?v here: style.css asks for the font by its plain URL (as the student site does), and a preload only helps if the URLs match. #}
 <link rel="preload" href="/static/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
-<script>try { if (sessionStorage.getItem("fizzy-autorefresh-y")) { document.documentElement.classList.add("quiet");  /* the dashboard's own refresh: no animations */
-} } catch (e) {}</script>
+{# Turbo Drive: links and forms swap the page in place instead of loading it from scratch. These run once
+   per tab, not on every page (data-turbo-eval="false"), and any change to them (an update) means one
+   full reload (data-turbo-track="reload"). Page code goes in app.js init(); see README, "Writing page scripts". #}
+<script src="/static/turbo.js?v={{ V }}" defer data-turbo-track="reload" data-turbo-eval="false"></script>
+<script src="/static/fuzzy.js?v={{ V }}" defer data-turbo-track="reload" data-turbo-eval="false"></script>
+<script src="/static/app.js?v={{ V }}" defer data-turbo-track="reload" data-turbo-eval="false"></script>
+<script src="/static/passkey.js?v={{ V }}" defer data-turbo-track="reload" data-turbo-eval="false"></script>
+{# No fetching on hover: some links do things (a Square sync, a backup) or sit behind the passcode. #}
+<meta name="turbo-prefetch" content="false">
+{# No page cache either: Back and Forward ask Fizzy again, as without Turbo. Every page shows points,
+   tabs or who's on the counter, and any of them can have changed on another screen since. #}
+<meta name="turbo-cache-control" content="no-cache">
+<meta name="view-transition" content="same-origin">
+<script>if ("serviceWorker" in navigator) addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });</script>
+{% block head %}{% endblock %}
 </head>
-<body{% if lock_rules %} data-unlocked="{{ unlocked }}" data-unlocked-until="{{ unlocked_until }}"{% endif %}>
+<body{% if lock_rules %} data-unlocked="{{ unlocked }}" data-unlocked-until="{{ unlocked_until }}"{% endif %}{% if jump %} data-jump="{{ jump }}"{% endif %}{% block body_attrs %}{% endblock %}>
 {% if lock_rules %}<script type="application/json" id="lock-rules">{{ lock_rules|tojson }}</script>{% endif %}
 {% if staff %}
 <header>
@@ -28,14 +41,16 @@
   {% set p = request.url.path %}
   <nav>
     {% for href, label in [('/', 'Dashboard'), ('/customers', 'Customers'), ('/transactions', 'Transactions'), ('/square', 'Square'), ('/rewards', 'Rewards'), ('/profit', 'Profit'), ('/money', 'Money'), ('/tools', 'Tools'), ('/ask', 'Ask'), ('/import', 'Import'), ('/settings', 'Settings'), ('/audit', 'Log')] %}
-    <a href="{{ href }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}">{{ label }}</a>
+    <a href="{{ href }}" data-i="{{ loop.index0 }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}"{% if href == '/ask' %} data-turbo="false"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
   <details class="nav-more" hidden><summary>More</summary><div class="nav-menu"></div></details>
   <script>/* Runs before first paint. Wider than a phone: tabs that don't fit go into a "More" menu at the end
      (never the current page's). Phone: the row scrolls, kept on the current tab, edges faded. */
   (function (more) {
-    var n = more.previousElementSibling, menu = more.querySelector(".nav-menu"), links = Array.prototype.slice.call(n.querySelectorAll("a"));
+    // From the menu too, in their first order, in case some are there already.
+    var n = more.previousElementSibling, menu = more.querySelector(".nav-menu"),
+        links = Array.prototype.slice.call(more.parentNode.querySelectorAll("nav a, .nav-menu a")).sort(function (a, b) { return a.dataset.i - b.dataset.i; });
     function fit() {
       var clock = document.querySelector("header .clock");
       links.forEach(function (a) { n.appendChild(a); });
@@ -50,9 +65,16 @@
       }
       more.classList.toggle("on", !!menu.querySelector("a.on"));
     }
+    function close(e) { if (more.open && !more.contains(e.target)) more.open = false; }
+    // Turbo runs this again on every page in the same tab: the last page's listeners go first.
+    if (window.fizzyNavOff) fizzyNavOff();
+    window.fizzyNavOff = function () {
+      removeEventListener("resize", fit); document.removeEventListener("DOMContentLoaded", fit); removeEventListener("load", fit);
+      document.removeEventListener("click", close);
+    };
     fit(); addEventListener("resize", fit); document.addEventListener("DOMContentLoaded", fit); addEventListener("load", fit);
     if (document.fonts) document.fonts.ready.then(fit);
-    document.addEventListener("click", function (e) { if (more.open && !more.contains(e.target)) more.open = false; });
+    document.addEventListener("click", close);
   })(document.currentScript.previousElementSibling);
   </script>
   <script>
@@ -63,6 +85,8 @@
       n.classList.toggle("more-l", n.scrollLeft > 2);
       n.classList.toggle("more-r", n.scrollLeft + n.clientWidth < n.scrollWidth - 2);
     }
+    if (window.fizzyEdgesOff) fizzyEdgesOff();  // as above: one resize listener, not one per page visited
+    window.fizzyEdgesOff = function () { removeEventListener("resize", edges); };
     edges(); n.addEventListener("scroll", edges, { passive: true }); addEventListener("resize", edges);
   })(document.currentScript.previousElementSibling.previousElementSibling.previousElementSibling);
   </script>
@@ -74,11 +98,12 @@
     <time class="clock" data-clock data-tz="{{ TZ }}" aria-label="Current time"></time>
     <form class="inline" method="post" action="/switch">
       <span class="label">On counter</span>
-      <select name="who" onchange="this.form.submit()" aria-label="Staff on counter">
+      {# autocomplete="off": Back to a page that was loaded in full shouldn't bring back who was on the counter then. #}
+      <select name="who" onchange="this.form.submit()" aria-label="Staff on counter" autocomplete="off">
         {% for n in staff_names %}<option {{ 'selected' if n == staff }}>{{ n }}</option>{% endfor %}
       </select>
     </form>
-    <form class="inline" method="post" action="/logout"><button type="submit" title="Sign this device out (no shortcut, on purpose)">Lock</button></form>
+    <form class="inline" method="post" action="/logout" data-turbo="false"><button type="submit" title="Sign this device out (no shortcut, on purpose)">Lock</button></form>
   </div>
 </header>
 {% endif %}
@@ -87,11 +112,7 @@
 {% if staff %}<div class="jobbar" id="jobbar" hidden role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span class="t"></span><button type="button" class="sm" hidden>OK</button></div>{% endif %}
 {% block body %}{% endblock %}
 </main>
-<script src="/static/fuzzy.js?v={{ V }}" defer></script>
 {% if display_msg %}<script type="application/json" id="display-msg">{{ display_msg|tojson }}</script>{% endif %}
-<script src="/static/app.js?v={{ V }}" defer></script>
-<script src="/static/passkey.js?v={{ V }}" defer></script>
-<script>if ("serviceWorker" in navigator) addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -19,8 +19,8 @@
   · <a href="/rewards">Manage</a></div>{% endif %}
 {% set t = sales.today %}<span hidden data-autorefresh="60"></span>
 <div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }}</div></div>
-  <div class="actions" style="margin:0"><a class="btn" href="/money" title="Restocks and payouts - G then M">Money</a>
-    <a class="btn" href="/profit" title="Profit and item costs - G then P">Profit</a>
+  <div class="actions" style="margin:0"><a class="btn" href="/money" title="Restocks and payouts">Money</a>
+    <a class="btn" href="/profit" title="Profit and item costs">Profit</a>
     <a class="btn" href="/tools#takings" title="What came in over any dates">Takings report</a></div></div>
 {% if closed %}{% set l = closed.last %}
 <div class="panel closed-day"><h2>{{ closed.reason }}, so the stall's closed today</h2>

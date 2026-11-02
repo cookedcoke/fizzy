@@ -83,7 +83,7 @@
     <span class="inline-set"><input type="text" name="passcode" placeholder="New passcode" title="4 or more characters" aria-label="New passcode for {{ first }}"
       autocomplete="off" autocapitalize="off" spellcheck="false" minlength="4" maxlength="64" required><button class="sm">Set</button></span></form>{% endif %}
   {% if not c.square_customer_id and c.kind != 'test' %}{% set _ = todos.append(1) %}<div class="todo"><b>Not in Square yet.</b>
-    <span>Their sales won't link by themselves - <a href="/export/square-customers.csv?only=new">get the import file</a>, or claim their sales with <b>Claim sale</b>.</span></div>{% endif %}
+    <span>Their sales won't link by themselves - <a href="/export/square-customers.csv?only=new" data-turbo="false">get the import file</a>, or claim their sales with <b>Claim sale</b>.</span></div>{% endif %}
 </div>
 {% endif %}
 

@@ -17,11 +17,12 @@
 
 {% macro form(id) %}
 {% if id == 'export' %}
-  <p class="row">{% for e in exports %}<a class="btn sm" href="/tools/export/{{ e }}.csv">{{ e.replace('_', ' ') }}</a>{% endfor %}</p>
+  <p class="row">{% for e in exports %}<a class="btn sm" href="/tools/export/{{ e }}.csv" data-turbo="false">{{ e.replace('_', ' ') }}</a>{% endfor %}</p>
 {% elif id == 'download_backup' %}
-  <p><a class="btn sm" href="/tools/backup.db">Download fizzy.db</a></p>
+  <p><a class="btn sm" href="/tools/backup.db" data-turbo="false">Download fizzy.db</a></p>
 {% else %}
-<form method="post" action="/tools/{{ id }}">
+{# Tools that answer with a page of results (not a redirect) load it the classic way. #}
+<form method="post" action="/tools/{{ id }}"{% if id in page_tools %} data-turbo="false"{% endif %}>
 {% if id == 'bulk_points' %}
   <div class="row"><div><label>Points (+ add / − take)<input type="number" name="delta" required></label></div></div>
   {{ note('Reason (required)', True) }}
@@ -114,7 +115,4 @@
 </div>{% endfor %}
 </div>
 {% endblock %}
-{% block scripts %}<script>
-// Re-open the tool you just used (redirects land on /tools#id).
-if (location.hash) { var d = document.querySelector(location.hash); if (d && d.tagName === "DETAILS") d.open = true; }
-</script>{% endblock %}
+{# The tool you just used opens again by itself: redirects land on /tools#id (app.js, jumpTo). #}

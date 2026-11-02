@@ -740,9 +740,25 @@ header .clock.squeezed { display: none !important }
 @keyframes rise { from { opacity: 0; transform: translateY(4px) } }
 @keyframes drop { from { opacity: 0; transform: translateY(-4px) } }
 @keyframes grow { from { transform: scaleY(0) } }
-/* Each page fades in under a header that stays put (the same in every browser and the Mac app) */
-html:not(.quiet) main { animation: page-in .2s var(--ease) both }
+/* Each page fades in under a header that stays put (the same in every browser and the Mac app).
+   That's for full page loads. Pages swapped in place by Turbo cross-fade with a view transition instead
+   (app.js sets html.still then). Fill "backwards", never "both": a transform left on <main> once it has
+   faded in would make it the box that position:fixed things inside it (the New sale pop-up, Ask's
+   typing box) are pinned to, instead of the screen. */
+html:not(.still) main { animation: page-in .2s var(--ease) backwards }
 @keyframes page-in { from { opacity: .45; transform: translateY(3px) } }  /* never fully blank, so no flash of background */
+/* Turbo's view transition (Chrome, Edge, Safari 18+): a short cross-fade; the header holds perfectly still. */
+body > header { view-transition-name: header }
+::view-transition-group(header), ::view-transition-old(header), ::view-transition-new(header) { animation: none }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .16s; animation-timing-function: var(--ease) }
+/* Turbo's loading bar: it shows only when a page takes more than half a second. Turbo puts it up at
+   once (app.js: no delay of its own, as Turbo would skip that for Back and Forward) and it stays hidden
+   here for that half second. It goes as soon as the page is drawn, without Turbo's fade: a fade that
+   started inside the half second would show it then. */
+.turbo-progress-bar { height: 2px; background: var(--red); transition: width .3s ease-out; animation: wait-half .5s }
+@keyframes wait-half { from, to { visibility: hidden } }
+/* Sections landed on (a #link, or after saving) sit below the sticky header, not under it */
+html { scroll-padding-top: 60px }
 /* Things that open */
 dialog[open] { animation: rise .18s var(--ease) }
 dialog[open]::backdrop { animation: fade .18s ease }
@@ -751,7 +767,7 @@ dialog[open]::backdrop { animation: fade .18s ease }
 .nav-more[open] > summary::after { transform: translateY(1px) rotate(225deg) }
 .results:not(:empty) { animation: drop .12s var(--ease) }
 .jobbar:not([hidden]) { animation: rise .2s var(--ease) }
-/* Charts grow up once when the page opens (not on the dashboard's quiet refresh) */
+/* Charts grow up once when the page opens (not on the dashboard's refresh: that keeps the same bars) */
 .bars .pair i { transform-origin: 50% 100%; animation: grow .45s var(--ease) both }
 .bars .bar:nth-child(n+4) .pair i { animation-delay: 20ms } .bars .bar:nth-child(n+8) .pair i { animation-delay: 40ms }
 .bars .bar:nth-child(n+12) .pair i { animation-delay: 60ms }
@@ -759,9 +775,11 @@ dialog[open]::backdrop { animation: fade .18s ease }
 input, select, textarea { transition: border-color .12s, box-shadow .12s, background-color .12s }
 a, .nav-menu a, header nav a { transition: color .12s, background-color .12s, text-decoration-color .12s }
 tr { transition: background-color .12s }
-html.quiet .bars .pair i, html.quiet .flash { animation: none }
+/* The dashboard's refresh (a Turbo morph, html.morphed from app.js) never replays them, even for an element it had to replace */
+html.morphed .bars .pair i, html.morphed main .flash { animation: none }
 @media (prefers-reduced-motion: reduce) {
   main, dialog[open], dialog[open]::backdrop, .nav-menu, .results, .jobbar, .bars .pair i { animation: none !important }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important }
 }
 
 /* Customer page: Tab limit. One button per limit band; the one they're in now is filled. */

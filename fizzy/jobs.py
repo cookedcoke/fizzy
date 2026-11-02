@@ -22,7 +22,8 @@ def current():
 
 
 def start(name, fn, who):
-    """Run fn(conn) -> message in a thread. Returns False if a job is already running."""
+    """Run fn(conn) -> message (or (message, ok) when it can fail without raising) in a thread.
+    Returns False if a job is already running."""
     with _lock:
         if _job["running"]:
             return False
@@ -31,7 +32,8 @@ def start(name, fn, who):
     def run():
         conn = db.connect()
         try:
-            msg, ok = fn(conn), True
+            msg = fn(conn)
+            msg, ok = msg if isinstance(msg, tuple) else (msg, True)
         except Exception as e:  # say what went wrong on the page, don't lose the thread silently
             conn.rollback()
             msg, ok = f"Didn't finish: {e}", False

@@ -1,8 +1,17 @@
-// Fizzy counter UI: instant search, card scans, confirm and passcode boxes. No dependencies.
+// Fizzy counter UI: instant search, card scans, confirm and passcode boxes. No dependencies
+// besides Turbo (turbo.js), which swaps pages in place instead of loading each one from scratch.
 //
-// Search runs in the browser against /api/index (every active customer, fetched once per
-// page load), so typing never waits on the network. The highlighted result is prerendered
-// so Enter opens it instantly. (There are no keyboard shortcuts: everything is a button.)
+// This file runs ONCE per browser tab, not once per page: Turbo keeps it (and `document`, `window`)
+// from page to page. So it's in two parts:
+//  - things set up once, at the top level of this file: card scans, the confirm box, passcodes;
+//  - init(), run for every page as it's drawn. Anything it starts that outlives the page's own
+//    elements (a timer, a listener on window or document) goes through listen() / every() /
+//    later(), and is undone by teardown() before the next page is drawn.
+//
+// Search runs in the browser against /api/index (every active customer; fetched again when it's
+// over a minute old or after a form was sent), so typing never waits on the network. The highlighted
+// result is prerendered so Enter opens it instantly. (There are no keyboard shortcuts: everything is
+// a button.)
 (function () {
   "use strict";
   var $ = function (s, el) { return (el || document).querySelector(s); };
@@ -13,21 +22,36 @@
     el = el || document.activeElement;
     return el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) && el.type !== "checkbox" && el.type !== "submit";
   }
+  function json(sel) { var el = $(sel); return el ? JSON.parse(el.textContent) : null; }
+
+  // ---- a page's lifetime ------------------------------------------------------------------------
+  var cleanups = [];
+  function later(fn) { cleanups.push(fn); }  // run fn when this page goes
+  function listen(target, type, fn, opts) {
+    target.addEventListener(type, fn, opts);
+    later(function () { target.removeEventListener(type, fn, opts); });
+  }
+  function every(fn, ms) { var id = setInterval(fn, ms); later(function () { clearInterval(id); }); return id; }
+  function teardown() {
+    var c = cleanups; cleanups = [];
+    c.forEach(function (f) { try { f(); } catch (e) { /* the next one still runs */ } });
+  }
 
   // ---- search -------------------------------------------------------------------------------
-  var index = null, indexReq = null, indexError = null;
+  var STALE = 60 * 1000;  // points and balances change at the counter all day
+  var index = null, indexAt = 0, indexReq = null, indexError = null;
   function loadIndex() {
-    if (!indexReq) {
-      indexReq = fetch("/api/index", { credentials: "same-origin" }).then(function (r) {
+    if (!indexReq && (!index || Date.now() - indexAt > STALE)) {
+      indexReq = fetch("/api/index", { credentials: "same-origin", cache: "no-store" }).then(function (r) {
         if (r.redirected && r.url.indexOf("/login") >= 0) throw new Error("signed-out");
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       }).then(function (rows) {
-        index = rows; indexError = null;
+        index = rows; indexAt = Date.now(); indexError = null; indexReq = null;
         return rows;
       }).catch(function (err) { indexReq = null; indexError = String(err && err.message || err); });
     }
-    return indexReq;
+    return indexReq || Promise.resolve(index);
   }
 
   var rank = window.FizzyFuzzy.rank;
@@ -40,9 +64,12 @@
   }
 
   var spec = null;
+  // Forget the prerendered customer: after a change (a form sent) or on another page it may be out of
+  // date. Turbo leaves added <script>s in the head, so without this it could outlive many pages.
+  function unprerender() { if (spec) { spec.remove(); spec = null; } }
   function prerender(href) {
     // Chrome/Edge: prerender the highlighted customer so Enter is instant. Others: prefetch.
-    if (spec && spec.dataset.href === href) return;
+    if (spec && spec.dataset.href === href && spec.isConnected) return;
     if (spec) spec.remove();
     if (HTMLScriptElement.supports && HTMLScriptElement.supports("speculationrules")) {
       spec = document.createElement("script");
@@ -68,12 +95,12 @@
       if (!index) {
         if (indexError) {
           out.innerHTML = indexError === "signed-out"
-            ? '<div class="none">Signed out. <a href="/login">Sign in again</a>.</div>'
+            ? '<div class="none">Signed out. <a href="/login" data-turbo="false">Sign in again</a>.</div>'
             : '<div class="none">Couldn\'t load the customer list. Press Enter to search on the server.</div>';
           indexError = null;  // try again on the next keystroke
           return;
         }
-        loadIndex().then(render); return;
+        loadIndex().then(function () { if (box.isConnected) render(); }); return;
       }
       var hits = rank(q, index, 8); rows = hits.map(function (h) { return h[0]; }); sel = 0;
       out.innerHTML = rows.length ? hits.map(function (h, i) {
@@ -83,27 +110,28 @@
       }).join("") : '<div class="none">No one matches “' + esc(q) + "”.</div>";
       mark();
     }
-    box.addEventListener("input", render);
-    box.addEventListener("focus", function () { loadIndex(); if (box.value.trim() && !out.innerHTML) render(); });
-    box.addEventListener("keydown", function (e) {
+    listen(box, "input", render);
+    listen(box, "focus", function () { loadIndex(); if (box.value.trim() && !out.innerHTML) render(); });
+    listen(box, "keydown", function (e) {
       if (e.key === "ArrowDown") { sel = Math.min(sel + 1, rows.length - 1); mark(); e.preventDefault(); }
       else if (e.key === "ArrowUp") { sel = Math.max(sel - 1, 0); mark(); e.preventDefault(); }
       else if (e.key === "Enter") {
         e.preventDefault();
         if (window.fizzyScan && fizzyScan(box.value.trim())) return;  // card scanned into the search box
+        // A real page load on purpose: it picks up Chrome's prerender of the highlighted row.
         if (!index) { location.href = "/customers?q=" + encodeURIComponent(box.value.trim()); }  // server search fallback
         else if (rows[sel]) location.href = "/customers/" + rows[sel].id;
       }
       else if (e.key === "Escape") { e.stopPropagation(); if (box.value) { box.value = ""; render(); } else box.blur(); }
     });
-    out.addEventListener("mousemove", function (e) {
+    listen(out, "mousemove", function (e) {
       var a = e.target.closest("a.hit"); if (!a) return;
       var i = $$("a.hit", out).indexOf(a); if (i !== sel) { sel = i; mark(); }
     });
-    document.addEventListener("click", function (e) { if (!out.contains(e.target) && e.target !== box) out.innerHTML = ""; });
+    listen(document, "click", function (e) { if (!out.contains(e.target) && e.target !== box) out.innerHTML = ""; });
   }
 
-  // ---- student card scans ------------------------------------------------------------------
+  // ---- student card scans (once) -------------------------------------------------------------
   // A USB barcode scanner "types" the card's RNS number fast and presses Enter: catch it (when no
   // box has focus) and open that student. Keys held back that turn out to be a person typing are
   // passed on as normal.
@@ -130,137 +158,13 @@
     clearTimeout(scanTimer); scanTimer = setTimeout(scanFlush, 80);  // scanners send keys a few ms apart
   }, true);
 
-  // ---- "new sale - claim it?" (customer page) ------------------------------------------------
-  // While a customer's page is open, a sale rung up in Square with no customer pops up here
-  // within a few seconds, with Claim and Not theirs buttons. Nothing is claimed without a click.
-  var cp = $("#claim-prompt");
-  if (cp) {
-    var seenKey = "fizzy-dismissed-" + cp.dataset.cid, shownKey = null;
-    var dismissed = function () { try { return JSON.parse(sessionStorage.getItem(seenKey) || "[]"); } catch (e) { return []; } };
-    var dismiss = function (key) {
-      try { var d = dismissed(); d.push(key); sessionStorage.setItem(seenKey, JSON.stringify(d.slice(-50))); } catch (e) { /* private mode */ }
-      cp.hidden = true; shownKey = null;
-      document.body.classList.remove("has-claim-prompt");
-    };
-    var showSale = function (sales) {
-      var skip = dismissed(), fresh = sales.filter(function (s) { return skip.indexOf(s.key) < 0; });
-      if (!fresh.length) { cp.hidden = true; shownKey = null; document.body.classList.remove("has-claim-prompt"); return; }
-      var s = fresh[0];
-      if (s.key === shownKey) return;
-      shownKey = s.key;
-      cp.elements.key.value = s.key;
-      $(".cp-at", cp).textContent = s.at;
-      $(".cp-more", cp).textContent = fresh.length > 1 ? " · " + (fresh.length - 1) + " more on the claim page" : "";
-      $(".cp-items", cp).textContent = s.items;
-      $(".cp-amts", cp).innerHTML = [s.paid && esc(s.paid) + " <small>paid</small>", s.tab && '<span class="tab">' + esc(s.tab) + " <small>on tab</small></span>",
-                                     s.repaid && '<span class="repay">' + esc(s.repaid) + " <small>repaid</small></span>"].filter(Boolean).join(" · ");
-      $(".cp-warn", cp).hidden = !s.tab_warning;
-      cp.hidden = false;
-      document.body.classList.add("has-claim-prompt");  // room at the bottom so it doesn't cover anything
-      cp.classList.remove("pop"); void cp.offsetWidth; cp.classList.add("pop");
-    };
-    var poll = function () {
-      if (document.visibilityState !== "visible") return;
-      fetch(cp.dataset.watch + "?since=" + encodeURIComponent(cp.dataset.since), { credentials: "same-origin" })
-        .then(function (r) { return r.ok ? r.json() : null; }).then(function (s) { if (s) showSale(s); }).catch(function () {});
-    };
-    $(".cp-no", cp).addEventListener("click", function () { dismiss(cp.elements.key.value); });
-    poll();
-    setInterval(poll, 3000);
-  }
-
-  // ---- passcode reveal (customer page): fetched only when asked for; the server logs each look ----
-  $$("[data-reveal]").forEach(function (b) {
-    b.addEventListener("click", function () { fizzyPin("POST", b.dataset.reveal, reveal); });
-    function reveal() {
-      fetch(b.dataset.reveal, { method: "POST", credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (d) {
-        var out = document.createElement("span");
-        out.className = "mono revealed";
-        out.textContent = d.passcode || "can't be read - set a new one";
-        b.replaceWith(out);
-      }).catch(function () { b.textContent = "Couldn't load - try again"; });
-    }
-  });
-
-  // ---- sign-in code on the customer display: made fresh each press, works once, for a minute ----
-  $$("[data-qr-login]").forEach(function (b) {
-    var label = b.innerHTML, timer = null;
-    b.addEventListener("click", function () { fizzyPin("POST", b.dataset.qrLogin, make); });
-    function make() {
-      fetch(b.dataset.qrLogin, { method: "POST", credentials: "same-origin" }).then(function (r) { if (!r.ok) throw r; return r.json(); }).then(function (d) {
-        var dm = $("#display-msg") ? JSON.parse($("#display-msg").textContent) : null;
-        if (!dm) return;
-        sendDisplay({ type: "show", customer: dm.customer, login: d });
-        var left = d.seconds; clearInterval(timer);
-        b.textContent = "On the display (" + left + "s)";
-        timer = setInterval(function () {
-          left -= 1;
-          if (left <= 0) { clearInterval(timer); b.innerHTML = label; return; }
-          b.textContent = "On the display (" + left + "s)";
-        }, 1000);
-      }).catch(function () { b.textContent = "Couldn't make one - try again"; setTimeout(function () { b.innerHTML = label; }, 3000); });
-    }
-  });
-
-  // ---- "i" tips: open towards whichever side has room ------------------------------------------
-  $$(".tip").forEach(function (t) {
-    t.addEventListener("pointerenter", function () { t.classList.toggle("tip-right", t.getBoundingClientRect().left < 280); });
-    t.addEventListener("focus", function () { t.classList.toggle("tip-right", t.getBoundingClientRect().left < 280); });
-  });
-
-  // ---- long tables: latest few rows, the rest one click away ------------------------------
-  $$("table[data-clip]").forEach(function (t) {
-    var n = Number(t.dataset.clip), rows = $$("tr", t).filter(function (r) { return !r.querySelector("th"); });
-    if (rows.length <= n + 2) return;
-    rows.slice(n).forEach(function (r) { r.hidden = true; });
-    var more = document.createElement("button");
-    more.type = "button"; more.className = "sm clip-more"; more.textContent = "Show all " + rows.length;
-    more.addEventListener("click", function () { rows.forEach(function (r) { r.hidden = false; }); more.remove(); });
-    (t.closest(".scroll") || t).after(more);
-  });
-
-  // ---- clock (desktop header) -------------------------------------------------------------
-  var clock = $("[data-clock]");
-  if (clock) {
-    var fmtTime = new Intl.DateTimeFormat("en-AU", { timeZone: clock.dataset.tz, hour: "numeric", minute: "2-digit" });
-    var fmtDay = new Intl.DateTimeFormat("en-AU", { timeZone: clock.dataset.tz, weekday: "short", day: "numeric", month: "short" });
-    var tick = function () {
-      var now = new Date();
-      clock.innerHTML = '<span class="d">' + esc(fmtDay.format(now)) + "</span>" + esc(fmtTime.format(now).replace(" ", "").toLowerCase());
-    };
-    tick();
-    setInterval(tick, 1000);
-  }
-
-  // ---- pages that refresh themselves (dashboard) -----------------------------------------
-  // Reloads after the given seconds with nobody touching anything, so the numbers stay current
-  // on a screen left open - but never while someone is typing or has a dialog open.
-  var auto = $("[data-autorefresh]");
-  if (auto) {
-    var idle = Number(auto.dataset.autorefresh) * 1000, last = Date.now();
-    // An empty search box that's only focused (it's autofocused on load) doesn't count as typing.
-    var busy = function () { var el = document.activeElement; return typing() && !(el.matches("[data-search]") && !el.value); };
-    try {  // keep the scroll position across the reload
-      var y = sessionStorage.getItem("fizzy-autorefresh-y");
-      if (y) { sessionStorage.removeItem("fizzy-autorefresh-y"); scrollTo(0, Number(y)); document.documentElement.classList.add("quiet"); }
-    } catch (e) { /* private mode */ }
-    ["keydown", "pointerdown", "pointermove", "input", "scroll", "wheel"].forEach(function (ev) {
-      addEventListener(ev, function () { last = Date.now(); }, { passive: true, capture: true });
-    });
-    setInterval(function () {
-      if (Date.now() - last < idle || busy() || document.visibilityState !== "visible" || $("dialog[open]")) return;
-      try { sessionStorage.setItem("fizzy-autorefresh-y", String(scrollY)); } catch (e) { /* private mode */ }
-      location.reload();
-    }, 5000);
-  }
-
+  // ---- confirm box (once) -----------------------------------------------------------------------
   // Any button with data-confirm asks first, however it's pressed (click or Enter).
-  // Asked in Fizzy's own box rather than the browser's.
+  // Asked in Fizzy's own box rather than the browser's. The box moves into each new page's <body>.
   var ask = document.createElement("dialog"), onYes = null, passed = null;
   ask.className = "ask";
   ask.innerHTML = '<p></p><div class="actions"><button type="button" class="primary" value="ok">Yes, do it</button>' +
                   '<button type="button" value="no">Cancel</button></div>';
-  document.body.appendChild(ask);
   ask.addEventListener("click", function (e) {
     var v = e.target.value;
     if (e.target === ask || v === "no") ask.close();
@@ -270,6 +174,31 @@
     onYes = yes; ask.querySelector("p").textContent = text; ask.showModal();
     ask.querySelector("[value=ok]").focus();
   };
+  // ---- clicks during the cross-fade (once) ------------------------------------------------------
+  // Turbo cross-fades a page change (a view transition, about 0.16s). While one runs, the browser sends
+  // every click to <html>, so a quick second click (a tab, then at once a row) would be lost: finish
+  // the fade at once and click whatever is now under the pointer.
+  var fade = null;
+  if (document.startViewTransition) {
+    var startFade = document.startViewTransition;
+    document.startViewTransition = function () {
+      var t = startFade.apply(document, arguments), done = function () { if (fade === t) fade = null; };
+      fade = t; t.finished.then(done, done);
+      return t;
+    };
+  }
+  document.addEventListener("click", function (e) {
+    var t = fade || document.activeViewTransition;
+    if (!t || e.target !== document.documentElement) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    var x = e.clientX, y = e.clientY, go = function () {
+      var el = document.elementFromPoint(x, y);
+      if (el && el !== document.documentElement) { if (typing(el)) el.focus(); else el.click(); }
+    };
+    try { t.skipTransition(); } catch (err) { /* already over */ }
+    t.finished.then(go, go);
+  }, true);
+
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("[data-confirm]");
     if (!b || b.tagName === "DETAILS") return;
@@ -277,9 +206,12 @@
     e.preventDefault(); e.stopImmediatePropagation();
     fizzyAsk(b.dataset.confirm, function () { passed = b; b.click(); });
   }, true);
-  // Passcodes: anything above "anyone signed in" asks in a box first, then carries on. The rules
-  // come from the owner's "Who can do what" settings; the server checks them again either way.
-  var lockRules = $("#lock-rules") ? JSON.parse($("#lock-rules").textContent) : null;
+
+  // ---- passcodes (once) ---------------------------------------------------------------------------
+  // Anything above "anyone signed in" asks in a box first, then carries on. The rules come from the
+  // owner's "Who can do what" settings (each page carries them; init() reads them); the server
+  // checks them again either way.
+  var lockRules = null, lockCust = null;
   function num(v) {  // same as the server: blank is 0, anything that isn't plainly a number is huge
     v = String(v || "").replace(/[$,\s]/g, "");
     if (!v) return 0;
@@ -319,7 +251,6 @@
     return level;
   }
   // On a customer's page: admin and test accounts change the level (the server works this out for names typed into tools).
-  var lockCust = $("#lock-customer") ? JSON.parse($("#lock-customer").textContent) : null;
   function needFor(method, url, data) {
     var n = need(method, url, data), path = new URL(url, location.href).pathname;
     if (n === undefined || !lockCust || !lockCust.kind || path.indexOf("/customers/" + lockCust.id + "/") !== 0 || /\/(claim|kind)$/.test(path)) return n;
@@ -327,15 +258,13 @@
     return Math.max(n, lockCust.levels[n]);
   }
   function needsPin(method, url, data) { var n = needFor(method, url, data); return n > have() ? n : 0; }
-  var pinBox = document.createElement("dialog"), pinThen = null, pinNeed = 1;
+  var pinBox = document.createElement("dialog"), pinThen = null, pinNo = null, pinNeed = 1;
   pinBox.className = "ask";
   pinBox.innerHTML = '<form method="dialog"><p><b>Enter passcode</b></p>' +
     '<input type="password" autocomplete="off" aria-label="Passcode">' +
     '<div class="err" role="alert" hidden></div>' +
     '<div class="actions"><button class="primary" value="ok">Unlock</button><button type="button" value="no">Cancel</button></div></form>';
-  document.body.appendChild(pinBox);
   var pinIn = $("input", pinBox), pinErr = $(".err", pinBox);
-  if (lockRules && lockRules.numeric) pinIn.inputMode = "numeric";
   $("[value=no]", pinBox).addEventListener("click", function () { pinBox.close(); });
   $("form", pinBox).addEventListener("submit", function (e) {
     e.preventDefault();
@@ -345,14 +274,29 @@
       .then(function (r) {
         if (!r.ok) { pinErr.hidden = false; pinErr.textContent = r.error; pinIn.select(); return; }
         document.body.dataset.unlocked = r.rank; document.body.dataset.unlockedUntil = r.until;
-        pinBox.close(); var again = pinThen; pinThen = null; again();
+        var again = pinThen; pinThen = null; pinNo = null; pinBox.close(); again();
       })
       .catch(function () { pinErr.hidden = false; pinErr.textContent = "Couldn't reach Fizzy. Try again."; });
   });
-  function askPin(level, then) {
-    pinNeed = level; pinThen = then; pinIn.value = ""; pinErr.hidden = true; pinBox.showModal(); pinIn.focus();
+  // Closed any other way than unlocking (Cancel, Esc): no() hears about it.
+  pinBox.addEventListener("close", function () {
+    if (pinBox.open) return;  // already asking again
+    var no = pinNo; pinThen = null; pinNo = null; if (no) no();
+  });
+  function askPin(level, then, no) {
+    pinNeed = level; pinThen = then; pinNo = no || null; pinIn.value = ""; pinErr.hidden = true; pinBox.showModal(); pinIn.focus();
   }
+  // A form that wasn't sent after all (the passcode box was cancelled): a control that sends its form
+  // as soon as it's changed (Square's "Counted as") shows the saved value again, its data-was.
+  function unsent(f) { $$("[data-was]", f).forEach(function (c) { c.value = c.dataset.was; }); }
   window.fizzyPin = function (method, url, then) { var n = needsPin(method, url); if (n) askPin(n, then); else then(); };
+  // A question or passcode box belongs to the page it was asked on: leaving the page (a link, Back)
+  // answers "no". Left open, it would follow into the next page's <body> as a stray, non-modal box.
+  function closeBoxes() {
+    $$("dialog[open]").forEach(function (d) { d.close(); });
+    onYes = null; pinThen = null; pinNo = null;
+  }
+  // Runs before Turbo sends the form (Turbo leaves alone a submit that's been stopped).
   document.addEventListener("submit", function (e) {
     var f = e.target, method = (f.getAttribute("method") || "get").toUpperCase();
     if (e.defaultPrevented || f.closest("dialog.ask")) return;
@@ -360,34 +304,212 @@
     if (!n) return;
     e.preventDefault();
     var by = e.submitter;
-    askPin(n, function () { f.requestSubmit(by && by.form === f ? by : undefined); });
+    askPin(n, function () { f.requestSubmit(by && by.form === f ? by : undefined); }, function () { unsent(f); });
+  });
+  // The server has the last word: when it wants a higher passcode than this page worked out (it knows
+  // things the page doesn't, like whether a Square payment is tab money), a form Turbo sent comes back
+  // as 423 with the level it needs. Ask for that, then send the same form again.
+  var sentWith = null;  // the button that sent the form now in flight
+  document.addEventListener("turbo:submit-start", function (e) { sentWith = e.detail.formSubmission.submitter || null; });
+  document.addEventListener("turbo:before-fetch-response", function (e) {
+    var r = e.detail.fetchResponse, f = e.target, by = sentWith;
+    if (r.statusCode !== 423 || r.header("X-Fizzy") !== "pin" || !f || f.tagName !== "FORM") return;
+    e.preventDefault();
+    r.responseText.then(function (t) {
+      var n = Number(JSON.parse(t).need) || 1;
+      if (f.isConnected) askPin(n, function () { f.requestSubmit(by && by.form === f ? by : undefined); }, function () { unsent(f); });
+    });
   });
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest("a[href]");
     var n = a && needsPin("GET", a.href);
     if (!n) return;
     e.preventDefault();
-    askPin(n, function () { location.href = a.href; });
+    // Unlocked now: this time it goes through (with Turbo, or as a download), without asking its
+    // "are you sure?" question a second time.
+    askPin(n, function () { passed = a.closest("[data-confirm]"); a.click(); });
   });
-  $$("input[data-search]").forEach(bindSearch);
+
+  // Every Turbo request says which version of Fizzy's scripts this tab is running. After an update the
+  // server then knows Turbo will throw its answer away and load the page again for real
+  // (data-turbo-track), and keeps the "Saved." message and the section to land on for that load.
+  // The version is the one this file was loaded as, read once: an error page Turbo draws brings its own
+  // <head>, and with it a newer ?v= after an update, while this old code keeps running.
+  function version() { var s = $('script[src*="/static/app.js"]'), m = s && /[?&]v=([^&#]+)/.exec(s.getAttribute("src")); return m ? m[1] : null; }
+  var V = version();
+  document.addEventListener("turbo:before-fetch-request", function (e) {
+    if (V) e.detail.fetchOptions.headers["X-Fizzy-V"] = V;
+  });
+
+  // Turbo 8 leaves two kinds of failed request as an "Uncaught (in promise)" error although it has
+  // dealt with them: a page download cut off by Back or another click (AbortError), and a request
+  // that couldn't reach Fizzy at all (it reports that as turbo:fetch-request-error first, and app.js
+  // loads the page for real so the offline page shows). Neither is a problem: keep them out of the console.
+  // (A form sent while Fizzy can't be reached still logs one "Failed to fetch": Turbo writes that one
+  // to the console itself, and the offline page shows all the same.)
+  var turboErrors = [];
+  document.addEventListener("turbo:fetch-request-error", function (e) { turboErrors = [e.detail.error].concat(turboErrors.slice(0, 4)); });
+  addEventListener("unhandledrejection", function (e) {
+    var r = e.reason;
+    if (r && (r.name === "AbortError" || turboErrors.indexOf(r) >= 0)) e.preventDefault();
+  });
+
   function sendDisplay(m) {
     try { window.webkit.messageHandlers.fizzyDisplay.postMessage(m); } catch (e) {}
     try { new BroadcastChannel("fizzy-display").postMessage(m); } catch (e) {}
   }
-  // Customer display: tell the screen facing the queue who's being served. Straight to it, no
-  // server in between: the Mac app's bridge, or a BroadcastChannel when it's a second browser window.
-  if ($("header nav")) {
-    var dm = $("#display-msg") ? JSON.parse($("#display-msg").textContent) : { type: "idle" };
-    dm.auto = true;
-    sendDisplay(dm);
+
+  // ==== each page ====================================================================================
+
+  // ---- "new sale - claim it?" (customer page) ------------------------------------------------
+  // While a customer's page is open, a sale rung up in Square with no customer pops up here
+  // within a few seconds, with Claim and Not theirs buttons. Nothing is claimed without a click.
+  function claimPrompt(cp) {
+    var seenKey = "fizzy-dismissed-" + cp.dataset.cid, shownKey = null;
+    var dismissed = function () { try { return JSON.parse(sessionStorage.getItem(seenKey) || "[]"); } catch (e) { return []; } };
+    var hide = function () { cp.hidden = true; shownKey = null; document.body.classList.remove("has-claim-prompt"); };
+    var dismiss = function (key) {
+      try { var d = dismissed(); d.push(key); sessionStorage.setItem(seenKey, JSON.stringify(d.slice(-50))); } catch (e) { /* private mode */ }
+      hide();
+    };
+    var showSale = function (sales) {
+      var skip = dismissed(), fresh = sales.filter(function (s) { return skip.indexOf(s.key) < 0; });
+      if (!fresh.length) { hide(); return; }
+      var s = fresh[0];
+      if (s.key === shownKey) return;
+      shownKey = s.key;
+      cp.elements.key.value = s.key;
+      $(".cp-at", cp).textContent = s.at;
+      $(".cp-more", cp).textContent = fresh.length > 1 ? " · " + (fresh.length - 1) + " more on the claim page" : "";
+      $(".cp-items", cp).textContent = s.items;
+      $(".cp-amts", cp).innerHTML = [s.paid && esc(s.paid) + " <small>paid</small>", s.tab && '<span class="tab">' + esc(s.tab) + " <small>on tab</small></span>",
+                                     s.repaid && '<span class="repay">' + esc(s.repaid) + " <small>repaid</small></span>"].filter(Boolean).join(" · ");
+      $(".cp-warn", cp).hidden = !s.tab_warning;
+      cp.hidden = false;
+      document.body.classList.add("has-claim-prompt");  // room at the bottom so it doesn't cover anything
+      cp.classList.remove("pop"); void cp.offsetWidth; cp.classList.add("pop");
+    };
+    var gone = false;
+    later(function () { gone = true; });
+    var poll = function () {
+      if (document.visibilityState !== "visible") return;
+      fetch(cp.dataset.watch + "?since=" + encodeURIComponent(cp.dataset.since), { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : null; }).then(function (s) { if (s && !gone) showSale(s); }).catch(function () {});
+    };
+    listen($(".cp-no", cp), "click", function () { dismiss(cp.elements.key.value); });
+    poll();
+    every(poll, 3000);
   }
-  // Background jobs (Square sync, re-sync, history import): a bar while one runs, and how it went.
-  var jb = $("#jobbar");
-  if (jb) {
-    var seenKey = "fizzy-job-seen", timer = null;
+
+  // ---- passcode reveal (customer page): fetched only when asked for; the server logs each look ----
+  function revealButton(b) {
+    listen(b, "click", function () { fizzyPin("POST", b.dataset.reveal, reveal); });
+    function reveal() {
+      fetch(b.dataset.reveal, { method: "POST", credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (d) {
+        var out = document.createElement("span");
+        out.className = "mono revealed";
+        out.textContent = d.passcode || "can't be read - set a new one";
+        b.replaceWith(out);
+      }).catch(function () { b.textContent = "Couldn't load - try again"; });
+    }
+  }
+
+  // ---- sign-in code on the customer display: made fresh each press, works once, for a minute ----
+  function qrButton(b) {
+    var label = b.innerHTML, timer = null;
+    later(function () { clearInterval(timer); });
+    listen(b, "click", function () { fizzyPin("POST", b.dataset.qrLogin, make); });
+    function make() {
+      fetch(b.dataset.qrLogin, { method: "POST", credentials: "same-origin" }).then(function (r) { if (!r.ok) throw r; return r.json(); }).then(function (d) {
+        var dm = json("#display-msg");
+        if (!dm || !b.isConnected) return;
+        sendDisplay({ type: "show", customer: dm.customer, login: d });
+        var left = d.seconds; clearInterval(timer);
+        b.textContent = "On the display (" + left + "s)";
+        timer = setInterval(function () {
+          left -= 1;
+          if (left <= 0) { clearInterval(timer); b.innerHTML = label; return; }
+          b.textContent = "On the display (" + left + "s)";
+        }, 1000);
+      }).catch(function () { b.textContent = "Couldn't make one - try again"; setTimeout(function () { b.innerHTML = label; }, 3000); });
+    }
+  }
+
+  // ---- long tables: latest few rows, the rest one click away ------------------------------
+  function clipTable(t) {
+    var n = Number(t.dataset.clip), rows = $$("tr", t).filter(function (r) { return !r.querySelector("th"); });
+    if (rows.length <= n + 2) return;
+    rows.slice(n).forEach(function (r) { r.hidden = true; });
+    var more = document.createElement("button");
+    more.type = "button"; more.className = "sm clip-more"; more.textContent = "Show all " + rows.length;
+    more.addEventListener("click", function () { rows.forEach(function (r) { r.hidden = false; }); more.remove(); });
+    (t.closest(".scroll") || t).after(more);
+  }
+  // Clipped afresh each time the page is drawn (the dashboard's refresh keeps the page and its last clip).
+  function reclip() {
+    $$(".clip-more").forEach(function (b) { b.remove(); });
+    $$("table[data-clip] tr[hidden]").forEach(function (r) { r.hidden = false; });
+    $$("table[data-clip]").forEach(clipTable);
+  }
+
+  // ---- clock (desktop header) -------------------------------------------------------------
+  function clock(el) {
+    var fmtTime = new Intl.DateTimeFormat("en-AU", { timeZone: el.dataset.tz, hour: "numeric", minute: "2-digit" });
+    var fmtDay = new Intl.DateTimeFormat("en-AU", { timeZone: el.dataset.tz, weekday: "short", day: "numeric", month: "short" });
+    var tick = function () {
+      var now = new Date();
+      el.innerHTML = '<span class="d">' + esc(fmtDay.format(now)) + "</span>" + esc(fmtTime.format(now).replace(" ", "").toLowerCase());
+    };
+    tick();
+    every(tick, 1000);
+  }
+
+  // ---- pages that refresh themselves (dashboard) -----------------------------------------
+  // Redrawn in place after the given seconds with nobody touching anything, so the numbers stay
+  // current on a screen left open - but never while someone is typing or has a dialog open. Turbo
+  // "morphs" the page: only what changed is touched, and the scroll position stays.
+  //
+  // Turbo looks for these twice: in the page it's leaving (to morph), then after the new page's head is
+  // in (to keep the scroll). So they go in before the refresh, back in on turbo:render, and out on turbo:load.
+  var refreshing = false;
+  function refreshMetas() {
+    ["turbo-refresh-method:morph", "turbo-refresh-scroll:preserve"].forEach(function (p) {
+      var kv = p.split(":");
+      if ($('meta[name="' + kv[0] + '"]')) return;
+      var m = document.createElement("meta"); m.name = kv[0]; m.content = kv[1]; m.dataset.refresh = "";
+      document.head.appendChild(m);
+    });
+  }
+  function refreshOver() { refreshing = false; $$("meta[data-refresh]").forEach(function (m) { m.remove(); }); }
+  function autoRefresh(el) {
+    var idle = Number(el.dataset.autorefresh) * 1000, last = Date.now();
+    // An empty search box that's only focused (it's autofocused on load) doesn't count as typing.
+    var busy = function () { var a = document.activeElement; return typing() && !(a.matches("[data-search]") && !a.value); };
+    ["keydown", "pointerdown", "pointermove", "input", "scroll", "wheel"].forEach(function (ev) {
+      listen(window, ev, function () { last = Date.now(); }, { passive: true, capture: true });
+    });
+    every(function () {
+      if (Date.now() - last < idle || busy() || document.visibilityState !== "visible" || $("dialog[open]")) return;
+      if (!window.Turbo) { location.reload(); return; }
+      var vt = $('meta[name="view-transition"]');
+      if (vt) vt.remove();  // no cross-fade for a refresh (the new page's head brings it back)
+      // Morph and keep the scroll for this refresh only (see refreshMetas), so a form here that redirects
+      // back to / still loads the page from the top with its message on screen.
+      refreshMetas();
+      refreshing = "starting";
+      last = Date.now();
+      Turbo.visit(location.href, { action: "replace" });
+    }, 5000);
+  }
+
+  // ---- background jobs (Square sync, re-sync, history import): a bar while one runs, and how it went ----
+  function jobBar(jb) {
+    var seenKey = "fizzy-job-seen", timer = null, gone = false;
+    later(function () { gone = true; clearTimeout(timer); });
     function seen() { try { return sessionStorage.getItem(seenKey); } catch (e) { return null; } }
     function check() {
       fetch("/api/job", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+        if (gone) return;
         if (!j || !j.name) { jb.hidden = true; return; }
         var t = $(".t", jb), ok = $("button", jb);
         if (j.running) {
@@ -398,10 +520,140 @@
           jb.hidden = false; jb.className = "jobbar " + (j.ok ? "ok" : "bad"); ok.hidden = false; t.textContent = j.message;
           ok.onclick = function () { try { sessionStorage.setItem(seenKey, String(j.finished)); } catch (e) {} jb.hidden = true; };
         }
-      }).catch(function () { timer = setTimeout(check, 5000); });
+      }).catch(function () { if (!gone) timer = setTimeout(check, 5000); });
     }
     check();
   }
-  // Warm the index as soon as the page is idle so the first keystroke is instant.
-  (window.requestIdleCallback || setTimeout)(function () { if ($("input[data-search]")) loadIndex(); });
+
+  // ---- landing on a section -------------------------------------------------------------------
+  // A redirect to /settings#pin (or /tools#merge...) followed by Turbo loses the # part, so Fizzy
+  // sends it as <body data-jump="pin"> instead (see back() in web.py). A <details> there is opened:
+  // on Tools, the tool you just used. The message about what was just done ("Saved.") moves into that
+  // section: left at the top of the page, scrolling to the section would hide it under the header.
+  function section(id) {
+    try { id = decodeURIComponent(id || ""); } catch (e) { return null; }
+    var el = id && document.getElementById(id);
+    if (el && el.tagName === "DETAILS") el.open = true;
+    return el;
+  }
+  function jump() {
+    var id = document.body.dataset.jump;
+    if (!id) return;
+    delete document.body.dataset.jump;  // once
+    var el = section(id), msg = $("main > .flash[role=status]");
+    if (!el) return;
+    if (msg && !el.contains(msg) && !/^(TABLE|TBODY|TR|INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) {
+      var head = el.tagName === "DETAILS" ? $("summary", el) : el.firstElementChild;
+      if (head && /^(SUMMARY|H[1-6])$/.test(head.tagName)) head.after(msg); else el.prepend(msg);
+    }
+    el.scrollIntoView({ block: "start" });
+  }
+
+  function init() {
+    teardown();
+    document.body.appendChild(ask); document.body.appendChild(pinBox);  // each page has a new <body>
+    lockRules = json("#lock-rules");
+    lockCust = json("#lock-customer");
+    if (lockRules && lockRules.numeric) pinIn.inputMode = "numeric"; else pinIn.removeAttribute("inputmode");
+
+    $$("input[data-search]").forEach(bindSearch);
+    var cp = $("#claim-prompt"); if (cp) claimPrompt(cp);
+    $$("[data-reveal]").forEach(revealButton);
+    $$("[data-qr-login]").forEach(qrButton);
+    // "i" tips: open towards whichever side has room
+    $$(".tip").forEach(function (t) {
+      var side = function () { t.classList.toggle("tip-right", t.getBoundingClientRect().left < 280); };
+      listen(t, "pointerenter", side); listen(t, "focus", side);
+    });
+    reclip();
+    var ck = $("[data-clock]"); if (ck) clock(ck);
+    var auto = $("[data-autorefresh]"); if (auto) autoRefresh(auto);
+    later(unprerender);
+    var jb = $("#jobbar"); if (jb) jobBar(jb);
+    // Customer display: tell the screen facing the queue who's being served. Straight to it, no
+    // server in between: the Mac app's bridge, or a BroadcastChannel when it's a second browser window.
+    if ($("header nav")) {
+      var dm = json("#display-msg") || { type: "idle" };
+      dm.auto = true;
+      sendDisplay(dm);
+    }
+    section(location.hash.slice(1));
+    // Warm the index as soon as the page is idle so the first keystroke is instant.
+    (window.requestIdleCallback || setTimeout)(function () { if ($("input[data-search]")) loadIndex(); });
+  }
+
+  // Fizzy can't be reached or is in maintenance mode (Cloudflare's error page has no X-Fizzy header):
+  // load the page for real instead, so the service worker shows its "Fizzy is down" page, or the
+  // maintenance page shows with its own look. The same for a form when the network is gone (offline page).
+  // Always a GET (never "resend the form?"): assigning the address without its # part loads it again.
+  function realLoad(url) { location.assign((url || location.href).split("#")[0]); }
+  function outage(e) {
+    var r = e.detail.fetchResponse, from = r.header("X-Fizzy");
+    if (r.statusCode < 500 || (from && from !== "maintenance")) return;
+    e.preventDefault();
+    realLoad(e.target && e.target.tagName === "FORM" ? null : r.location.href);
+  }
+
+  // A button with autofocus (the claim page's first "Claim") shows its focus ring on a full page load.
+  // Turbo focuses it with a plain focus(), which after a mouse click draws no ring: focus it first,
+  // with the ring (Turbo's own focus() then changes nothing).
+  function autofocusRing() {
+    var el = $$("[autofocus]").filter(function (x) {
+      return !x.closest("[inert], :disabled, [hidden], details:not([open]), dialog:not([open])");
+    })[0];
+    if (el && !typing(el)) try { el.focus({ focusVisible: true }); } catch (e) { /* old browser: Turbo focuses it */ }
+  }
+
+  var morphed = false;
+  // Turbo's loading bar: it shows only once a page has taken half a second (style.css), whatever kind of
+  // visit it is. Turbo itself would show it at once for Back and Forward.
+  if (window.Turbo) Turbo.session.progressBarDelay = 0;
+  init();
+  jump();
+  if (window.Turbo) {
+    document.addEventListener("turbo:before-render", function (e) {
+      teardown();
+      closeBoxes();
+      // The page-in fade in style.css is for full page loads. Not when the view transition already
+      // cross-fades it, and not for a morph (the page stays).
+      var html = document.documentElement;
+      html.classList.toggle("still", !!document.startViewTransition || e.detail.renderMethod === "morph");
+      // The dashboard's refresh: nothing replays its opening animation (charts growing, the message
+      // sliding in), even where the redraw had to replace an element rather than update it (a banner
+      // appearing above them shifts everything down). Until the next real page change.
+      html.classList.toggle("morphed", e.detail.renderMethod === "morph");
+      morphed = e.detail.renderMethod === "morph";
+    });
+    // turbo:render, not turbo:load: a form answered with an error status is drawn without a turbo:load.
+    document.addEventListener("turbo:render", function () {
+      // An error page brings its own head: after an update, a newer app.js than the one running. Load it for real.
+      if (V && version() !== V) { realLoad(); return; }
+      if (refreshing) refreshMetas();  // for Turbo's scroll, which comes next
+      init();
+      if (!morphed) autofocusRing();
+      setTimeout(jump, 0);  // after Turbo's own scroll to the top
+    });
+    document.addEventListener("turbo:load", function () { refreshOver(); jump(); });
+    // Any other visit (a click while the refresh was on its way) isn't a refresh: no morphing that one.
+    document.addEventListener("turbo:visit", function () { if (refreshing === "starting") refreshing = true; else if (refreshing) refreshOver(); });
+    document.addEventListener("turbo:submit-end", function () { indexAt = 0; unprerender(); });  // something changed: fresh search results
+    // The dashboard's refresh landed somewhere else (signed out: the sign-in page). Don't morph the
+    // dashboard into it: load that page for real.
+    // A form sent while the refresh is on its way cancels it: its answer is the form's, not a refresh.
+    document.addEventListener("turbo:submit-start", function () { if (refreshing) refreshOver(); });
+    document.addEventListener("turbo:before-fetch-response", function (e) {
+      var r = e.detail.fetchResponse;
+      if (!refreshing || !r.redirected || e.target !== document.documentElement) return;
+      e.preventDefault(); refreshOver();
+      realLoad(r.location.href);
+    });
+    document.addEventListener("turbo:before-fetch-response", outage);
+    document.addEventListener("turbo:fetch-request-error", function (e) { if (e.target && e.target.tagName === "FORM") realLoad(null); });
+    // The dashboard's refresh redraws only what changed. The header and the job bar are this page's
+    // own (the clock, the "More" menu, a job in progress): leave them as they are.
+    document.addEventListener("turbo:before-morph-element", function (e) {
+      // Only keep them as they are: if the new page has none (the sign-in page), they go.
+      if (e.detail.newElement && e.target.matches && e.target.matches("header, #jobbar, dialog.ask")) e.preventDefault();
+    });
+  }
 })();

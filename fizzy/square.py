@@ -889,6 +889,11 @@ def sync(conn, client=None, wait=False, catalog=False):
             return result
 
 
+def sync_job(result, prefix=""):
+    """A sync run as a background job (jobs.start): its line for staff, and whether it worked."""
+    return prefix + describe_sync(result), "error" not in result
+
+
 def describe_sync(result):
     """A sync result as one line for staff."""
     if "error" in result:

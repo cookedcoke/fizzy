@@ -25,7 +25,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
 from . import ask, badges, display, jobs, passkeys, pwa, rules, transactions, updater
-from .web import HERE, LoginRequired, back, cents, get_conn, is_phone, local, money, render, session_gen, staff, templates, wants_json
+from .web import HERE, LoginRequired, back, cents, get_conn, is_phone, local, money, render, session_gen, staff, take, templates, wants_json
 
 log = logging.getLogger("fizzy")
 
@@ -412,7 +412,13 @@ def error_page(request, status, message=None):
         response = templates.TemplateResponse(request, "me_error.html", {"heading": heading, "message": message if status < 500 and message else default,
                                                                           "home": home}, status_code=status)
     else:
-        response = render(request, "error.html", heading=heading, message=message or default, home="/")
+        # A form Turbo sent draws its error at the form's own address with no new history entry, so
+        # "Go back" there means loading the form again, not leaving it.
+        # Also when the form's redirect is what failed: Turbo asks for turbo-stream answers only for forms,
+        # and the request that follows the redirect keeps that header.
+        again = bool(request.headers.get("x-turbo-request-id")) and (
+            request.method != "GET" or "text/vnd.turbo-stream.html" in request.headers.get("accept", ""))
+        response = render(request, "error.html", heading=heading, message=message or default, home="/", again=again)
         response.status_code = status
     return response
 
@@ -455,6 +461,8 @@ def register(app):
             return JSONResponse({"error": msg, "need": "owner" if exc.need == pin.OWNER else "pin"}, status_code=423)
         if request.method == "GET":
             return back(request, "/tools", msg, "bad")
+        if request.headers.get("x-turbo-request-id"):  # a form Turbo sent: app.js asks at this level and sends it again
+            return JSONResponse({"error": msg, "need": exc.need}, status_code=423, headers={"X-Fizzy": "pin", "Cache-Control": "no-store"})
         return back(request, _same_site_referer(request) or "/", msg, "bad")
 
     @app.exception_handler(LoginRequired)
@@ -698,11 +706,11 @@ def register(app):
     @app.post("/profit/refresh")
     def profit_refresh(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         if not config.SQUARE_TOKEN:
-            return back(request, "/profit", "Square isn't connected (SQUARE_ACCESS_TOKEN).")
+            return back(request, "/profit", "Square isn't connected (SQUARE_ACCESS_TOKEN).", "bad")
         try:
             n = square.sync_catalog(conn, square.SquareClient(), force=True)
         except Exception as e:  # network trouble: say so, don't crash
-            return back(request, "/profit", f"Couldn't reach Square: {e}")
+            return back(request, "/profit", f"Couldn't reach Square: {e}", "bad")
         if db.get_setting(conn, "catalog_error"):
             return back(request, "/profit")  # the page shows what went wrong
         return back(request, "/profit", f"Got {n} item{'' if n == 1 else 's'} from Square.")
@@ -792,7 +800,7 @@ def register(app):
         c = conn.execute("SELECT id FROM customers WHERE email LIKE ? ORDER BY archived_at IS NOT NULL LIMIT 1",
                          (sid.replace("%", "").replace("_", "") + "@%",)).fetchone() if re.fullmatch(r"rns\d{8}", sid) else None
         if c is None:
-            return back(request, "/", f"No one with student number {sid.upper()} yet. Add them on Tools, Add a customer.")
+            return back(request, "/", f"No one with student number {sid.upper()} yet. Add them on Tools, Add a customer.", "bad")
         return RedirectResponse(f"/customers/{c['id']}", status_code=303)
 
     @app.get("/api/search")
@@ -1070,8 +1078,8 @@ def register(app):
     @app.post("/square/sync")
     def square_sync_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         if not config.SQUARE_TOKEN:
-            return back(request, "/square", "Square isn't configured (SQUARE_ACCESS_TOKEN).")
-        if not jobs.start("Syncing with Square", lambda c: square.describe_sync(square.sync(c, wait=True, catalog=True)), who):
+            return back(request, "/square", "Square isn't configured (SQUARE_ACCESS_TOKEN).", "bad")
+        if not jobs.start("Syncing with Square", lambda c: square.sync_job(square.sync(c, wait=True, catalog=True)), who):
             return back(request, "/square", "Something's already running. Wait for it to finish.", "bad")
         return back(request, "/square", "Syncing with Square. You can keep using Fizzy; the bar at the top says when it's done.")
 
@@ -1095,11 +1103,11 @@ def register(app):
                       display_menu=display.menu_items(conn), display_hidden=display.hidden_items(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
                       actions=pin.ACTIONS, level_labels=pin.LEVEL_LABELS,
                       devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
-                      passkey_list=passkeys.listed(conn), passkey_options=request.session.pop("pk_add_options", None),
+                      passkey_list=passkeys.listed(conn), passkey_options=take(request, "pk_add_options"),
                       device_list=conn.execute("SELECT * FROM devices ORDER BY revoked_at IS NOT NULL, created_at DESC").fetchall(),
                       this_device=getattr(request.state, "device", None),
                       access_email=getattr(request.state, "access_email", None),
-                      new_link=request.session.pop("new_device_link", None),
+                      new_link=take(request, "new_device_link"),
                       link_minutes=devices.LINK_MINUTES,
                       last_backup=db.get_setting(conn, "last_backup"),
                       last_backup_path=db.get_setting(conn, "last_backup_path"), backup_dir=config.BACKUP_DIR)
@@ -1108,13 +1116,13 @@ def register(app):
     def save_settings(request: Request, tab_limit: str = Form(...), due_days: int = Form(...),
                       min_score: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         if not 1 <= due_days <= 365:
-            return back(request, "/settings", "Days to pay must be between 1 and 365.")
+            return back(request, "/settings", "Days to pay must be between 1 and 365.", "bad")
         try:
             minimum = int(min_score) if min_score.strip() else logic.settings(conn)["tab_min_score"]
         except ValueError:
             minimum = -1
         if not 0 <= minimum <= 100:
-            return back(request, "/settings", "The minimum tab score must be a whole number from 0 to 100.")
+            return back(request, "/settings", "The minimum tab score must be a whole number from 0 to 100.", "bad")
         new = {"tab_limit_cents": cents(tab_limit), "tab_due_days": due_days, "tab_min_score": minimum}
         for k, v in new.items():
             db.set_setting(conn, k, v)
@@ -1146,19 +1154,19 @@ def register(app):
     @app.post("/settings/maintenance")
     def maintenance_on(request: Request, message: str = Form(""), who=Depends(staff)):
         if not pin.admin_on():  # only the owner can turn it off again, so there has to be one
-            return back(request, "/settings#maintenance", "Set an owner password first (FIZZY_ADMIN_PASSWORD in .env).")
+            return back(request, "/settings#maintenance", "Set an owner password first (FIZZY_ADMIN_PASSWORD in .env).", "bad")
         set_maintenance(" ".join(message.split())[:200], who)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/settings/backup")
     def backup_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         if not config.BACKUP_DIR:
-            return back(request, "/settings", "Set FIZZY_BACKUP_DIR to enable backups.")
+            return back(request, "/settings#backups", "Set FIZZY_BACKUP_DIR to enable backups.", "bad")
         path = db.backup(conn, config.BACKUP_DIR, config.BACKUP_KEEP)
         db.set_setting(conn, "last_backup", db.now_iso())
         db.set_setting(conn, "last_backup_path", path)
         conn.commit()
-        return back(request, "/settings", f"Backed up to {path}")
+        return back(request, "/settings#backups", f"Backed up to {path}")
 
     @app.get("/audit", response_class=HTMLResponse)
     def audit_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):

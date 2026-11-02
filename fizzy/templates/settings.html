@@ -79,12 +79,12 @@
   <div class="actions"><button class="danger" data-confirm="Turn on maintenance mode for everyone?">Turn on</button></div>
   {% else %}<p class="notice small">Needs an owner password.</p>{% endif %}
 </form>
-<form class="panel" method="post" action="/settings/backup"><h2>Backups</h2>
+<form class="panel" id="backups" method="post" action="/settings/backup"><h2>Backups</h2>
   <table>
     <tr><td style="width:90px" class="muted">Folder</td><td class="mono">{{ backup_dir or 'Not set up yet' }}</td></tr>
     <tr><td class="muted">Last</td><td>{{ last_backup|local or 'Never' }}</td></tr>
   </table>
-  <div class="actions"><button>Back up now</button><a class="btn" href="/tools/backup.db">Download</a></div>
+  <div class="actions"><button>Back up now</button><a class="btn" href="/tools/backup.db" data-turbo="false">Download</a></div>
 </form>
 <div class="panel" id="passkeys"><h2>Security keys</h2>
   {% if passkey_options %}
