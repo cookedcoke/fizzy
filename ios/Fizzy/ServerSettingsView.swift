@@ -22,7 +22,8 @@ struct ServerSettingsView: View {
             NavigationLink("Maintenance mode") { MaintenanceForm(page: page) }
             updates(d)
             backups(d)
-            NavigationLink("Security keys · \(d.passkey_list.count)") { SecurityKeysView(page: page) }
+            NavigationLink("Security keys") { SecurityKeysView(page: page) }
+                .badge(d.passkey_list.count)
             NavigationLink("Devices") { DevicesView(page: page) }
         }
     }
@@ -114,17 +115,11 @@ struct PermissionsForm: View {
             }
             Section {
                 row("Big changes by hand", key: "big")
-                LabeledContent("More than") {
-                    HStack(spacing: 6) {
-                        TextField("500", text: $bigPoints).keyboardType(.numberPad).multilineTextAlignment(.trailing).frame(width: 70)
-                        Text("points").foregroundStyle(.secondary)
-                    }
+                LabeledContent("More than (points)") {
+                    TextField("500", text: $bigPoints).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
                 }
-                LabeledContent("or more than") {
-                    HStack(spacing: 6) {
-                        Text("$").foregroundStyle(.secondary)
-                        TextField("50", text: $bigDollars).keyboardType(.numberPad).multilineTextAlignment(.leading).frame(width: 70)
-                    }
+                LabeledContent("Or more than ($)") {
+                    TextField("50", text: $bigDollars).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
                 }
             } header: {
                 Text("Limits")
@@ -192,7 +187,7 @@ struct SettingsForm<Content: View>: View {
             if let error { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
             content
             Section {
-                Button(action) {
+                Button {
                     busy = true
                     error = nil
                     Task {
@@ -200,6 +195,8 @@ struct SettingsForm<Content: View>: View {
                         busy = false
                         if o.ok { dismiss() } else { error = o.message; page.flash = nil }
                     }
+                } label: {
+                    HStack { Spacer(); if busy { ProgressView() } else { Text(action).bold() }; Spacer() }
                 }
                 .disabled(!ready || busy)
             }
@@ -213,6 +210,13 @@ struct SettingsForm<Content: View>: View {
 
 struct TabRulesForm: View {
     let page: Page
+    private func money(_ text: Binding<String>) -> some View {
+        HStack(spacing: 1) {
+            Spacer(minLength: 0)
+            Text("$").foregroundStyle(.secondary)
+            TextField("0.00", text: text).keyboardType(.decimalPad).fixedSize().monospacedDigit()
+        }
+    }
     @State private var limit = ""
     @State private var days = ""
     @State private var unlock = ""
@@ -223,10 +227,13 @@ struct TabRulesForm: View {
             await page.submit("settings", [("tab_limit", limit), ("due_days", days), ("unlock_spend", unlock), ("score_needed", score)])
         }) {
             Section {
-                labelled("Highest tab limit ($)") { TextField("", text: $limit).keyboardType(.decimalPad) }
-                labelled("Days to pay") { TextField("", text: $days).keyboardType(.numberPad) }
-                labelled("Spend before eligible ($)") { TextField("", text: $unlock).keyboardType(.decimalPad) }
-                labelled("Tab score needed (0 to 100)") { TextField("", text: $score).keyboardType(.numberPad) }
+                // Short labels, so none are cut off; the values don't need much room.
+                LabeledContent("Highest limit") { money($limit) }
+                LabeledContent("Days to pay") { TextField("0", text: $days).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit() }
+                LabeledContent("Spend to unlock") { money($unlock) }
+                LabeledContent("Score needed") { TextField("0", text: $score).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit() }
+            } footer: {
+                Text("Spend to unlock is what a student has to spend before they can have a tab. The score is 0 to 100.")
             }
         }
         .onAppear {
@@ -366,7 +373,9 @@ struct MaintenanceForm: View {
                 }
             }
         } else {
-            Form { Text("Needs an owner password on the server.").foregroundStyle(.orange) }.navigationTitle("Maintenance mode")
+            Form { Text("Needs an owner password on the server.").foregroundStyle(.orange) }
+                .navigationTitle("Maintenance mode")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
@@ -438,7 +447,10 @@ struct DevicesView: View {
                     ForEach(d.device_list.array, id: \.self) { dev in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(dev.name.string) + (dev.revoked_at.isNull ? Text("") : Text("  Removed").foregroundStyle(.red))
+                                HStack(spacing: 4) {
+                                    Text(dev.name.string)
+                                    if !dev.revoked_at.isNull { Tag(text: "Removed", color: .red) }
+                                }
                                 Text("Added \(Fmt.when(dev.created_at.string, "d MMM yyyy")) · \(dev.created_by.string) · last used \(dev.last_seen_at.optString.map { Fmt.when($0) } ?? "never")")
                                     .font(.caption).foregroundStyle(.secondary)
                             }

@@ -42,15 +42,19 @@ struct ProfitView: View {
                     Text("No items sold \(d.label.string.lowercased()) yet" + (d.square_on.bool ? " - press Get items from Square below to list everything you sell." : "."))
                         .foregroundStyle(.secondary)
                 }
-                if hasChanges {
-                    Button("Save costs") { Task { await save() } }.buttonStyle(.borderedProminent).disabled(page.busy)
-                }
             }
             if d.square_on.bool {
                 Section {
                     Button { page.act("profit/refresh") } label: { Label("Get items from Square", systemImage: "arrow.triangle.2.circlepath") }
                 } footer: {
                     Text(d.catalog_sync.optString.map { "\(d.catalog_count.int) items · \(Fmt.when($0))" } ?? "Not read from Square yet")
+                }
+            }
+        }
+        .toolbar {
+            if hasChanges {
+                ToolbarItem(placement: .confirmationAction) {
+                    if page.busy { ProgressView() } else { Button("Save") { Task { await save() } } }
                 }
             }
         }

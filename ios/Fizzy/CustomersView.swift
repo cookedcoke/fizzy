@@ -56,13 +56,11 @@ struct CustomersView: View {
                 }
             } header: {
                 Text("Recently in · \(Fmt.number(d["count"].int)) active")
-            } footer: {
-                VStack(alignment: .leading, spacing: 8) {
-                    DownloadButton(title: "Export new people for Square (\(d.not_in_square.int))", path: "export/square-customers.csv", query: ["only": "new"])
-                    DownloadButton(title: "Export everyone", path: "export/square-customers.csv",
-                                   confirm: "This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them.")
-                }
-                .font(.footnote)
+            }
+            Section("Square export") {
+                DownloadButton(title: "Export new people for Square (\(d.not_in_square.int))", path: "export/square-customers.csv", query: ["only": "new"])
+                DownloadButton(title: "Export everyone", path: "export/square-customers.csv",
+                               confirm: "This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them.")
             }
         }
     }

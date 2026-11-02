@@ -60,7 +60,7 @@ struct RewardsView: View {
                             if r.paused.bool { Tag(text: "Paused", color: .orange) }
                         }
                         Text(r.summary.string + (r.kind.string == "badge" ? " · \(r.spec.points.int) points" + (r.spec.repeat.optString.map { $0 != "once" ? " each \($0)" : "" } ?? "") : ""))
-                            .font(.footnote)
+                            .font(.caption).foregroundStyle(.secondary)
                         Text("\(r.students.int) student\(r.students.int == 1 ? "" : "s") · \(Fmt.number(r.points.int)) points given · made by \(r.created_by.string) \(Fmt.when(r.created_at.string, "d MMM"))")
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -71,7 +71,7 @@ struct RewardsView: View {
                         Button(r.paused.bool ? "Restart" : "Pause") { page.act("rules/\(r.id.int)/\(r.paused.bool ? "resume" : "pause")") }.tint(.orange)
                     }
                 }
-                if d.custom.array.isEmpty { Text("None yet. Make one in Ask.").font(.footnote).foregroundStyle(.secondary) }
+                if d.custom.array.isEmpty { Text("None yet. Make one in Ask.").foregroundStyle(.secondary) }
             }
             if !d.events.array.isEmpty {
                 Section("Double points days · \(d.events.count)") {
@@ -98,7 +98,13 @@ struct RewardsView: View {
                                     }
                                     Button(soon ? "Skip" : "End") { cancelDay(id: e.id.int, name: e.name.string, running: on, start: e.start_date.string) }.tint(.orange)
                                 } else {
-                                    Button(soon ? "Delete" : "End", role: .destructive) { cancelDay(id: e.id.int, name: e.name.string, running: on, start: e.start_date.string) }
+                                    Button(soon ? "Delete" : "End", role: .destructive) {
+                                        if soon {
+                                            ask = ConfirmAsk(message: "Delete “\(e.name.string)”?") { page.act("events/\(e.id.int)/cancel") }
+                                        } else {
+                                            cancelDay(id: e.id.int, name: e.name.string, running: on, start: e.start_date.string)
+                                        }
+                                    }
                                 }
                             }
                         }

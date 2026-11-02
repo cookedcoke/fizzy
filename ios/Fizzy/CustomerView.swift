@@ -91,13 +91,14 @@ struct CustomerView: View {
             }
         } header: {
             HStack(spacing: 6) {
-                Text(c.email.string.split(separator: "@").first.map(String.init) ?? "").font(.footnote.monospaced()).textCase(nil)
+                Text(c.email.string.split(separator: "@").first.map(String.init) ?? "").font(.footnote.monospaced())
                 Tag(text: st.label.string, color: statusColor(st.status.string))
                 if c.archived_at.optString != nil { Tag(text: "Archived") }
                 if c.kind.string == "admin" { Tag(text: "Admin", color: .purple) }
                 if c.kind.string == "test" { Tag(text: "Test", color: .orange) }
                 if led.late_count.int > 0 { Tag(text: "\(led.late_count.int) late", color: .red) }
             }
+            .textCase(nil)
         }
     }
 
@@ -134,7 +135,6 @@ struct CustomerView: View {
                     }
                     if notInSquare {
                         Label("Not in Square yet. Their sales won't link by themselves - export new people from Customers, or claim their sales.", systemImage: "person.crop.circle.badge.questionmark")
-                            .font(.footnote)
                     }
                 }
             }
@@ -158,6 +158,7 @@ struct CustomerView: View {
                                 page.act("customers/\(id)/redeem/\(r.id.int)")
                             }
                             .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                         }
                     }
                 }
@@ -204,17 +205,18 @@ struct CustomerView: View {
             Section("Tab charges · \(list.count)") {
                 ForEach(Array(list), id: \.self) { ch in
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack {
+                        HStack(alignment: .firstTextBaseline) {
                             Text(Fmt.when(ch.charged_at.string))
                             Spacer()
                             if ch.overdue.bool { Tag(text: "Overdue", color: .red) }
                             else if ch.unpaid_cents.int > 0 { Tag(text: "Open") }
                             else if ch.paid_late.bool { Tag(text: "Paid late", color: .blue) }
                             else { Tag(text: "Paid", color: .green) }
+                            Text(Fmt.money(ch.net_cents.int)).monospacedDigit()
                         }
                         if let items = ch["items"].optString { Text(items).font(.caption).foregroundStyle(.secondary) }
                         if let breach = ch.breach.optString { Text(breach).font(.caption).foregroundStyle(.red) }
-                        Text("\(Fmt.money(ch.net_cents.int)) · paid \(Fmt.money(ch.paid_cents.int)) · unpaid \(Fmt.money(ch.unpaid_cents.int)) · due \(Fmt.when(ch.due_at.string, "EEE d MMM"))"
+                        Text("Paid \(Fmt.money(ch.paid_cents.int)) · unpaid \(Fmt.money(ch.unpaid_cents.int)) · due \(Fmt.when(ch.due_at.string, "EEE d MMM"))"
                              + (ch.refunded_cents.int > 0 ? " · \(Fmt.money(ch.refunded_cents.int)) refunded" : ""))
                             .font(.caption).monospacedDigit()
                     }
@@ -257,7 +259,7 @@ struct CustomerView: View {
         if !d.payments.array.isEmpty {
             Section("Square payments") {
                 ForEach(Array(d.payments.array.prefix(paymentLimit)), id: \.self) { p in
-                    Line(left: p.kind.string.replacingOccurrences(of: "_", with: " "),
+                    Line(left: { let k = p.kind.string.replacingOccurrences(of: "_", with: " "); return k.prefix(1).uppercased() + k.dropFirst() }(),
                          sub: [Fmt.when(p.created_at.string), p.tender.optString, p["items"].optString].compactMap { $0 }.joined(separator: " · "),
                          right: Fmt.money(p.amount_cents.int))
                 }
@@ -295,7 +297,8 @@ struct CustomerView: View {
                     Line(left: x.decision.string.capitalized, sub: [Fmt.when(x.created_at.string), x.note.optString].compactMap { $0 }.joined(separator: " · "), right: x.staff.string)
                 }
             }
-            DisclosureGroup("Activity log") {
+            DisclosureGroup("Activity log (\(d.audit_rows.count))") {
+                if d.audit_rows.array.isEmpty { Text("None.").foregroundStyle(.secondary) }
                 ForEach(d.audit_rows.array, id: \.self) { a in
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(a.action.string) · \(a.staff.string)").font(.subheadline)

@@ -215,7 +215,14 @@ struct Stat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.title3.bold()).monospacedDigit().foregroundStyle(alert ? .red : .primary)
+            // Full size if it fits on one line; a long value ("Mon 2 Nov 14:05") steps down a size instead of wrapping.
+            ViewThatFits(in: .horizontal) {
+                Text(value).font(.title3.bold())
+                Text(value).font(.subheadline.bold())
+            }
+            .lineLimit(1)
+            .monospacedDigit()
+            .foregroundStyle(alert ? .red : .primary)
             if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -401,7 +408,7 @@ struct PasscodeSheet: View {
                     Text(ask.need == "owner" ? "This needs the owner's password." : "This change needs the passcode. It stays unlocked for a few minutes.")
                 }
             }
-            .navigationTitle("Passcode")
+            .navigationTitle(ask.need == "owner" ? "Owner password" : "Passcode")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish(false) } }

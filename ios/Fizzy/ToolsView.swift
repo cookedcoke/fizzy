@@ -143,17 +143,25 @@ struct ToolFormView: View {
         switch f {
         case .person(let name, let label): PersonField(title: label, text: binding(name), people: d.people.array)
         case .text(let name, let label, _, let kb): TextField(label, text: binding(name)).keyboardType(kb).textInputAutocapitalization(kb == .emailAddress ? .never : .sentences)
-        case .number(let name, let label, _): TextField(label, text: binding(name)).keyboardType(.numbersAndPunctuation)
+        case .number(let name, let label, _):
+            LabeledContent(label) {
+                TextField(label, text: binding(name)).keyboardType(.numbersAndPunctuation)
+                    .multilineTextAlignment(.trailing).monospacedDigit()
+            }
         case .date(let name, let label, _): DayField(title: label, text: binding(name))
         case .area(let name, let label, _):
             VStack(alignment: .leading) {
                 Text(label).font(.footnote).foregroundStyle(.secondary)
-                TextEditor(text: binding(name)).frame(minHeight: 80).textInputAutocapitalization(.words)
+                TextEditor(text: binding(name)).frame(minHeight: 80).textInputAutocapitalization(name == "notice" ? .sentences : .words)
             }
         case .check(let name, let label):
             Toggle(label, isOn: Binding(get: { checks.contains(name) }, set: { if $0 { checks.insert(name) } else { checks.remove(name) } }))
         case .select(let name, let label, let options):
-            Picker(label, selection: binding(name)) { ForEach(options, id: \.0) { Text($0.1).tag($0.0) } }
+            VStack(alignment: .leading) {
+                Text(label).font(.footnote).foregroundStyle(.secondary)
+                Picker(label, selection: binding(name)) { ForEach(options, id: \.0) { Text($0.1).tag($0.0) } }
+                    .labelsHidden().pickerStyle(.menu)
+            }
         case .confirm(let word):
             TextField("Type \(word) to confirm", text: binding("confirm")).textInputAutocapitalization(.characters).autocorrectionDisabled()
         }

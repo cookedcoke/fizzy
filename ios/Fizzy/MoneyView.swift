@@ -173,7 +173,7 @@ struct RestockSheet: View {
                     }
                 }
                 .onDelete { if lines.count > 1 { lines.remove(atOffsets: $0) } }
-                Button("+ Another item") { lines.append(Line()) }
+                Button { lines.append(Line()) } label: { Label("Another item", systemImage: "plus.circle") }
                 LabeledContent("Total", value: Fmt.money(total))
             }
             Section {
@@ -221,14 +221,18 @@ struct PayoutSheet: View {
     }
 
     var body: some View {
-        FormSheet(title: "Payouts", action: "Record payouts", ready: amounts.values.contains { !$0.isEmpty }, page: page, send: {
+        FormSheet(title: "Pay the partners", action: "Record payouts", ready: amounts.values.contains { !$0.isEmpty }, page: page, send: {
             var form: Params = [("day", day), ("note", note)]
             for n in partners { form += [("partner", n), ("amount", amounts[n] ?? "")] }
             return await page.submit("money/payout", form)
         }) {
             Section("Split calculator") {
-                TextField("Money to split ($)", text: $pool).keyboardType(.decimalPad)
-                TextField("Keep for stock ($)", text: $keep).keyboardType(.decimalPad)
+                LabeledContent("Money to split") {
+                    TextField("$0.00", text: $pool).keyboardType(.decimalPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
+                LabeledContent("Keep for stock") {
+                    TextField("$0.00", text: $keep).keyboardType(.decimalPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
                 ForEach(partners, id: \.self) { n in
                     Toggle(isOn: Binding(get: { included.contains(n) }, set: { if $0 { included.insert(n) } else { included.remove(n) } })) {
                         HStack { Text(n); Spacer(); if let c = split[n] { Text(Fmt.money(c)).foregroundStyle(.secondary).monospacedDigit() } }

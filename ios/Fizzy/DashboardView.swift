@@ -105,6 +105,7 @@ struct DashboardView: View {
                 }
                 .chartForegroundStyleScale(["Today": Color("Brand"), "Last \(Fmt.when(t.day.string, "EEEE"))": Color.gray.opacity(0.4)])
                 .chartXAxis { AxisMarks(values: .automatic(desiredCount: 6)) }
+                .chartYAxis { dollarAxis }
                 .frame(height: 160)
             }
         }
@@ -113,9 +114,10 @@ struct DashboardView: View {
                 BarMark(x: .value("Day", Fmt.when(w.day.string, "EEE d")), y: .value("Sold", Double(w.sold_cents.int) / 100))
                     .foregroundStyle(Color("Brand"))
                     .annotation(position: .top) {
-                        if w.sold_cents.int > 0 { Text(Fmt.money(w.sold_cents.int)).font(.system(size: 8)).foregroundStyle(.secondary) }
+                        if w.sold_cents.int > 0 { Text(Fmt.money(w.sold_cents.int)).font(.caption2).monospacedDigit().foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7) }
                     }
             }
+            .chartYAxis { dollarAxis }
             .frame(height: 150)
         }
     }
@@ -151,9 +153,8 @@ struct DashboardView: View {
                 }
                 ForEach(d.unlinked_tabs.array, id: \.self) { u in
                     VStack(alignment: .leading, spacing: 6) {
-                        Line(left: "No customer attached", sub: Fmt.when(u.created_at.string), right: Fmt.money(u.amount_cents.int))
-                        Text("\(u.kind.string == "tab_charge" ? "Tab sale" : "Tab repayment") with no customer attached" + (u["items"].optString.map { " · \($0)" } ?? ""))
-                            .font(.footnote).foregroundStyle(.secondary)
+                        Line(left: "\(u.kind.string == "tab_charge" ? "Tab sale" : "Tab repayment") · no customer", sub: Fmt.when(u.created_at.string), right: Fmt.money(u.amount_cents.int))
+                        if let items = u["items"].optString { Text(items).font(.footnote).foregroundStyle(.secondary) }
                         Button("Assign to…") { assigning = Pick(value: u) }.buttonStyle(.bordered).controlSize(.small)
                     }
                 }
@@ -214,7 +215,9 @@ struct DashboardView: View {
     @ViewBuilder private func sales(_ d: J) -> some View {
         let s = d.sales
         Section("Top items") {
-            ForEach(s.top_today.array, id: \.self) { Line(left: $0.name.string, right: "\($0.qty.int)") }
+            ForEach(s.top_today.array, id: \.self) { Line(left: $0.name.string, right: "\($0.qty.int) sold") }
+            // and line 221:
+            ForEach(s.top_week.array, id: \.self) { Line(left: $0.name.string, right: "\($0.qty.int) sold") }
             if s.top_today.array.isEmpty { Text("Nothing yet today.").foregroundStyle(.secondary) }
         }
         Section("Top items · last 7 school days") {
@@ -223,22 +226,8 @@ struct DashboardView: View {
         }
         Section("Latest sales") {
             ForEach(s.recent.array, id: \.self) { c in
-                let items = c["items"].array.isEmpty ? "Tab repayment" : c["items"].array.map { "\($0.qty.int)× \($0.name.string)" }.joined(separator: ", ")
-                let amount = c.sold_cents.int != 0 ? c.sold_cents.int : c.repay_cents.int
-                let tag = c.tab_cents.int != 0 ? "tab" : (c.sold_cents.int == 0 ? "repaid" : nil)
-                HStack(alignment: .top) {
-                    Text(Fmt.when(c.at.string, "HH:mm")).foregroundStyle(.secondary).monospacedDigit()
-                    VStack(alignment: .leading, spacing: 2) {
-                        if c.customer_id.isNull { Text("No customer").foregroundStyle(.secondary) }
-                        else { NavigationLink(c.customer.string, value: CustomerID(id: c.customer_id.int)) }
-                        Text(items).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing) {
-                        Text(Fmt.money(amount)).monospacedDigit()
-                        if let tag { Text(tag).font(.caption).foregroundStyle(tag == "tab" ? .orange : .green) }
-                    }
-                }
+                if c.customer_id.isNull { saleRow(c) }
+                else { NavigationLink(value: CustomerID(id: c.customer_id.int)) { saleRow(c) } }
             }
             if s.recent.array.isEmpty { Text("No sales yet today.").foregroundStyle(.secondary) }
         }
@@ -249,6 +238,33 @@ struct DashboardView: View {
                 }
             }
             if d.top.array.isEmpty { Text("No sales yet.").foregroundStyle(.secondary) }
+        }
+    }
+
+    /// Money on a chart's y axis: "$20", not "20".
+    private var dollarAxis: some AxisContent {
+        AxisMarks { v in
+            AxisGridLine()
+            AxisTick()
+            AxisValueLabel { if let d = v.as(Double.self) { Text(d == d.rounded() ? "$\(Int(d))" : String(format: "$%.2f", d)) } }
+        }
+    }
+
+    @ViewBuilder private func saleRow(_ c: J) -> some View {
+        let items = c["items"].array.isEmpty ? "Tab repayment" : c["items"].array.map { "\($0.qty.int)× \($0.name.string)" }.joined(separator: ", ")
+        let amount = c.sold_cents.int != 0 ? c.sold_cents.int : c.repay_cents.int
+        let tag = c.tab_cents.int != 0 ? "tab" : (c.sold_cents.int == 0 ? "repaid" : nil)
+        HStack(alignment: .top) {
+            Text(Fmt.when(c.at.string, "HH:mm")).foregroundStyle(.secondary).monospacedDigit()
+            VStack(alignment: .leading, spacing: 2) {
+                if c.customer_id.isNull { Text("No customer").foregroundStyle(.secondary) } else { Text(c.customer.string) }
+                Text(items).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing) {
+                Text(Fmt.money(amount)).monospacedDigit()
+                if let tag { Tag(text: tag == "tab" ? (c.tab_cents.int == c.sold_cents.int ? "On tab" : "\(Fmt.money(c.tab_cents.int)) on tab") : "Tab repaid", color: tag == "tab" ? .blue : .green) }
+            }
         }
     }
 }
