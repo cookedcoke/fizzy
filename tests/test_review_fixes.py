@@ -220,7 +220,8 @@ def test_resync_requested_during_a_running_sync_is_not_lost(conn, cust):
 def test_merge_keeps_the_duplicates_square_profile_pointing_at_the_kept_customer(conn, cust):
     keep = cust("Keep Kid", "rns1@reddamnorthshore.nsw.edu.au", "SQK")
     dup = cust("Dup Kid", "rns2@reddamnorthshore.nsw.edu.au", "SQD")
-    logic.set_tab_decision(conn, dup["id"], "approved", "ok", "Will")
+    logic.set_tab_decision(conn, dup["id"], "revoked", "ok", "Will")
+    logic.set_score_adjust(conn, dup["id"], 15, "regular", "Will")
     req = type("R", (), {"session": {}})()
     tools.h_merge(req, conn, "Will", {"keep": "Keep Kid <rns1@reddamnorthshore.nsw.edu.au>",
                                      "dup": "Dup Kid <rns2@reddamnorthshore.nsw.edu.au>"})
@@ -230,7 +231,8 @@ def test_merge_keeps_the_duplicates_square_profile_pointing_at_the_kept_customer
                                  payments=[pay("p1", 300, cust="SQD")]))
     assert logic.points_balance(conn, keep["id"]) == 300
     k, d = reload(conn, keep), reload(conn, dup)
-    assert k["tab_decision"] == "approved" and d["tab_decision"] is None and d["merged_into"] == keep["id"]
+    assert k["tab_decision"] == "revoked" and d["tab_decision"] is None and d["merged_into"] == keep["id"]
+    assert k["score_adjust"] == 15                                         # the staff adjustment comes across too
 
 
 # ---- tools -----------------------------------------------------------------------------------

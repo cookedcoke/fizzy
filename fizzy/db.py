@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS customers (
     name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     square_customer_id TEXT UNIQUE,
-    -- Staff decision only: NULL (none yet), approved, rejected, revoked.
-    -- locked / eligible / blocked_overdue are derived, never stored.
+    -- Staff turning the tab off: NULL (tab on, sized by the tab score), rejected or revoked.
+    -- (approved was the old "on"; tab_rules_v2 cleared it.) low_score / blocked_overdue are derived.
     tab_decision TEXT,
     tab_decision_note TEXT,
     tab_decision_by TEXT,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS square_aliases (
     customer_id INTEGER NOT NULL REFERENCES customers(id)
 );
 
--- Permanent history of every tab decision (approve / reject / revoke / reset).
+-- Permanent history of every tab change: off (rejected / revoked), on, and staff score adjustments ("score +20").
 CREATE TABLE IF NOT EXISTS tab_decisions (
     id INTEGER PRIMARY KEY,
     customer_id INTEGER NOT NULL REFERENCES customers(id),
@@ -309,7 +309,6 @@ CREATE INDEX IF NOT EXISTS ix_audit_customer ON audit_log(customer_id);
 DEFAULT_SETTINGS = {
     "tab_limit_cents": "1000",
     "tab_due_days": "7",
-    "unlock_spend_cents": "3000",
 }
 
 
@@ -343,6 +342,7 @@ MIGRATIONS = [
     ("customers", "me_gen", "INTEGER"),
     ("restocks", "client_id", "TEXT"),  # set by the iOS app, so a restock sent again after a lost answer isn't added twice
     ("points_ledger", "rule_key", "TEXT"),  # rules.py: one grant per key, paid once  # bumped by "Sign out their phones" on the customer page
+    ("customers", "score_adjust", "INTEGER"),  # staff adjustment to the tab score (logic.set_score_adjust), NULL = none
 ]
 
 

@@ -58,7 +58,7 @@ def test_sales_already_linked_by_square_never_show(conn, cust):
 def test_claim_pages(client):
     login(client)
     client.post("/tools/add_customer", data={"name": "Nora Le Fevre", "email": "rns5@reddamnorthshore.nsw.edu.au"})
-    assert 'data-key="k"' in client.get("/customers/1").text
+    assert 'href="/customers/1/claim"' in client.get("/customers/1").text
     assert "No unclaimed sales" in client.get("/customers/1/claim").text
     from fizzy import db
     conn = db.connect()
@@ -68,7 +68,7 @@ def test_claim_pages(client):
     finally:
         conn.close()
     page = client.get("/customers/1/claim").text
-    assert "Coke" in page and 'data-key="1"' in page and "autofocus" in page
+    assert "Coke" in page and 'name="key" value="o:o1"' in page and "autofocus" in page
     r = client.post("/customers/1/claim", data={"key": "o:o1"})
     assert "Sale claimed for Nora Le Fevre" in r.text and "450" in r.text
     r = client.post("/customers/1/claim", data={"key": "o:o1"})

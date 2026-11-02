@@ -12,11 +12,13 @@ def buy(conn, cid, cents, days_ago):
                  (cid, cents, cents, iso(days_ago)))
 
 
-def test_new_customer_starts_low(conn, cust):
+def test_new_customer_starts_low_but_has_a_small_tab(conn, cust):
     c = cust()
     s = logic.tab_score(conn, c["id"])
-    assert s["score"] == 30 and s["limit_cents"] == 250 and not s["ready"]
+    assert s["score"] == 30 and s["limit_cents"] == 250 and s["ready"]     # the minimum is 20
     assert ("New here (under 2 weeks)", -10) in s["factors"]
+    st = logic.tab_status(conn, c)                                          # no approval, no spending needed
+    assert st["status"] == "approved" and st["can_charge"] and st["available_cents"] == 250 and st["label"] == "Tab $2.50"
 
 
 def test_history_builds_the_score_and_the_limit(conn, cust):
@@ -27,7 +29,7 @@ def test_history_builds_the_score_and_the_limit(conn, cust):
     assert s["score"] == 40 + 16 + 10 and s["ready"]                       # 66
     assert s["limit_cents"] == 750 and s["next"] == {"score": 80, "limit_cents": 1000}
     st = logic.tab_status(conn, c)
-    assert st["status"] == "eligible"                                       # spent $30+ and score 60+
+    assert st["status"] == "approved" and st["available_cents"] == 750
 
 
 def test_on_time_raises_it_late_and_overdue_lower_it(conn, cust):
@@ -46,14 +48,14 @@ def test_on_time_raises_it_late_and_overdue_lower_it(conn, cust):
     assert logic.tab_status(conn, c)["status"] == "blocked_overdue"
 
 
-def test_score_needed_setting(conn, cust):
+def test_min_score_setting(conn, cust):
     c = cust()
     for d in range(30, 20, -1):
         buy(conn, c["id"], 300, d)                                        # $30 over 10 days: 40 + 12 + 10 = 62
-    assert logic.tab_status(conn, c)["status"] == "eligible"
-    db.set_setting(conn, "tab_score_needed", 70)
+    assert logic.tab_status(conn, c)["status"] == "approved"
+    db.set_setting(conn, "tab_min_score", 70)
     st = logic.tab_status(conn, c)
-    assert st["status"] == "locked" and st["spent_enough"]
+    assert st["status"] == "low_score" and not st["can_charge"] and st["label"] == "Score too low"
 
 
 def test_score_cant_be_farmed(conn, cust):

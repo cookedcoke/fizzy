@@ -11,15 +11,17 @@ from datetime import date, datetime, timedelta, timezone
 from . import config
 from .db import audit, get_setting, now_iso
 
+# Everyone has a tab sized by their tab score, unless staff turned it off (rejected / revoked, the
+# only decisions stored now) or their score is under the minimum. "approved" means "tab on".
 STATUS_LABELS = {
-    "locked": "Locked",
-    "eligible": "Eligible",
-    "approved": "Approved",
-    "rejected": "Rejected",
-    "revoked": "Revoked",
+    "approved": "Tab on",
+    "low_score": "Score too low",
+    "rejected": "Tab off",
+    "revoked": "Tab off",
     "blocked_overdue": "Blocked (overdue)",
     "paused": "Paused (all tabs)",
 }
+OFF = ("rejected", "revoked")
 
 
 def parse_ts(s):
@@ -31,8 +33,7 @@ def settings(conn):
     return {
         "tab_limit_cents": int(get_setting(conn, "tab_limit_cents", 1000)),
         "tab_due_days": int(get_setting(conn, "tab_due_days", 7)),
-        "unlock_spend_cents": int(get_setting(conn, "unlock_spend_cents", 3000)),
-        "tab_score_needed": int(get_setting(conn, "tab_score_needed", 60)),
+        "tab_min_score": int(get_setting(conn, "tab_min_score", 20)),
         "tabs_paused": get_setting(conn, "tabs_paused", "0") == "1",
     }
 
@@ -111,9 +112,9 @@ def spend_cents(conn, customer_id):
 
 
 # ---- tab score -----------------------------------------------------------------------------------
-# A 0-100 score from someone's own history at the stall. It decides who's ready for a tab (staff
-# still approve the first time) and how much an approved person can owe. Every point is
-# explained, for staff and for the student.
+# A 0-100 score from someone's own history at the stall. It decides who has a tab (anyone at or
+# over the minimum score in Settings) and how much they can owe. Staff can add an adjustment, which
+# shows as a line of its own. Every point is explained, for staff and for the student.
 
 SCORE_BANDS = [(80, 1.0), (65, 0.75), (50, 0.5), (0, 0.25)]  # score at least -> share of the max limit
 
@@ -127,8 +128,13 @@ def band_limit(cfg, share):
     return cfg["tab_limit_cents"] if share >= 1 else int(cfg["tab_limit_cents"] * share) // 50 * 50
 
 
-def tab_score(conn, customer_id, ledger=None, spent=None, cfg=None, at=None):
+def tab_score(conn, customer_id, ledger=None, spent=None, cfg=None, at=None, adjust=None):
+    """The 0-100 tab score with every line explained. adjust: the staff adjustment (read from the
+    customer when None). base is the total before the adjustment and the 0-100 clamp."""
     at = at or datetime.now(timezone.utc)
+    if adjust is None:
+        row = conn.execute("SELECT score_adjust FROM customers WHERE id = ?", (customer_id,)).fetchone()
+        adjust = (row["score_adjust"] if row else 0) or 0
     cfg = cfg or settings(conn)
     ledger = ledger or tab_ledger(conn, customer_id, at)
     spent = spend_cents(conn, customer_id) if spent is None else spent
@@ -169,7 +175,10 @@ def tab_score(conn, customer_id, ledger=None, spent=None, cfg=None, at=None):
         f.append((f"Had a debt written off{'' if writeoffs == 1 else f' {writeoffs} times'}", -15 * writeoffs))
     if first is None or (at - first).days < 14:
         f.append(("New here (under 2 weeks)", -10))
-    score = max(0, min(100, sum(p for _, p in f)))
+    base = sum(p for _, p in f)
+    if adjust:
+        f.append(("Staff adjustment", adjust))
+    score = max(0, min(100, base + adjust))
     share = next(sh for floor, sh in SCORE_BANDS if score >= floor)
     limit = band_limit(cfg, share)
     next_band = next(((floor, sh) for floor, sh in reversed(SCORE_BANDS) if floor > score), None)
@@ -186,48 +195,58 @@ def tab_score(conn, customer_id, ledger=None, spent=None, cfg=None, at=None):
         tips.append("Spending counts too, up to $50.")
     return {"score": score, "factors": f, "limit_cents": limit, "share": share, "tips": tips[:2],
             "next": {"score": next_band[0], "limit_cents": band_limit(cfg, next_band[1])} if next_band else None,
-            "ready": score >= cfg["tab_score_needed"]}
+            "base": base, "adjust": adjust, "ready": score >= cfg["tab_min_score"]}
 
 
-def status_for(decision, has_overdue, spent, cfg, score=None):
-    """The tab status rules in one place. score: from tab_score (None means only spend counts)."""
-    if decision == "approved":
-        if has_overdue:
-            return "blocked_overdue"
-        return "paused" if cfg["tabs_paused"] else "approved"
-    if decision in ("rejected", "revoked"):
+def status_for(decision, has_overdue, score, cfg):
+    """The tab status rules in one place. Staff turning a tab off beats everything; then overdue
+    money; then a score under the minimum; then tabs paused for everyone. Otherwise it's on."""
+    if decision in OFF:
         return decision
-    ready = score is None or score >= cfg["tab_score_needed"]
-    return "eligible" if spent >= cfg["unlock_spend_cents"] and ready else "locked"
+    if has_overdue:
+        return "blocked_overdue"
+    if score < cfg["tab_min_score"]:
+        return "low_score"
+    return "paused" if cfg["tabs_paused"] else "approved"
 
 
 def tab_status(conn, customer, ledger=None, cfg=None):
     cfg = cfg or settings(conn)
     ledger = ledger or tab_ledger(conn, customer["id"])
     spent = spend_cents(conn, customer["id"])
-    sc = tab_score(conn, customer["id"], ledger, spent, cfg)
-    status = status_for(customer["tab_decision"], ledger["has_overdue"], spent, cfg, sc["score"])
+    sc = tab_score(conn, customer["id"], ledger, spent, cfg, adjust=_adjust_of(customer))
+    status = status_for(customer["tab_decision"], ledger["has_overdue"], sc["score"], cfg)
     can_charge = status == "approved"
     available = max(0, sc["limit_cents"] - ledger["owing_cents"]) if can_charge else 0
     return {
         "status": status,
-        "label": STATUS_LABELS[status],
+        "label": f"Tab ${sc['limit_cents'] / 100:.2f}" if status == "approved" else STATUS_LABELS[status],
         "can_charge": can_charge and available > 0,
         "available_cents": available,
         "spend_cents": spent,
-        "unlock_spend_cents": cfg["unlock_spend_cents"],
         "limit_cents": sc["limit_cents"],          # this person's limit, from their score
         "max_limit_cents": cfg["tab_limit_cents"],
         "score": sc,
-        "score_needed": cfg["tab_score_needed"],
-        "spent_enough": spent >= cfg["unlock_spend_cents"],
+        "min_score": cfg["tab_min_score"],
         "due_days": cfg["tab_due_days"],
+        # Kept for older copies of the iOS app, which still read them: nothing waits on spending now.
+        "score_needed": cfg["tab_min_score"],
+        "unlock_spend_cents": 0,
+        "spent_enough": True,
     }
 
 
+def _adjust_of(customer):
+    """The staff adjustment on a customer row, or None (tab_score then reads it) if the row lacks it."""
+    return (customer["score_adjust"] or 0) if "score_adjust" in customer.keys() else None
+
+
 def set_tab_decision(conn, customer_id, decision, note, staff):
+    """Turn someone's tab off (rejected / revoked) or back on (None). "approved" is the old word
+    for "on", still sent by older copies of the iOS app."""
     if decision not in ("approved", "rejected", "revoked", None):
         raise ValueError("bad decision")
+    decision = None if decision == "approved" else decision
     ts = now_iso()
     conn.execute(
         "UPDATE customers SET tab_decision = ?, tab_decision_note = ?, tab_decision_by = ?, tab_decision_at = ? "
@@ -236,9 +255,72 @@ def set_tab_decision(conn, customer_id, decision, note, staff):
     )
     conn.execute(
         "INSERT INTO tab_decisions(customer_id, decision, note, staff, created_at) VALUES (?, ?, ?, ?, ?)",
-        (customer_id, decision or "reset", note or None, staff, ts),
+        (customer_id, decision or "on", note or None, staff, ts),
     )
-    audit(conn, staff, f"tab_{decision or 'reset'}", customer_id, note or "")
+    audit(conn, staff, f"tab_{decision or 'on'}", customer_id, note or "")
+
+
+MAX_ADJUST = 100  # the whole score range, either way
+
+
+def set_score_adjust(conn, customer_id, adjust, note, staff):
+    """Set the staff adjustment: a line in the tab score, so the limit always follows the score."""
+    adjust = int(adjust)
+    if not -MAX_ADJUST <= adjust <= MAX_ADJUST:
+        raise ValueError(f"An adjustment goes from -{MAX_ADJUST} to +{MAX_ADJUST}.")
+    conn.execute("UPDATE customers SET score_adjust = ? WHERE id = ?", (adjust or None, customer_id))
+    conn.execute(
+        "INSERT INTO tab_decisions(customer_id, decision, note, staff, created_at) VALUES (?, ?, ?, ?, ?)",
+        (customer_id, f"score {adjust:+d}" if adjust else "score adjustment cleared", note or None, staff, now_iso()),
+    )
+    audit(conn, staff, "score_adjust", customer_id, f"{adjust:+d}" + (f": {note}" if note else ""))
+    return adjust
+
+
+def bands(cfg):
+    """The limit bands staff can put someone in: (lowest score for it, limit), smallest first.
+    The lowest band starts at the minimum score, so picking it never turns the tab off."""
+    out = []
+    floors = sorted(SCORE_BANDS)
+    for i, (floor, share) in enumerate(floors):
+        top = floors[i + 1][0] if i + 1 < len(floors) else 101
+        start = max(floor, cfg["tab_min_score"])
+        if start < top:
+            out.append((start, band_limit(cfg, share)))
+    return out
+
+
+def adjust_for_band(conn, customer, score_floor, cfg=None):
+    """The adjustment that puts this customer's score at score_floor (the start of a band) today.
+    Later payments still move them up or down from there."""
+    cfg = cfg or settings(conn)
+    base = tab_score(conn, customer["id"], cfg=cfg, adjust=0)["base"]
+    return max(-MAX_ADJUST, min(MAX_ADJUST, score_floor - base))
+
+
+def retire_approvals(conn):
+    """Once, when tabs moved to the tab score (tab_rules_v2): everyone staff had approved keeps a
+    tab. Approval goes; anyone whose score is under the minimum gets just enough staff adjustment
+    to reach it (not counting money overdue right now, which blocks the tab by itself anyway)."""
+    if get_setting(conn, "tab_rules_v2") == "1":
+        return 0
+    cfg = settings(conn)
+    kept = 0
+    for c in conn.execute("SELECT * FROM customers WHERE tab_decision = 'approved'").fetchall():
+        sc = tab_score(conn, c["id"], cfg=cfg, adjust=0)
+        base = sc["base"] + (25 if any(label == "Money overdue right now" for label, _ in sc["factors"]) else 0)
+        if base < cfg["tab_min_score"] and not c["score_adjust"]:
+            conn.execute("UPDATE customers SET score_adjust = ? WHERE id = ?", (cfg["tab_min_score"] - base, c["id"]))
+            conn.execute("INSERT INTO tab_decisions(customer_id, decision, note, staff, created_at) VALUES (?, ?, ?, ?, ?)",
+                         (c["id"], f"score {cfg['tab_min_score'] - base:+d}", "Kept their tab when approval was replaced by the tab score",
+                          "fizzy", now_iso()))
+            kept += 1
+        conn.execute("UPDATE customers SET tab_decision = NULL, tab_decision_note = NULL, tab_decision_by = NULL, "
+                     "tab_decision_at = NULL WHERE id = ?", (c["id"],))
+    conn.execute("INSERT INTO settings(key, value) VALUES ('tab_rules_v2', '1') "
+                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    conn.commit()
+    return kept
 
 
 MAX_POINTS_CHANGE = 100_000
@@ -467,14 +549,16 @@ def search_index(conn):
     out = []
     for c in conn.execute("SELECT * FROM customers WHERE archived_at IS NULL ORDER BY name"):
         points, spent = pts.get(c["id"], (0, 0))
-        ledger = tab_ledger(conn, c["id"]) if c["id"] in with_tab else {"owing_cents": 0, "has_overdue": False}
-        score = None
-        if c["tab_decision"] is None and spent >= cfg["unlock_spend_cents"]:  # only these can turn on the score
-            score = tab_score(conn, c["id"], ledger if "charges" in ledger else None, spent, cfg)["score"]
-        status = status_for(c["tab_decision"], ledger["has_overdue"], spent, cfg, score)
+        ledger = (tab_ledger(conn, c["id"]) if c["id"] in with_tab
+                  else {"owing_cents": 0, "has_overdue": False, "charges": [], "repayments": []})
+        sc = None
+        if c["tab_decision"] not in OFF:  # a tab turned off doesn't need the score
+            sc = tab_score(conn, c["id"], ledger, spent or 0, cfg, adjust=c["score_adjust"] or 0)
+        status = status_for(c["tab_decision"], ledger["has_overdue"], sc["score"] if sc else 0, cfg)
         out.append({
             "id": c["id"], "name": c["name"], "sid": c["email"].split("@")[0],
-            "points": points, "owing": ledger["owing_cents"], "status": status, "label": STATUS_LABELS[status],
+            "points": points, "owing": ledger["owing_cents"], "status": status,
+            "label": f"Tab ${sc['limit_cents'] / 100:.2f}" if status == "approved" else STATUS_LABELS[status],
         })
     return out
 

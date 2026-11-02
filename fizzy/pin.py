@@ -52,7 +52,7 @@ ACTIONS = [
     ("redeem", "Redeem rewards, and undo them", [("POST", r"^/customers/\d+/redeem/"), ("POST", r"^/redemptions/")], "pin"),
     ("rewards", "Set up and end rewards", [("POST", r"^/rewards")], "pin"),
     ("events", "Double points days", [("POST", r"^/events")], "pin"),
-    ("tab_decisions", "Approve, reject or revoke someone's tab", [("POST", r"^/customers/\d+/tab$")], "pin"),
+    ("tab_decisions", "Change someone's tab limit (tab score adjustment), or turn their tab off", [("POST", r"^/customers/\d+/tab$")], "pin"),
     ("tab_money", "Tab money by hand: repayments, charges, write-offs, more time",
      [("POST", r"^/customers/\d+/repay$"), ("POST", r"^/tools/(manual_charge|write_off|extend_due)$")], "pin"),
     ("customers", "Add and edit customers", [("POST", r"^/customers/\d+/edit$"), ("POST", r"^/tools/add_customer$")], "pin"),
@@ -65,9 +65,9 @@ ACTIONS = [
     ("money_delete", "Delete restocks and payouts", [("POST", r"^/money/(restock|payout)/\d+/delete$")], "owner"),
     ("costs", "Item costs", [("POST", r"^/profit$")], "pin"),
     ("square_kind", "Change how a Square payment is counted", [("POST", r"^/square/payments/[^/]+/kind$")], "pin"),
-    ("school_tools", "Whole-school tools: reset points, revoke all, approve all, pause tabs, bonus for a period, "
+    ("school_tools", "Whole-school tools: reset points, turn off all tabs, pause tabs, bonus for a period, "
                      "archive/restore many, merge, re-sync, sign everyone out",
-     [("POST", r"^/tools/(reset_points|revoke_all|approve_eligible|pause_tabs|bonus_points|bulk_archive|restore|merge"
+     [("POST", r"^/tools/(reset_points|revoke_all|pause_tabs|bonus_points|bulk_archive|restore|merge"
                r"|resync|history|sign_out_all|delete_test_accounts)$")], "owner"),
     ("downloads", "Download exports and backups",
      [("GET", r"^/tools/(export/|backup\.db)"), ("GET", r"^/export/"), ("POST", r"^/tools/download_backup$")], "owner"),

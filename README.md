@@ -19,7 +19,7 @@ their tab?*
 6. [Rewards (points shop)](#6-rewards-points-shop)
 7. [Student site](#7-student-site)
 8. [Tools](#8-tools)
-9. [Search and keyboard shortcuts](#9-search-and-keyboard-shortcuts)
+9. [Search](#9-search)
 10. [Setting up](#10-setting-up)
 11. [Running it](#11-running-it)
 12. [Configuration reference](#12-configuration-reference)
@@ -32,19 +32,19 @@ their tab?*
 ## 1. At the counter
 
 **The quick way: claim it in Fizzy (type the name once)**
-1. In Fizzy: `Esc`, type their name, `Enter`. Their page shows points, tab and rewards.
+1. In Fizzy: type their name in the search box and pick them. Their page shows points, tab and rewards.
 2. On the Square Terminal, ring it up **without adding a customer** (with the Fizzy Tab
    discount or the Tab repayment item if needed) and take payment.
-3. Back in Fizzy, press `K` (**Claim sale**). The newest sale with no customer is at the top:
-   `Enter` gives it to them (or `1`–`6` for an earlier one). Points, tab charges and
+3. Back in Fizzy, press **Claim sale**. The newest sale with no customer is at the top:
+   click it to give it to them (or an earlier one below it). Points, tab charges and
    repayments land straight away.
 
 **Even quicker:** if their page is already open when you take the payment, a *New sale* box
-pops up within a few seconds: `Enter` claims it for them, `Esc` if it isn't theirs. (It only
-offers sales from about the time the page was opened, never older ones, and never claims
-anything without a key press.)
+pops up within a few seconds: **Claim** gives it to them, **Not theirs** dismisses it. (It
+only offers sales from about the time the page was opened, never older ones, and never
+claims anything without a click.)
 
-Fizzy asks Square for the latest sales when you press `K`, so there's no waiting. If a tab sale
+Fizzy asks Square for the latest sales when you open **Claim sale**, so there's no waiting. If a tab sale
 is more than they're allowed, the claim page says so before you claim it. Forget to claim?
 Nothing breaks: the sale waits on the **Square** page to be assigned later.
 
@@ -55,11 +55,11 @@ Nothing breaks: the sale waits on the **Square** page to be assigned later.
 2. Points arrive in Fizzy automatically (within seconds with webhooks, otherwise within 5 minutes).
 
 **Someone wants to put it on their tab**
-1. In Fizzy: `Esc`, type their name, then `Enter` (or the result's number, `1`–`8`).
+1. In Fizzy: type their name in the search box and pick them (arrow keys and `Enter` work too).
 2. Read the answer at the top of their page:
    - **Green tick:** they can, up to the amount shown.
-   - **Red cross:** no (overdue, rejected, revoked, or at the limit). The line underneath says why.
-   - **Grey dash:** not yet (hasn't spent $30, waiting for approval, or tabs are paused).
+   - **Red cross:** no (overdue, tab turned off, or at the limit). The line underneath says why.
+   - **Grey dash:** not yet (tab score under the minimum, or tabs are paused).
 3. If green: on the Terminal, ring up the items, **attach their profile**, apply the **Fizzy
    Tab** discount, and charge the **$0 as cash**. Fizzy adds it to their tab automatically.
    - Only part of it on the tab? Apply the discount to just those items and charge the rest
@@ -75,14 +75,18 @@ Nothing breaks: the sale waits on the **Square** page to be assigned later.
    **Record without Square**.
 
 **Who's on the counter**: the name in the top-right is recorded against everything you do.
-Switch it with `W` or the dropdown. **Lock** signs the device out.
+Switch it with the dropdown. **Lock** signs the device out.
 
 ---
 
 ### Install it like an app
 
-Fizzy and the student site can both be added to a phone's home screen. They then open full
-screen with their own icon, like an app. On iPhone: Safari → Share → **Add to Home Screen**. On
+**Phones can't open the staff site:** a phone browser gets a page pointing it at the Fizzy iPhone
+app (`ios/`), which is built for a small screen. iPads, Android tablets, computers and the Mac app
+are unaffected, and the student site works on any phone.
+
+Fizzy (on an iPad) and the student site (on a phone) can be added to the home screen. They then open full
+screen with their own icon, like an app. On iPhone or iPad: Safari → Share → **Add to Home Screen**. On
 Android: Chrome → ⋮ → **Install app**. Pages are always loaded fresh (nothing about students is
 stored on the phone). If the home PC or the internet is down, you get a "You're offline" page
 with a Try again button instead of a browser error.
@@ -147,22 +151,26 @@ search box, Enter still opens the student).
 |---|---|---|
 | Most a customer can owe | $10 | Settings |
 | Days to pay each tab charge | 7 | Settings (applies to new charges) |
-| Spend needed before eligible for a tab | $30 | Settings |
+| Tab score needed to have a tab | 20 (new customers start on 30) | Settings |
 | Points | 1 per cent paid ($3 = 300 points) | fixed |
 
 **Tab status**
 
 | Status | Meaning | Can use tab? |
 |---|---|---|
-| Locked | Hasn't spent $30 yet | No |
-| Eligible | Spent $30, waiting for a staff decision | No, until approved |
-| Approved | Staff said yes | **Yes**, up to the limit |
-| Blocked (overdue) | Approved, but has a charge past its due date | No. Clears itself when paid |
-| Paused (all tabs) | Approved, but tabs are paused for everyone (Tools) | No |
-| Rejected / Revoked | Staff said no / took it away | No |
+| Tab on (shown as *Tab $5.00*) | Tab score at or over the minimum | **Yes**, up to the limit their score gives |
+| Score too low | Tab score under the minimum (late payments, write-offs) | No. Comes back as the score does |
+| Blocked (overdue) | Has a charge past its due date | No. Clears itself when paid |
+| Paused (all tabs) | Tabs are paused for everyone (Tools) | No |
+| Tab off | Staff turned it off | No, until staff turn it back on |
 
-- **Staff have the final say.** Approve, reject or revoke in one click, with an optional
-  note. Every decision is kept in the customer's history.
+- **Nobody waits for approval.** Everyone has a tab sized by their tab score, from their first
+  day: $2.50 for a new customer with the default $10 maximum.
+- **Staff have the final say.** On the customer page, **Tab limit** puts someone in a limit band
+  ($2.50, $5, $7.50 or $10) or sets a score adjustment by hand. Either way it's a *Staff adjustment*
+  line in their tab score, so the limit always matches the score: paying late still brings it
+  down. **Turn tab off** stops their tab whatever the score. Every change, with its note, is kept
+  in the customer's tab history.
 - **What counts as "spent":** completed sales with the customer attached, plus tab
   repayments, minus refunds. Manual point adjustments don't count.
 - **Points on tab purchases** are earned when the tab is **repaid**, not when charged.
@@ -200,11 +208,13 @@ and shown, with every point explained, on their customer page and on the student
 | Each debt written off | −15 |
 | First purchase under 2 weeks ago | −10 |
 
+| Staff adjustment | Whatever staff set on the customer page, −100 to +100 |
+
 It does two things:
 
-- **Who's ready for a tab:** someone becomes *eligible* once they've spent the minimum *and* their
-  score reaches the **Tab score needed** (60 by default, in Settings). Staff still approve them.
-- **How much they can owe:** an approved customer's limit comes from their score. 80+ gets the
+- **Who has a tab:** everyone whose score is at or over the **Minimum tab score** (20 by default,
+  in Settings), unless staff turned their tab off.
+- **How much they can owe:** their limit comes from their score. 80+ gets the
   **Highest tab limit** from Settings, 65+ three quarters of it, 50+ half, below that a quarter
   (rounded down to 50c). Paying on time raises it; paying late, or owing overdue money, lowers it
   straight away.
@@ -284,10 +294,10 @@ system, and it doesn't suit this:
 
 | | Square House Accounts | Fizzy tabs |
 |---|---|---|
-| Setup | An account created one customer at a time in Square, with a spending limit and a billing method | Everyone is imported once; staff approve with one click |
+| Setup | An account created one customer at a time in Square, with a spending limit and a billing method | Everyone is imported once; everyone has a small tab that grows with their tab score |
 | Collecting money | Square invoices (one-off or recurring) or an automatic charge to a card on file. Square says house accounts can't take repayment in instalments, and a sale can't be split between House Account and another payment type | Cash or card at the counter, any amount, any time |
 | Overdue | Square sends reminders; you lock accounts by hand | Blocked automatically until paid, with a permanent late record |
-| Points, the $30 rule, approvals | None | Built in |
+| Points, the tab score, limits that follow it | None | Built in |
 | Your experience | It's the invoice flow you already shut down because people paid late | Built around a 7-day, $10 counter tab |
 
 House Account suits a business billing regular adult customers monthly. For students paying
@@ -334,9 +344,9 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 | Page | What's on it |
 |---|---|
 | **Dashboard** | Search; noticeboard; warnings (Square not connected, tabs paused). **Today's sales:** sold, taken, orders and average, customers, put on tabs and repaid; sold by hour against the same day last week; the last 7 school days; top items; latest sales. It refreshes itself every minute while nobody's touching it. **Tabs:** totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers; people waiting for tab approval |
-| **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend (with a progress bar to $30); record repayment; approve / reject / revoke; adjust points; tab charges with due dates and status; repayments; points history; Square payments; decision history; activity log; edit (name, Square ID, archive) |
+| **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend; record repayment; tab limit (pick a band or set a score adjustment, turn the tab off or on); tab score with every line explained; adjust points; tab charges with due dates and status; repayments; points history; Square payments; tab history; activity log; edit (name, Square ID, archive) |
 | **Customers** | Search with a results table; download the Square import CSV |
-| **Claim sale** (`K` on a customer) | The latest Square sales with no customer; `Enter` gives the newest to this customer |
+| **Claim sale** (button on a customer) | The latest Square sales with no customer; click one to give it to this customer |
 | **Rewards** | Start and end reward events; see how many were redeemed |
 | **Square** | Connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer |
 | **Tools** | Occasional jobs (next section) |
@@ -393,7 +403,7 @@ The pages are kept to labels and buttons. What they used to explain:
 
 ## 5. Profit
 
-**Profit** (dashboard button, or `G` then `P`) needs no Square Retail Plus: type what one of
+**Profit** (dashboard button, or the top bar) needs no Square Retail Plus: type what one of
 each item costs you in the table and press **Save costs**.
 
 **Where the items come from.** Fizzy reads your item list from Square every 6 hours (or press
@@ -411,7 +421,7 @@ access token has it); without it, items show up here once they've sold.
   revenue that is. Refunds aren't taken off.
 - **Today / Last 7 days / Last 30 days** switch the range. The dashboard shows today's profit.
 
-**Money** (dashboard button, or `G` then `M`) is a record of what was bought and who got
+**Money** (dashboard button, or the top bar) is a record of what was bought and who got
 paid. It doesn't try to track how much money the stall has.
 - **Add a restock:** day, shop, each item with quantity and the cost for the whole line
   (24 Coke for $18), and optionally a receipt photo (phones open the camera). The cost of one
@@ -437,7 +447,7 @@ stays live until you end it.
 - optionally, a limit per customer.
 
 **At the counter:** while a reward is live, it shows on every customer's page.
-- **They have enough points:** it's green, with a **Redeem** button (shortcut `O`). Offer it;
+- **They have enough points:** it's green, with a **Redeem** button. Offer it;
   they can take it or leave it.
 - **They don't:** it shows how many more points they need, which is worth telling them too.
 - **Search results** show a green **Reward** tag next to anyone who can redeem something.
@@ -455,8 +465,8 @@ Don't use the Fizzy Tab discount for rewards: that would put the sale on a tab. 
 refuses a reward whose instructions mention it.
 
 **Ending one:** press **End** on the Rewards page. Its history (how many redeemed, by how
-many people) is kept. Redeeming doesn't count as spending, so it doesn't affect the $30 tab
-threshold. 1 point = 1 cent spent, so 1000 points = $10 spent.
+many people) is kept. Redeeming doesn't count as spending, so it doesn't change the tab
+score. 1 point = 1 cent spent, so 1000 points = $10 spent.
 
 **Double points days.** On the Rewards page, *Schedule double points*: a name, a multiplier
 (2 = double), and the first and last day (today or later). During those days every purchase
@@ -591,8 +601,7 @@ says who you might mean, so a typo can't hit the wrong student.
 | | Move points | Points went to the wrong person |
 | | Reset all points | End of year. Spend history and tab eligibility are kept |
 | Tabs | Pause all tabs | Holidays, end of term. Approvals come back when unpaused |
-| | Approve all eligible | Approve everyone who's reached $30 with no decision yet |
-| | Revoke all tabs | End of year |
+| | Turn off all tabs | End of year |
 | | Add tab charge by hand | Only if the sale isn't in Square at all; otherwise it'd be counted twice |
 | | Write off a debt | Clear some or all of what someone owes. Earns no points |
 | | Give more time to pay | Push back the due date on all of someone's unpaid charges |
@@ -624,7 +633,7 @@ tries locks it for 10 minutes. Forgot it? On the home PC:
 docker compose exec -u fizzy fizzy python -m fizzy clear-pin
 ```
 
-## 9. Search and keyboard shortcuts
+## 9. Search
 
 ### Search
 
@@ -649,33 +658,8 @@ page and in the Tools customer boxes all use the same matching. The Python
 (`fizzy/fuzzy.py`) and browser (`fizzy/static/fuzzy.js`) copies are tested to rank
 identically.
 
-### Shortcuts
-
-Press **`?`** on any page for the list. Buttons and sections with a shortcut show its key
-in a small grey box (e.g. **Approve `A`**), and hovering over anything with a shortcut, including
-the top-bar links, names it. Shortcuts don't fire while you're typing in a box; `Esc` gets
-you out of the box first. The key boxes are hidden on phones.
-
-| Key | Does |
-|---|---|
-| `/` or `S` | Search |
-| `↑` `↓` `Enter` | Pick a search result |
-| `1`–`8` | Open that search result (results are numbered). While searching by student number, use `Alt`+number, since plain digits are part of the number |
-| `Esc` | Leave the box you're in, then press again to go back to the dashboard |
-| `K` | Customer: claim the sale just rung up in Square with no customer (`Enter` claims the newest, `1`–`6` pick one) |
-| `R` | Customer: record repayment (amount pre-filled; `Enter` saves) |
-| `P` | Customer: adjust points (`Tab` to the reason, `Enter` saves) |
-| `O` | Customer: redeem the reward they can have (asks first) |
-| `A` | Customer: approve tab |
-| `X` | Customer: reject, or revoke if approved (asks first) |
-| `N` | Customer: note for the tab decision |
-| `H` `L` `E` | Customer: decision history, activity log, edit |
-| `W` | Switch who's on the counter |
-| `U` | Square page: sync now |
-| `1`–`8` | Tools page: jump to a section |
-| `G` then `D` `C` `S` `R` `T` `I` `L` `,` | Go to Dashboard, Customers, Square, Rewards, Tools, Import, Log, Settings |
-| `Ctrl` + `Enter` | Submit the form you're in |
-| `?` | Show shortcuts |
+There are no keyboard shortcuts: everything is a button. In the search box, the arrow keys and
+`Enter` pick a result, and `Esc` clears it. A card scanner works on any page (see above).
 
 ---
 
@@ -1084,7 +1068,7 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
 | `fizzy/square.py` | Square API client, payment/refund processing (safe to repeat), webhook check |
 | `fizzy/fuzzy.py` | Name matching (fzf scoring + typo tolerance) |
 | `fizzy/static/fuzzy.js` | Browser copy of `fuzzy.py`. **Change both together**; a test compares them |
-| `fizzy/static/app.js` | In-browser search, keyboard shortcuts, `?` panel |
+| `fizzy/static/app.js` | In-browser search, card scans, confirm and passcode boxes, the New sale pop-up |
 | `fizzy/tools.py` | The Tools page: each tool is a `TOOLS` entry plus an `h_<id>` handler |
 | `fizzy/app.py` | Routes, login, background jobs |
 | `fizzy/customers.py` | CSV import, search, Square export |
@@ -1098,10 +1082,8 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
 - Square payments and refunds are processed at most once (keyed by Square ID), so webhooks
   and polling can overlap safely.
 - Anything that changes data writes to `audit_log`.
-- Keyboard shortcuts: add `data-key="x"` (and optionally `data-key-label`, `data-confirm`) to
-  any button, field or `<details>`. It then works, gets a hover tip and appears in the `?`
-  panel automatically. Add a visible `<kbd>X</kbd>` in the template next to it. Avoid `s`,
-  `f`, `g` and `/`, which are taken.
+- No keyboard shortcuts (removed: nobody used them). A button that needs a second look gets
+  `data-confirm="Question?"`, and Fizzy asks in its own box first.
 
 ---
 

@@ -199,9 +199,8 @@ struct Tag: View {
 func statusColor(_ key: String) -> Color {
     switch key {
     case "approved": .green
-    case "eligible": .blue
     case "blocked_overdue", "rejected", "revoked": .red
-    case "paused": .orange
+    case "paused", "low_score": .orange
     default: .secondary
     }
 }

@@ -47,11 +47,13 @@ def test_search_index_matches_customer_page(client):
     login(client)
     csv = b"Cleaned Name,Email\nAdeline Yates,rns1@reddamnorthshore.nsw.edu.au\nAdam Fenn,rns2@reddamnorthshore.nsw.edu.au\n"
     client.post("/import", files={"file": ("d.csv", csv, "text/csv")}, data={"confirm": "1"})
-    client.post("/customers/1/tab", data={"decision": "approve"})
-    client.post("/tools/manual_charge", data={"customer": "Adeline Yates", "amount": "3"})
+    client.post("/customers/2/tab", data={"decision": "off"})
+    client.post("/tools/manual_charge", data={"customer": "Adeline Yates", "amount": "2"})
     rows = {r["name"]: r for r in client.get("/api/index").json()}
-    assert rows["Adeline Yates"]["status"] == "approved" and rows["Adeline Yates"]["owing"] == 300
-    assert rows["Adam Fenn"]["status"] == "locked" and rows["Adam Fenn"]["sid"] == "rns2"
+    assert rows["Adeline Yates"]["status"] == "approved" and rows["Adeline Yates"]["owing"] == 200
+    assert rows["Adeline Yates"]["label"] == "Tab $2.50"                     # the same words as the customer page
+    assert rows["Adam Fenn"]["status"] == "revoked" and rows["Adam Fenn"]["sid"] == "rns2"
+    assert '<span class="tag approved">Tab $2.50</span>' in client.get("/customers/1").text
     assert "app.js?v=" in client.get("/").text
 
 
@@ -155,7 +157,7 @@ def test_customer_page_shows_only_what_needs_doing(client):
     assert "No student site passcode yet." in page and "Not in Square yet." in page
     assert "Tab charges" not in page and "Square payments" not in page             # nothing there yet
     assert "Repayment without Square" in page and "(nothing owing)" in page        # tucked away
-    assert "Tab approval</h2>" not in page and "(not eligible yet)" in page
+    assert "Tab limit</h2>" in page and "Can use tab" in page                     # a new customer has a small tab
     client.post("/customers/1/passcode", data={"passcode": "kid-1234"})
     page = client.get("/customers/1").text
     assert "No student site passcode yet." not in page and 'id="passcode"' in page  # set: moves to the bottom
@@ -170,8 +172,8 @@ def test_customer_page_shows_only_what_needs_doing(client):
     finally:
         conn.close()
     page = client.get("/customers/1").text
-    assert "$4.00 overdue." in page and "Tab score is" in page and "Money overdue right now" in page
-    assert "Repayment <kbd>R</kbd></h2>" in page and "Tab charges" in page  # overdue: no approval prompt
+    assert "$4.00 overdue." in page and "Has an overdue charge" in page and "Money overdue right now" in page
+    assert "Repayment</h2>" in page and "Tab charges" in page  # overdue: no approval prompt
 
 
 def test_dashboard_on_a_closed_day_shows_a_recap_not_zeros(client):
@@ -205,7 +207,7 @@ def test_ios_api(client):
     client.post(f"/customers/{cid}/points", data={"delta": "100", "note": "event"}, follow_redirects=False)
     d = client.get(f"/customers/{cid}", headers=JSON).json()
     assert d["c"]["name"] == "Adeline Yates" and d["s"]["points"] == 100 and d["flash"] == "Points +100."
-    assert d["points"][0]["delta"] == 100 and d["s"]["status"]["status"] == "locked"
+    assert d["points"][0]["delta"] == 100 and d["s"]["status"]["status"] == "approved"
     assert "passcode_enc" not in d["c"]
     assert client.get(f"/customers/{cid}", headers=JSON).json()["flash"] is None  # shown once
     assert client.get(f"/customers/{cid}/claim", headers=JSON).json()["checkouts"] == []

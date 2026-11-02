@@ -2,8 +2,8 @@
 {% block body %}
 <datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>
 <div class="pagehead"><div><h1>Square</h1><div class="meta">Last sync {{ last_sync|local or 'never' }}</div></div>
-  <form method="post" action="/square/sync"><button class="primary" {{ 'disabled' if not square_on }} data-key="u" data-key-label="Sync now">Sync now <kbd>U</kbd></button></form></div>
-{% if unclaimed and show != 'unlinked' %}<div class="todo" style="margin-bottom:var(--s4)"><b>{{ unclaimed }} sale{{ '' if unclaimed == 1 else 's' }} this week with nobody on {{ 'it' if unclaimed == 1 else 'them' }}.</b>
+  <form method="post" action="/square/sync"><button class="primary" {{ 'disabled' if not square_on }}>Sync now</button></form></div>
+{% if unclaimed and show != 'unlinked' %}<div class="todo"><b>{{ unclaimed }} sale{{ '' if unclaimed == 1 else 's' }} this week with nobody on {{ 'it' if unclaimed == 1 else 'them' }}.</b>
   <span>No points or tab until someone's assigned - <a href="/square?show=unlinked">see them</a>.</span></div>{% endif %}
 {% if sync_error %}<div class="err">Last sync error: {{ sync_error }}</div>{% endif %}
 <div class="stats">
@@ -12,7 +12,7 @@
   <div class="stat {{ 'alert' if unlinked_customers }}"><div class="k">Not in Square</div><div class="v">{{ unlinked_customers }}</div><div class="sub"><a href="/export/square-customers.csv">Download import CSV</a></div></div>
 </div>
 {% if conflicts %}
-<div class="panel" style="border-color:var(--warn-line)"><h2>Square profiles not linked <span class="count">{{ conflicts|length }}</span></h2>
+<div class="panel attn warn"><h2>Square profiles not linked <span class="count">{{ conflicts|length }}</span></h2>
   <div class="scroll"><table><tr><th>Square profile</th><th>Email</th><th>Already in Fizzy as</th></tr>
     {% for c in conflicts %}<tr><td>{{ c.name }}</td><td class="mono small">{{ c.email }}</td><td>{{ c.existing }}</td></tr>{% endfor %}
   </table></div>
@@ -31,11 +31,11 @@
 </div>
 <div class="panel">
   <h2>{{ 'Payments with no customer' if show == 'unlinked' else 'Recent payments' }}
-    <a class="small" style="float:right;text-transform:none;letter-spacing:0;font-weight:500" href="{{ '/square' if show == 'unlinked' else '/square?show=unlinked' }}">{{ 'Show all' if show == 'unlinked' else 'Only unlinked' }}</a></h2>
+    <a class="aside" href="{{ '/square' if show == 'unlinked' else '/square?show=unlinked' }}">{{ 'Show all' if show == 'unlinked' else 'Only unlinked' }}</a></h2>
   <div class="scroll"><table data-clip="25">
     <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th class="hide-md">Tender</th><th class="hide-sm">Items</th><th title="Change this if Fizzy got it wrong">Counted as</th><th></th></tr>
     {% for p in rows %}<tr>
-      <td style="white-space:nowrap">{{ p.created_at|local('%a %-d %b %H:%M') }}</td>
+      <td class="when">{{ p.created_at|local('%a %-d %b %H:%M') }}</td>
       <td>{% if p.customer_id %}<a href="/customers/{{ p.customer_id }}">{{ p.name }}</a>{% else %}
         <form class="assign" method="post" action="/square/payments/{{ p.square_payment_id }}/assign">
           <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required

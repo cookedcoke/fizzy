@@ -40,7 +40,7 @@
 
 <form class="ask-box" method="post" action="/ask" data-ask>
   <textarea name="text" rows="1" placeholder="Ask anything about the stall" required {{ 'disabled' if not enabled }} enterkeyhint="send"
-    aria-label="Your question" data-key="/" data-key-label="Type a question"></textarea>
+    aria-label="Your question"></textarea>
   <button class="primary" {{ 'disabled' if not enabled }} aria-label="Send">Send</button>
 </form>
 </div>

@@ -31,7 +31,7 @@ def money(cents):
     return f"{'-' if cents < 0 else ''}${abs(cents) / 100:,.2f}"
 
 
-def local(ts, fmt="%a %d %b %H:%M"):
+def local(ts, fmt="%a %-d %b %H:%M"):
     if not ts:
         return ""
     return logic.parse_ts(ts).astimezone(config.TZ).strftime(fmt)
@@ -59,6 +59,8 @@ ACTION_LABELS = {
     "restock": "Added a restock", "restock_delete": "Deleted a restock", "restore": "Restored customers",
     "reward_end": "Ended a reward", "reward_start": "Started a reward", "settings": "Changed settings",
     "sign_out_all": "Signed everyone out", "square_resync": "Re-synced Square", "tab_charge_refund": "Refunded a tab charge",
+    "tab_on": "Turned a tab back on", "tab_revoked": "Turned a tab off", "tab_rejected": "Turned a tab off",
+    "score_adjust": "Changed a tab score",
     "tabs_paused": "Paused or unpaused tabs", "test_accounts": "Made test accounts", "test_accounts_deleted": "Deleted test accounts",
 }
 templates.env.filters["action"] = lambda a: ACTION_LABELS.get(a) or (a or "").replace("_", " ").capitalize()
@@ -66,7 +68,7 @@ templates.env.filters["money"] = money
 templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else {}
 templates.env.filters["noicon"] = lambda d: {k: v for k, v in (d or {}).items() if k != "icon"}
 templates.env.filters["local"] = local
-templates.env.filters["ymd"] = lambda d, fmt="%a %d %b": datetime.strptime(d, "%Y-%m-%d").strftime(fmt) if d else ""
+templates.env.filters["ymd"] = lambda d, fmt="%a %-d %b": datetime.strptime(d, "%Y-%m-%d").strftime(fmt) if d else ""
 templates.env.globals["STATUS_LABELS"] = logic.STATUS_LABELS
 templates.env.globals["TZ"] = config.TZ.key
 
@@ -103,6 +105,18 @@ def staff(request: Request):
     finally:
         conn.close()
     return name
+
+
+# Phone browsers (not iPads or Android tablets, whose browsers don't say "Mobile"). The staff site
+# turns them away: on a phone the iOS app is the way in. The app sends its own User-Agent.
+_PHONE_UA = re.compile(r"iPhone|iPod|Android.+Mobile|Windows Phone|BlackBerry|Opera Mini|IEMobile|Mobile.+Firefox", re.I)
+
+
+def is_phone(request):
+    ua = request.headers.get("user-agent") or ""
+    if "ipad" in ua.lower() or wants_json(request):
+        return False
+    return request.headers.get("sec-ch-ua-mobile") == "?1" or bool(_PHONE_UA.search(ua))
 
 
 def wants_json(request):

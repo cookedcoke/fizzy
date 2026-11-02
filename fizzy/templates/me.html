@@ -24,15 +24,9 @@
       <p class="tab-sub">Pay it at the stall and it unlocks straight away.</p>
     {% elif st.status == 'paused' %}
       <p class="tab-msg">Tabs are paused for everyone right now.</p>
-    {% elif st.status == 'eligible' %}
-      <p class="tab-msg good">You've unlocked a tab! 🎉</p><p class="tab-sub">Ask at the stall to get it switched on.</p>
-    {% elif st.status == 'locked' and st.spent_enough %}
-      <p class="tab-msg">Get your tab score to {{ st.score_needed }} to unlock a tab.</p>
+    {% elif st.status == 'low_score' %}
+      <p class="tab-msg">Get your tab score to {{ st.min_score }} to unlock a tab.</p>
       <p class="tab-sub">You're on {{ st.score.score }}. See below for how it works.</p>
-    {% elif st.status == 'locked' %}
-      <p class="tab-msg">Spend {{ (st.unlock_spend_cents - st.spend_cents)|money }} more{% if not st.score.ready %} and get your tab score to {{ st.score_needed }}{% endif %} to unlock a tab.</p>
-      <div class="bar"><i style="width:{{ (100 * [st.spend_cents, 0]|max / st.unlock_spend_cents)|round|int }}%"></i></div>
-      <p class="tab-sub">{{ st.spend_cents|money }} of {{ st.unlock_spend_cents|money }} so far.</p>
     {% else %}
       <p class="tab-msg">Tabs aren't available on your account.</p><p class="tab-sub">Ask at the stall if you have questions.</p>
     {% endif %}
@@ -47,8 +41,8 @@
     {% endif %}
     {% set sc = st.score %}
     {% if st.status not in ('rejected', 'revoked') %}
-    <details class="score" {{ 'open' if st.status == 'locked' and st.spent_enough }}>
-      <summary><span class="score-num {{ 'good' if sc.score >= 80 else 'ok' if sc.score >= st.score_needed else 'low' }}">{{ sc.score }}</span>
+    <details class="score" {{ 'open' if st.status == 'low_score' }}>
+      <summary><span class="score-num {{ 'good' if sc.score >= 80 else 'ok' if sc.score >= st.min_score else 'low' }}">{{ sc.score }}</span>
         <span><b>Your tab score</b><br><span class="tab-sub">{% if st.status == 'approved' %}Gives you a {{ sc.limit_cents|money }} limit{% if sc.next %} · {{ sc.next.score }}+ gets {{ sc.next.limit_cents|money }}{% endif %}{% else %}Out of 100 · tap to see why{% endif %}</span></span></summary>
       <ul>{% for label, pts in sc.factors %}<li><span>{{ label }}</span><b class="{{ 'neg' if pts < 0 }}">{{ '%+d'|format(pts) if loop.index > 1 else pts }}</b></li>{% endfor %}</ul>
       {% if sc.tips %}<p class="tab-sub">To raise it: {{ sc.tips|join(' ') }}</p>{% endif %}

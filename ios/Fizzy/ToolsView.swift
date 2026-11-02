@@ -48,7 +48,6 @@ enum ToolSpec {
                               .date(name: "end", label: "To", value: "today"), note()]
         case "transfer_points": [.person(name: "from", label: "From"), .person(name: "to", label: "To"), .number(name: "points", label: "Points"), note()]
         case "reset_points": [note("Reason"), .confirm(word: "RESET")]
-        case "approve_eligible": [note()]
         case "revoke_all": [note("Reason"), .confirm(word: "REVOKE")]
         case "manual_charge": [.person(name: "customer", label: "Customer"), .text(name: "amount", label: "Amount ($)", keyboard: .decimalPad),
                                .text(name: "items", label: "Items", required: false)]

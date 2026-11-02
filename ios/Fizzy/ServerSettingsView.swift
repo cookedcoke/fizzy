@@ -219,35 +219,26 @@ struct TabRulesForm: View {
     }
     @State private var limit = ""
     @State private var days = ""
-    @State private var unlock = ""
-    @State private var score = ""
+    @State private var minScore = ""
 
     var body: some View {
         SettingsForm(page: page, title: "Tab rules", send: {
-            await page.submit("settings", [("tab_limit", limit), ("due_days", days), ("unlock_spend", unlock), ("score_needed", score)])
+            await page.submit("settings", [("tab_limit", limit), ("due_days", days), ("min_score", minScore)])
         }) {
             Section {
                 // Short labels, so none are cut off; the values don't need much room.
                 LabeledContent("Highest limit") { money($limit) }
                 LabeledContent("Days to pay") { TextField("0", text: $days).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit() }
-                LabeledContent("Spend to unlock") { money($unlock) }
-                LabeledContent("Score needed") { TextField("0", text: $score).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit() }
+                LabeledContent("Minimum score") { TextField("0", text: $minScore).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit() }
             } footer: {
-                Text("Spend to unlock is what a student has to spend before they can have a tab. The score is 0 to 100.")
+                Text("Everyone whose tab score is at the minimum or over has a tab, sized by their score. The score is 0 to 100.")
             }
         }
         .onAppear {
             let c = page.data.cfg
             limit = dollars(c.tab_limit_cents.int); days = "\(c.tab_due_days.int)"
-            unlock = dollars(c.unlock_spend_cents.int); score = "\(c.tab_score_needed.int)"
+            minScore = "\(c.tab_min_score.int)"
         }
-    }
-}
-
-private func labelled<C: View>(_ title: String, @ViewBuilder _ field: () -> C) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-        Text(title).font(.footnote).foregroundStyle(.secondary)
-        field()
     }
 }
 

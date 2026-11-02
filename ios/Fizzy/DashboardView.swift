@@ -13,7 +13,6 @@ struct DashboardView: View {
             tabs(d)
             attention(d)
             overdue(d)
-            eligible(d)
             sales(d)
         }
         .task {
@@ -130,7 +129,7 @@ struct DashboardView: View {
                 Stat(title: "Total owed", value: Fmt.money(d.total_owed.int)),
                 Stat(title: "Overdue", value: Fmt.money(d.total_overdue.int), sub: "\(d.overdue.count) charge\(d.overdue.count == 1 ? "" : "s")", alert: d.total_overdue.int > 0),
                 Stat(title: "Due in 2 days", value: "\(d.due_soon.count)", sub: "charge\(d.due_soon.count == 1 ? "" : "s")"),
-                Stat(title: "Awaiting approval", value: "\(d.eligible.count)", sub: "eligible for a tab"),
+                Stat(title: "Tabs turned off", value: "\(d.tabs_off.int)", sub: "by staff"),
                 Stat(title: "Square sync", value: d.last_sync.optString.map { Fmt.when($0) } ?? "Never"),
                 Stat(title: "Last backup", value: d.backup[0].bool ? d.backup[1].string : "Problem", alert: !d.backup[0].bool),
             ])
@@ -185,29 +184,6 @@ struct DashboardView: View {
                         Line(left: r.customer.name.string, sub: "Due \(Fmt.when(r.charge.due_at.string))", right: Fmt.money(r.charge.unpaid_cents.int))
                     }
                 }
-            }
-        }
-    }
-
-    @ViewBuilder private func eligible(_ d: J) -> some View {
-        if !d.eligible.array.isEmpty {
-            Section("Eligible for a tab · \(d.eligible.count)") {
-                ForEach(Array(d.eligible.array.prefix(8)), id: \.self) { c in
-                    VStack(alignment: .leading, spacing: 6) {
-                        NavigationLink(value: CustomerID(id: c.id.int)) {
-                            Line(left: c.name.string, sub: "\(Fmt.money(c.spent.int)) spent", right: "")
-                        }
-                        HStack {
-                            Button("Approve") { page.act("customers/\(c.id.int)/tab", [("decision", "approve")]) }
-                                .buttonStyle(.borderedProminent).controlSize(.small)
-                            ConfirmButton(title: "Reject", message: "Reject \(c.name.string) for a tab?", confirmLabel: "Reject") {
-                                page.act("customers/\(c.id.int)/tab", [("decision", "reject")])
-                            }
-                            .buttonStyle(.bordered).controlSize(.small)
-                        }
-                    }
-                }
-                if d.eligible.count > 8 { Text("\(d.eligible.count - 8) more · use “Approve all eligible” in Tools").font(.footnote).foregroundStyle(.secondary) }
             }
         }
     }

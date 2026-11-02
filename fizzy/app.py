@@ -25,7 +25,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
 from . import ask, badges, display, jobs, passkeys, pwa, rules, transactions, updater
-from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates, wants_json
+from .web import HERE, LoginRequired, back, cents, get_conn, is_phone, local, money, render, session_gen, staff, templates, wants_json
 
 log = logging.getLogger("fizzy")
 
@@ -34,6 +34,20 @@ GATE_EXEMPT = ("/static/", "/healthz", "/square/webhook", "/enrol/", "/sw.js", "
 GATE_PAGE = ("<!doctype html><meta name=viewport content='width=device-width'><title>{title}</title>"
              "<body style='font:15px system-ui;max-width:520px;margin:15vh auto;padding:0 16px'>"
              "<h1 style='font-size:20px'>{title}</h1><p>{body}</p>")
+
+
+# Paths a phone browser may still open on the staff host: the student site (/me, when it has no
+# host of its own) and what the device gate never checks (static files, the Square webhook...).
+PHONE_EXEMPT = GATE_EXEMPT + ("/me",)
+
+
+def phone_page():
+    student = (f'<p>Checking your points or tab? Go to <a href="https://{config.PUBLIC_HOST}/">{config.PUBLIC_HOST}</a>.</p>'
+               if config.PUBLIC_HOST else "")
+    return GATE_PAGE.format(
+        title="Use the Fizzy app on your phone",
+        body="The staff site works on a computer or an iPad. On an iPhone, use the Fizzy app instead: "
+             "it does everything the site does, and it's built for a small screen.</p>" + student + "<p>")
 
 
 def set_device_cookie(response, token):
@@ -58,6 +72,10 @@ def _poller():
                 square.sync(conn)
             events.reconcile(conn)
             conn.commit()
+            swept = db.get_setting(conn, "badges_swept_at")
+            if not swept or datetime.now(timezone.utc) - logic.parse_ts(swept) >= timedelta(hours=1):
+                badges.sweep(conn)   # badges earned but not yet paid (e.g. a sale assigned later)
+                conn.commit()
             if config.BACKUP_DIR:
                 last_b = db.get_setting(conn, "last_backup")
                 tried = db.get_setting(conn, "backup_last_attempt")
@@ -110,6 +128,7 @@ def trigger_sync():
 async def lifespan(app):
     conn = db.connect()
     db.init(conn)
+    logic.retire_approvals(conn)  # once: tabs now come from the tab score, not approval
     badges.baseline(conn)  # once: badges people already had don't pay out when this is switched on
     square.void_huge(conn)  # payments over $100 are mistakes or tests, not sales
     conn.close()
@@ -131,6 +150,15 @@ def create_app(background=True):
         max_age=60 * 60 * 24 * 30, same_site="lax", https_only=config.SECURE_COOKIES,
     )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+    @app.middleware("http")
+    async def phone_gate(request, call_next):
+        """Phone browsers get a page pointing them at the iOS app (the app itself isn't a browser,
+        and the student site stays open to phones). Added first, so it runs after public_host."""
+        path = request.url.path
+        if getattr(request.state, "public", False) or path.startswith(PHONE_EXEMPT) or not is_phone(request):
+            return await call_next(request)
+        return HTMLResponse(phone_page(), status_code=403, headers={"Cache-Control": "no-store", "Vary": "User-Agent"})
 
     @app.middleware("http")
     async def device_gate(request, call_next):
@@ -540,12 +568,9 @@ def register(app):
         overdue.sort(key=lambda r: r["charge"]["due_at"])
         due_soon.sort(key=lambda r: r["charge"]["due_at"])
 
-        eligible = conn.execute(
-            "SELECT c.*, SUM(p.spend_cents) AS spent FROM customers c JOIN points_ledger p ON p.customer_id = c.id "
-            "WHERE c.tab_decision IS NULL AND c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id HAVING spent >= ? ORDER BY spent DESC",
-            (cfg["unlock_spend_cents"],),
-        ).fetchall()
-        eligible = [c for c in eligible if logic.tab_score(conn, c["id"], spent=c["spent"], cfg=cfg)["ready"]]  # spend and score
+        tabs_off = conn.execute(
+            "SELECT COUNT(*) FROM customers WHERE tab_decision IN ('rejected', 'revoked') AND archived_at IS NULL AND kind IS NOT 'test'"
+        ).fetchone()[0]
         top = conn.execute(
             "SELECT c.id, c.name, SUM(p.delta) AS points, SUM(p.spend_cents) AS spent FROM customers c "
             "JOIN points_ledger p ON p.customer_id = c.id WHERE c.archived_at IS NULL AND c.kind IS NOT 'test' "
@@ -560,7 +585,7 @@ def register(app):
             (square.live_from(conn),)).fetchall()
         return render(
             request, "dashboard.html", total_owed=total_owed, total_overdue=total_overdue, overdue=overdue,
-            due_soon=due_soon, eligible=eligible, top=top, breaches=breaches, unlinked_tabs=unlinked_tabs,
+            due_soon=due_soon, tabs_off=tabs_off, eligible=[], top=top, breaches=breaches, unlinked_tabs=unlinked_tabs,
             last_sync=db.get_setting(conn, "square_last_sync"), sync_error=db.get_setting(conn, "square_last_error"),
             square_on=bool(config.SQUARE_TOKEN), notice=db.get_setting(conn, "notice", ""),
             tabs_paused=cfg["tabs_paused"],
@@ -808,12 +833,10 @@ def register(app):
         audit_rows = conn.execute(
             "SELECT * FROM audit_log WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100", (cid,)
         ).fetchall()
-        opened = datetime.now(timezone.utc)
-        watch_since = (opened - timedelta(seconds=90)).isoformat(timespec="seconds")
-        opened = opened.isoformat(timespec="seconds")
+        watch_since = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat(timespec="seconds")
         kind_levels = {lv: pin.customer_level(conn, c["kind"], lv) for lv in (pin.OPEN, pin.PIN, pin.OWNER)}
-        return render(request, "customer.html", kind_levels=kind_levels, s=s, c=c, points=points, payments=payments, watch_since=watch_since, opened=opened,
-                      decisions=decisions, audit_rows=audit_rows,
+        return render(request, "customer.html", kind_levels=kind_levels, s=s, c=c, points=points, payments=payments, watch_since=watch_since,
+                      decisions=decisions, audit_rows=audit_rows, bands=logic.bands(logic.settings(conn)),
                       offers=(offers := rewards.offers_for(conn, cid, s["points"])),
                       display_msg={"type": "show", "customer": display.payload(conn, c, s, offers)},
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
@@ -906,15 +929,39 @@ def register(app):
         return back(request, f"/customers/{cid}", f"Points {delta:+d}.")
 
     @app.post("/customers/{cid:int}/tab")
-    def tab_decision(request: Request, cid: int, decision: str = Form(...), note: str = Form(""),
-                     who=Depends(staff), conn=Depends(get_conn)):
-        load_customer(conn, cid)
-        mapping = {"approve": "approved", "reject": "rejected", "revoke": "revoked", "reset": None}
+    def tab_decision(request: Request, cid: int, decision: str = Form(""), note: str = Form(""),
+                     band: str = Form(""), adjust: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+        """The customer's tab: put them in a limit band or set the score adjustment by hand (both set
+        the staff adjustment line in their tab score), or turn the tab off and back on."""
+        c = load_customer(conn, cid)
+        page = f"/customers/{cid}"
+        if band:  # a limit button (it sends band, not decision)
+            decision = "band"
+        if decision in ("band", "adjust"):
+            if decision == "band":
+                cfg = logic.settings(conn)
+                if band not in {str(floor) for floor, _ in logic.bands(cfg)}:
+                    return back(request, page, "Pick one of the limits.", "bad")
+                value = logic.adjust_for_band(conn, c, int(band), cfg)
+            else:
+                try:
+                    value = int(adjust.strip().removeprefix("+") or "0")
+                except ValueError:
+                    return back(request, page, "The adjustment must be a whole number, like +20 or -10.", "bad")
+            try:
+                logic.set_score_adjust(conn, cid, value, note.strip(), who)
+            except ValueError as e:
+                return back(request, page, str(e), "bad")
+            conn.commit()
+            st = logic.tab_status(conn, load_customer(conn, cid))
+            return back(request, page, f"Tab score {st['score']['score']}, limit ${st['limit_cents'] / 100:.2f}.")
+        # approve and reset are the old words for "on", still sent by older copies of the iOS app.
+        mapping = {"off": "revoked", "reject": "rejected", "revoke": "revoked", "on": None, "reset": None, "approve": None}
         if decision not in mapping:
-            raise HTTPException(400, "Pick approve, reject, revoke or reset.")
+            raise HTTPException(400, "Pick a limit, or turn the tab off or on.")
         logic.set_tab_decision(conn, cid, mapping[decision], note, who)
         conn.commit()
-        return back(request, f"/customers/{cid}", f"Tab {decision} saved.")
+        return back(request, page, "Tab turned off." if mapping[decision] else "Tab back on.")
 
     @app.post("/customers/{cid:int}/kind")
     def set_kind(request: Request, cid: int, kind: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
@@ -1059,17 +1106,16 @@ def register(app):
 
     @app.post("/settings")
     def save_settings(request: Request, tab_limit: str = Form(...), due_days: int = Form(...),
-                      unlock_spend: str = Form(...), score_needed: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+                      min_score: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         if not 1 <= due_days <= 365:
             return back(request, "/settings", "Days to pay must be between 1 and 365.")
         try:
-            needed = int(score_needed) if score_needed.strip() else logic.settings(conn)["tab_score_needed"]
+            minimum = int(min_score) if min_score.strip() else logic.settings(conn)["tab_min_score"]
         except ValueError:
-            needed = -1
-        if not 0 <= needed <= 100:
-            return back(request, "/settings", "The score needed must be a whole number from 0 to 100.")
-        new = {"tab_limit_cents": cents(tab_limit), "tab_due_days": due_days, "unlock_spend_cents": cents(unlock_spend),
-               "tab_score_needed": needed}
+            minimum = -1
+        if not 0 <= minimum <= 100:
+            return back(request, "/settings", "The minimum tab score must be a whole number from 0 to 100.")
+        new = {"tab_limit_cents": cents(tab_limit), "tab_due_days": due_days, "tab_min_score": minimum}
         for k, v in new.items():
             db.set_setting(conn, k, v)
         db.audit(conn, who, "settings", None, json.dumps(new))

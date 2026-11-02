@@ -5,9 +5,9 @@ the staff password, and has everything the website's staff pages have:
 
 | Tab | What's in it |
 | --- | --- |
-| **Today** | The dashboard: sales, charts, tabs owing, what needs attention (dismiss alerts, assign payments with nobody on them), who's eligible for a tab (approve or reject), top items, latest sales, top customers. Refreshes every minute. |
+| **Today** | The dashboard: sales, charts, tabs owing, what needs attention (dismiss alerts, assign payments with nobody on them), how many tabs staff have turned off, top items, latest sales, top customers. Refreshes every minute. |
 | **Customers** | Search by name, email or student number (a full `rns12345678` jumps straight to them), or see who's been in lately. Export new people for Square. |
-| **A customer** | Can they put it on their tab, and how much; points; what they owe; tab charges, repayments, points history, Square payments, tab score. Claim sale, record a repayment, adjust points, approve/reject/revoke a tab, redeem or undo a reward, set or show their student passcode, edit them, change account type, show a sign-in QR code. |
+| **A customer** | Can they put it on their tab, and how much; points; what they owe; tab charges, repayments, points history, Square payments, tab score. Claim sale, record a repayment, adjust points, set their tab limit (a limit band or a tab score adjustment) or turn their tab off and on, redeem or undo a reward, set or show their student passcode, edit them, change account type, show a sign-in QR code. |
 | **Transactions** | Every Square sale with filters (dates, kind, search) and assigning sales with nobody on them. |
 | **More** | Square (sync, change how a payment is counted, raw payload), Rewards (start and end rewards and double-points days, pause custom rules), Profit (item costs), Money (restocks with receipt photos, payouts with the split calculator), Tools (all of them), Ask (Gemini, with answers as they're written, drawn with their tables, lists and headings), Import (school directory CSV), Settings (who can do what, tab rules, display, terms, closed days, Gemini key, PIN, maintenance, backups, updates, devices), Activity log, and this app's own settings. |
 

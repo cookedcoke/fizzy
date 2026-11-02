@@ -263,3 +263,27 @@ def test_name_without_middle_name_only_counts_when_unique(conn, cust):
         portal.set_passcode(conn, x, "code-1234", "Will")
     assert [r["id"] for r in portal.candidates(conn, "John Smith")] == [a["id"]]
     assert [r["id"] for r in portal.candidates(conn, "Mary Lee")] == [c["id"]]
+
+
+def test_leaderboard_ignores_badge_points_and_can_show_everyone_tied(conn, cust):
+    people = [cust(name=f"Kid {n}", email=f"rns{n}@x", sq=f"S{n}") for n in range(1, 6)]
+    conn.execute("UPDATE customers SET passcode_enc = 'x'")
+    ts = db.now_iso()
+    rows = [(p["id"], 100, "purchase") for p in people[:4]] + [(people[4]["id"], 300, "badge"), (people[0]["id"], 50, "rule")]
+    for cid, pts, reason in rows:
+        conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, created_at) VALUES (?, ?, ?, ?)", (cid, pts, reason, ts))
+    board, _ = portal.leaderboard(conn, limit=3)
+    assert len(board) == 3 and {r["points"] for r in board} == {100}   # badge and rule points don't count
+    tied, _ = portal.leaderboard(conn, limit=3, ties=True)
+    assert len(tied) == 4 and {r["rank"] for r in tied} == {1}          # all four who share first are shown
+
+
+@pytest.mark.badge_points
+def test_sweep_pays_badges_nobody_has_looked_at(conn, cust):
+    from fizzy import badges
+    a = cust(name="Izumi", email="rns9@x", sq="Z")
+    conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, created_at) VALUES (?, 400, 'purchase', ?)", (a["id"], db.now_iso()))
+    before = conn.execute("SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = ?", (a["id"],)).fetchone()[0]
+    assert badges.sweep(conn) >= 1
+    after = conn.execute("SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = ?", (a["id"],)).fetchone()[0]
+    assert after > before and badges.sweep(conn) == 0                    # paid once, not again

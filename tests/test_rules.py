@@ -57,15 +57,13 @@ def test_import_dry_run_and_search(conn):
     assert [c["name"] for c in search(conn, "rns2")] == ["Nora Zhang"]
 
 
-def test_sale_awards_points_and_unlock_at_30(conn, cust):
-    db.set_setting(conn, "tab_score_needed", 0)  # just the spend rule here; the score has its own tests
+def test_sale_awards_points_and_the_tab_needs_no_spending(conn, cust):
     c = cust()
+    assert logic.tab_status(conn, c)["can_charge"]  # a new customer's score (30) is over the minimum (20)
     assert square.process_payment(conn, pay("p1", 2500), order("Coke")) == "sale"
     assert logic.points_balance(conn, c["id"]) == 2500
-    assert logic.tab_status(conn, c)["status"] == "locked"
     square.process_payment(conn, pay("p2", 500), order("Chips"))
-    assert logic.tab_status(conn, c)["status"] == "eligible"
-    assert not logic.tab_status(conn, c)["can_charge"]  # still needs staff approval
+    assert logic.tab_status(conn, c)["status"] == "approved"
     assert square.process_payment(conn, pay("p2", 500), order("Chips")) is None  # idempotent
     assert logic.points_balance(conn, c["id"]) == 3000
 
