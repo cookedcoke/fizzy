@@ -448,8 +448,10 @@ table.lines th:nth-child(2) { text-align: center }  /* Qty header over the centr
 /* Narrow forms (tablet): fixed qty/cost boxes, the item takes what's left */
 @media (max-width: 1099px) {
   table.lines td:first-child { width: auto }
-  table.lines td:nth-child(2) input { width: 52px }
-  table.lines td:nth-child(3) input { width: 76px }
+  table.lines input { padding: 0 8px; text-overflow: ellipsis }
+  table.lines td:nth-child(2) { width: 48px } table.lines td:nth-child(2) input { width: 44px; min-width: 0 }
+  table.lines td:nth-child(3) input { width: 64px }
+  table.lines td:last-child { padding-right: 0 } .lines .rm { min-width: 32px }
 }
 /* Customer page: what needs doing, only what applies */
 .todos { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s4) }
@@ -605,8 +607,9 @@ dialog.ask .err { margin: var(--s2) 0 0 }
 .panel td code { white-space: nowrap }
 td select { border-color: transparent; background-color: transparent }
 tr:hover td select, td select:focus { border-color: var(--line-strong); background-color: var(--surface) }
-@media (hover: none) { td select { border-color: var(--line-strong); background-color: var(--surface) } }  /* touch: no hover to reveal it */
 td > form.inline > select { margin-left: -11px }  /* 10px padding + 1px border: the text lines up with the column header */
+/* Touch: no hover to reveal the box, so it's always drawn - and then the box, not the text, lines up. */
+@media (hover: none) { td select { border-color: var(--line-strong); background-color: var(--surface) } td > form.inline > select { margin-left: 0 } }
 form > input[type=hidden]:first-child + * { margin-top: 0 }
 @media (max-width: 480px) { .period .btn { flex: 1 1 40% } }
 @media (max-width: 720px) {
@@ -804,6 +807,10 @@ header .brand span { font-family: var(--display); font-size: 17px; font-weight: 
 .panel.attn { box-shadow: inset 4px 0 0 var(--ok), var(--shadow-card) }
 form.panel.attn:has(.red), .panel.attn.bad { box-shadow: inset 4px 0 0 var(--red), var(--shadow-card) }
 .panel.attn.warn { box-shadow: inset 4px 0 0 var(--warn-mark), var(--shadow-card) }
+/* The stripe is an inset shadow, so a table's grey header band and row hover would paint over it: carry it on the first cell. */
+.panel.attn { --attn: var(--ok) } .panel.attn.bad, form.panel.attn:has(.red) { --attn: var(--red) } .panel.attn.warn { --attn: var(--warn-mark) }
+.panel.attn > .scroll th:first-child { box-shadow: inset 4px 0 0 var(--attn) }
+@media (min-width: 1100px) { .panel.attn > .scroll tr:hover > td:first-child { box-shadow: inset 4px 0 0 var(--attn) } }
 button, .btn { box-shadow: var(--shadow-btn) }
 button.primary, .btn.primary { box-shadow: var(--shadow-btn-primary) }
 .lines .rm, header .who button, .keys-btn { box-shadow: none }
