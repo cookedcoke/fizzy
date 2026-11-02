@@ -245,7 +245,8 @@ struct AskView: View {
         .toolbar {
             if !timeline.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
-                    ConfirmButton(title: "New chat", message: "Clear this chat?", confirmLabel: "Clear") { page.act("ask/clear") }
+                    ConfirmButton(title: "New chat", systemImage: "square.and.pencil", message: "Clear this chat?", confirmLabel: "Clear") { page.act("ask/clear") }
+                        .labelStyle(.iconOnly)
                         .disabled(live.active)
                 }
             }
@@ -312,6 +313,8 @@ struct AskView: View {
                         Button("Do it") { page.act("ask/apply/\(p.id.int)") }.buttonStyle(.borderedProminent)
                         Button("No thanks") { page.act("ask/dismiss/\(p.id.int)") }.buttonStyle(.bordered)
                     }
+                    .controlSize(.small)
+                    .disabled(page.busy)
                 } else {
                     Text((p.status.string == "done" ? "Done" : "Not done") + (p.done_at.optString.map { " · \(Fmt.when($0))" } ?? "")).font(.caption).foregroundStyle(.secondary)
                 }

@@ -56,13 +56,11 @@ struct CustomersView: View {
                 }
             } header: {
                 Text("Recently in · \(Fmt.number(d["count"].int)) active")
-            } footer: {
-                VStack(alignment: .leading, spacing: 8) {
-                    DownloadButton(title: "Export new people for Square (\(d.not_in_square.int))", path: "export/square-customers.csv", query: ["only": "new"])
-                    DownloadButton(title: "Export everyone", path: "export/square-customers.csv",
-                                   confirm: "This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them.")
-                }
-                .font(.footnote)
+            }
+            Section("Square export") {
+                DownloadButton(title: "Export new people for Square (\(d.not_in_square.int))", path: "export/square-customers.csv", query: ["only": "new"])
+                DownloadButton(title: "Export everyone", path: "export/square-customers.csv",
+                               confirm: "This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them.")
             }
         }
     }
@@ -105,13 +103,13 @@ struct CustomersView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.body.weight(.medium))
-                    if let email { Text(email).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                    if let email { Text(email.split(separator: "@").first.map(String.init) ?? email).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(Fmt.number(points)) pts").monospacedDigit()
                     HStack(spacing: 4) {
-                        if owing != "$0.00" { Text("owes \(owing)").foregroundStyle(.orange) }
+                        if owing != "$0.00" { Text("owes \(owing)").foregroundStyle(.orange).lineLimit(1).fixedSize() }
                         Tag(text: status, color: statusColor(statusKey))
                         if reward { Tag(text: "Reward", color: .purple) }
                     }

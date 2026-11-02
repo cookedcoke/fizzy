@@ -188,6 +188,7 @@ struct Tag: View {
     var body: some View {
         Text(text)
             .font(.caption2.weight(.semibold))
+            .lineLimit(1).fixedSize()   // a tag never wraps ("Ap-/proved")
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(color.opacity(0.15), in: Capsule())
             .foregroundStyle(color)
@@ -213,7 +214,14 @@ struct Stat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.title3.bold()).monospacedDigit().foregroundStyle(alert ? .red : .primary)
+            // Full size if it fits on one line; a long value ("Mon 2 Nov 14:05") steps down a size instead of wrapping.
+            ViewThatFits(in: .horizontal) {
+                Text(value).font(.title3.bold())
+                Text(value).font(.subheadline.bold())
+            }
+            .lineLimit(1)
+            .monospacedDigit()
+            .foregroundStyle(alert ? .red : .primary)
             if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -399,7 +407,7 @@ struct PasscodeSheet: View {
                     Text(ask.need == "owner" ? "This needs the owner's password." : "This change needs the passcode. It stays unlocked for a few minutes.")
                 }
             }
-            .navigationTitle("Passcode")
+            .navigationTitle(ask.need == "owner" ? "Owner password" : "Passcode")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish(false) } }
@@ -491,6 +499,26 @@ struct DownloadButton: View {
         .alert("Couldn't download", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(error ?? "") }
+    }
+}
+
+/// A swipe action that has to be confirmed first, like the website's confirm boxes. The dialog
+/// belongs to the whole screen (not the row, which closes as soon as the swipe button is tapped).
+struct ConfirmAsk: Identifiable {
+    let id = UUID()
+    let message: String
+    var confirmLabel = "Delete"
+    var role: ButtonRole? = .destructive
+    let action: () -> Void
+}
+
+extension View {
+    func confirmAsk(_ ask: Binding<ConfirmAsk?>) -> some View {
+        confirmationDialog(ask.wrappedValue?.message ?? "", isPresented: Binding(get: { ask.wrappedValue != nil }, set: { if !$0 { ask.wrappedValue = nil } }),
+                           titleVisibility: .visible) {
+            Button(ask.wrappedValue?.confirmLabel ?? "Do it", role: ask.wrappedValue?.role) { ask.wrappedValue?.action() }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }
 

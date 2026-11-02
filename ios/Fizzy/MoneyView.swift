@@ -125,6 +125,7 @@ struct RestockSheet: View {
     @State private var note = ""
     @State private var photo: PhotosPickerItem?
     @State private var photoData: Data?
+    @State private var pickingLine: UUID?
 
     private var total: Int { lines.reduce(0) { $0 + Fmt.cents($1.cost) } }
 
@@ -156,8 +157,14 @@ struct RestockSheet: View {
             Section("Items") {
                 ForEach($lines) { $l in
                     VStack(alignment: .leading) {
-                        TextField("Item, as named in Square", text: $l.item).textInputAutocapitalization(.words).autocorrectionDisabled()
-                        ItemSuggestions(text: $l.item, known: page.data.known.strings)
+                        Button { pickingLine = l.id } label: {
+                            HStack {
+                                Text(l.item.isEmpty ? "Choose an item" : l.item).foregroundStyle(l.item.isEmpty ? Color.secondary : Color.primary)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down").font(.footnote).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
                         HStack {
                             Text("Qty"); TextField("1", text: $l.qty).keyboardType(.numberPad).frame(width: 50).textFieldStyle(.roundedBorder)
                             Text("Cost for the line $"); TextField("total", text: $l.cost).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
@@ -166,7 +173,7 @@ struct RestockSheet: View {
                     }
                 }
                 .onDelete { if lines.count > 1 { lines.remove(atOffsets: $0) } }
-                Button("+ Another item") { lines.append(Line()) }
+                Button { lines.append(Line()) } label: { Label("Another item", systemImage: "plus.circle") }
                 LabeledContent("Total", value: Fmt.money(total))
             }
             Section {
@@ -185,6 +192,11 @@ struct RestockSheet: View {
             }
         }
         .onAppear(perform: fill)
+        .sheet(item: Binding(get: { pickingLine.map { Pick(value: .str($0.uuidString)) } }, set: { if $0 == nil { pickingLine = nil } })) { _ in
+            ItemPicker(known: page.data.known.strings, current: lines.first { $0.id == pickingLine }?.item ?? "") { name in
+                if let i = lines.firstIndex(where: { $0.id == pickingLine }) { lines[i].item = name }
+            }
+        }
     }
 }
 
@@ -209,14 +221,18 @@ struct PayoutSheet: View {
     }
 
     var body: some View {
-        FormSheet(title: "Payouts", action: "Record payouts", ready: amounts.values.contains { !$0.isEmpty }, page: page, send: {
+        FormSheet(title: "Pay the partners", action: "Record payouts", ready: amounts.values.contains { !$0.isEmpty }, page: page, send: {
             var form: Params = [("day", day), ("note", note)]
             for n in partners { form += [("partner", n), ("amount", amounts[n] ?? "")] }
             return await page.submit("money/payout", form)
         }) {
             Section("Split calculator") {
-                TextField("Money to split ($)", text: $pool).keyboardType(.decimalPad)
-                TextField("Keep for stock ($)", text: $keep).keyboardType(.decimalPad)
+                LabeledContent("Money to split") {
+                    TextField("$0.00", text: $pool).keyboardType(.decimalPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
+                LabeledContent("Keep for stock") {
+                    TextField("$0.00", text: $keep).keyboardType(.decimalPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
                 ForEach(partners, id: \.self) { n in
                     Toggle(isOn: Binding(get: { included.contains(n) }, set: { if $0 { included.insert(n) } else { included.remove(n) } })) {
                         HStack { Text(n); Spacer(); if let c = split[n] { Text(Fmt.money(c)).foregroundStyle(.secondary).monospacedDigit() } }
@@ -241,30 +257,6 @@ struct PayoutSheet: View {
     }
 }
 
-
-/// Item names from Square's list (saved with the page, so this works with no signal too).
-struct ItemSuggestions: View {
-    @Binding var text: String
-    let known: [String]
-
-    private var matches: [String] {
-        let q = text.trimmingCharacters(in: .whitespaces).lowercased()
-        guard q.count >= 2 else { return [] }
-        return Array(known.filter { $0.lowercased().contains(q) && $0.lowercased() != q }.prefix(4))
-    }
-
-    var body: some View {
-        if !matches.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    ForEach(matches, id: \.self) { m in
-                        Button(m) { text = m }.buttonStyle(.bordered).controlSize(.small)
-                    }
-                }
-            }
-        }
-    }
-}
 
 /// Restocks saved on this phone with no signal, until they're sent.
 struct WaitingSection: View {
@@ -319,5 +311,57 @@ struct WaitingSection: View {
                 Text("Saved on this phone because there was no signal. They send by themselves when there is. Swipe to delete one.")
             }
         }
+    }
+}
+
+
+/// Pick an item from Square's list (saved with the page, so it works with no signal), or type one that
+/// isn't there. Searchable.
+struct ItemPicker: View {
+    let known: [String]
+    let current: String
+    let choose: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var searching = true
+
+    private var matches: [String] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? known : known.filter { $0.lowercased().contains(q) }
+    }
+
+    private var typed: String { query.trimmingCharacters(in: .whitespaces) }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !typed.isEmpty && !known.contains(where: { $0.lowercased() == typed.lowercased() }) {
+                    Button { pick(typed) } label: { Label("Use “\(typed)”", systemImage: "plus.circle") }
+                }
+                ForEach(matches, id: \.self) { name in
+                    Button { pick(name) } label: {
+                        HStack {
+                            Text(name).foregroundStyle(.primary)
+                            Spacer()
+                            if name == current { Image(systemName: "checkmark").foregroundStyle(Color("Brand")) }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                if matches.isEmpty && typed.isEmpty { Text("No items yet.").foregroundStyle(.secondary) }
+            }
+            .navigationTitle("Item")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search items")
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.words)
+            .onSubmit(of: .search) { if let first = matches.first, typed.isEmpty == false, matches.count == 1 { pick(first) } else if !typed.isEmpty { pick(matches.first(where: { $0.lowercased() == typed.lowercased() }) ?? typed) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }
+    }
+
+    private func pick(_ name: String) {
+        choose(name)
+        dismiss()
     }
 }

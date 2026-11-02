@@ -19,7 +19,7 @@ struct ImportView: View {
                 Text("A CSV with Name and Email.").font(.footnote).foregroundStyle(.secondary)
                 Button { picking = true } label: { Label(file?.name ?? "Choose the CSV", systemImage: "doc.badge.plus") }
                 if file != nil {
-                    Button { Task { await check() } } label: { HStack { Text("Preview"); if busy && preview == nil { Spacer(); ProgressView() } } }.disabled(busy)
+                    Button { Task { await check() } } label: { HStack { Label("Preview", systemImage: "eye"); if busy && preview == nil { Spacer(); ProgressView() } } }.disabled(busy)
                 }
             } header: { Text("1 · Choose the CSV") }
             if let p = preview?.preview, !p.isNull {

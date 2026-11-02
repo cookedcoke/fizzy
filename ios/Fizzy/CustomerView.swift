@@ -10,6 +10,7 @@ struct CustomerView: View {
     @State private var newSale: J?
     @State private var dismissedSales: Set<String> = []
     @State private var qr: QRCode?
+    @State private var ask: ConfirmAsk?
 
     init(id: Int) {
         self.id = id
@@ -32,12 +33,10 @@ struct CustomerView: View {
 
     var body: some View {
         PageList(page: page, title: customer.name.string) { d in
-            header(d)
-            verdict(d)
+            summary(d)
+            actions(d)
             todos(d)
             rewards(d)
-            figures(d)
-            actions(d)
             charges(d)
             repayments(d)
             history(d)
@@ -47,6 +46,7 @@ struct CustomerView: View {
         }
         .onAppear { if page.loaded { Task { await page.load() } } }
         .task(id: page.data.opened.string) { await watchForSales() }
+        .confirmAsk($ask)
         .sheet(item: $sheet) { which in sheetContent(which) }
         .sheet(item: $qr) { QRSheet(code: $0) }
         .alert("New sale", isPresented: Binding(get: { newSale != nil }, set: { if !$0 { newSale = nil } }), presenting: newSale) { sale in
@@ -59,29 +59,9 @@ struct CustomerView: View {
 
     // MARK: sections
 
-    @ViewBuilder private func header(_ d: J) -> some View {
-        let c = d.c, st = d.s.status
-        Section {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Tag(text: st.label.string, color: statusColor(st.status.string))
-                    if c.archived_at.optString != nil { Tag(text: "Archived") }
-                    if c.kind.string == "admin" { Tag(text: "Admin", color: .purple) }
-                    if c.kind.string == "test" { Tag(text: "Test", color: .orange) }
-                }
-                let number = c.email.string.split(separator: "@").first.map(String.init) ?? ""
-                let link = !c.square_customer_id.isNull ? "Linked to Square" : (c.kind.string == "test" ? "Test account" : "Not in Square yet")
-                Text("\(number) · \(link)").font(.footnote).foregroundStyle(.secondary)
-            }
-            if c.archived_at.optString == nil {
-                Button { sheet = .claim } label: { Label("Claim sale", systemImage: "square.and.arrow.down") }
-                Button { Task { await makeQR() } } label: { Label("Show sign-in code", systemImage: "qrcode") }
-            }
-        }
-    }
-
-    @ViewBuilder private func verdict(_ d: J) -> some View {
-        let st = d.s.status, led = d.s.ledger, c = d.c
+    /// What matters at the counter, in one card: can they use their tab, their points, what they owe.
+    @ViewBuilder private func summary(_ d: J) -> some View {
+        let c = d.c, st = d.s.status, led = d.s.ledger
         let canCharge = st.can_charge.bool
         let waiting = ["low_score", "paused"].contains(st.status.string)
         Section {
@@ -99,6 +79,25 @@ struct CustomerView: View {
                     }
                 }
             }
+            .padding(.vertical, 2)
+            HStack(alignment: .top, spacing: 16) {
+                Stat(title: "Points", value: Fmt.number(d.s.points.int))
+                Stat(title: "Owing", value: Fmt.money(led.owing_cents.int),
+                     sub: led.has_overdue.bool ? "\(Fmt.money(led.overdue_cents.int)) overdue"
+                        : (led.balance_cents.int < 0 ? "\(Fmt.money(-led.balance_cents.int)) in credit" : nil),
+                     alert: led.has_overdue.bool)
+                Stat(title: "Spent", value: Fmt.money(st.spend_cents.int))
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Text(c.email.string.split(separator: "@").first.map(String.init) ?? "").font(.footnote.monospaced())
+                Tag(text: st.label.string, color: statusColor(st.status.string))
+                if c.archived_at.optString != nil { Tag(text: "Archived") }
+                if c.kind.string == "admin" { Tag(text: "Admin", color: .purple) }
+                if c.kind.string == "test" { Tag(text: "Test", color: .orange) }
+                if led.late_count.int > 0 { Tag(text: "\(led.late_count.int) late", color: .red) }
+            }
+            .textCase(nil)
         }
     }
 
@@ -131,7 +130,6 @@ struct CustomerView: View {
                     }
                     if notInSquare {
                         Label("Not in Square yet. Their sales won't link by themselves - export new people from Customers, or claim their sales.", systemImage: "person.crop.circle.badge.questionmark")
-                            .font(.footnote)
                     }
                 }
             }
@@ -155,6 +153,7 @@ struct CustomerView: View {
                                 page.act("customers/\(id)/redeem/\(r.id.int)")
                             }
                             .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                         }
                     }
                 }
@@ -165,11 +164,12 @@ struct CustomerView: View {
                             Text("\(Fmt.when(r.created_at.string, "HH:mm")) by \(r.staff.string)" + (r.square_note.optString.map { " · In Square: \($0)" } ?? ""))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        ConfirmButton(title: "Undo", message: "Undo this redemption and give \(r.points.int) points back?", confirmLabel: "Undo") {
-                            page.act("redemptions/\(r.id.int)/undo")
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Undo") {
+                            ask = ConfirmAsk(message: "Undo this redemption and give \(r.points.int) points back?", confirmLabel: "Undo") { page.act("redemptions/\(r.id.int)/undo") }
                         }
-                        .buttonStyle(.bordered).controlSize(.small)
+                        .tint(.orange)
                     }
                 }
             }
@@ -182,25 +182,14 @@ struct CustomerView: View {
         return "Needs \(Fmt.number(o.short.int)) more points."
     }
 
-    @ViewBuilder private func figures(_ d: J) -> some View {
-        let st = d.s.status, led = d.s.ledger
-        Section {
-            StatGrid(stats: [
-                Stat(title: "Points", value: Fmt.number(d.s.points.int)),
-                Stat(title: "Tab owing", value: Fmt.money(led.owing_cents.int), sub: led.balance_cents.int < 0 ? "\(Fmt.money(-led.balance_cents.int)) in credit" : nil, alert: led.has_overdue.bool),
-                Stat(title: "Overdue", value: Fmt.money(led.overdue_cents.int),
-                     sub: led.late_count.int > 0 ? "\(led.late_count.int) late payment\(led.late_count.int == 1 ? "" : "s") on record" : nil, alert: led.has_overdue.bool),
-                Stat(title: "Spent", value: Fmt.money(st.spend_cents.int)),
-            ])
-        }
-    }
-
     @ViewBuilder private func actions(_ d: J) -> some View {
         if d.c.archived_at.optString == nil {
-            Section("Actions") {
+            Section {
+                Button { sheet = .claim } label: { Label("Claim sale", systemImage: "square.and.arrow.down") }.bold()
                 Button { sheet = .repay } label: { Label("Record repayment without Square", systemImage: "dollarsign.circle") }
                 Button { sheet = .tab } label: { Label("Tab limit", systemImage: "slider.horizontal.3") }
                 Button { sheet = .points } label: { Label("Adjust points", systemImage: "plusminus.circle") }
+                Button { Task { await makeQR() } } label: { Label("Show sign-in code", systemImage: "qrcode") }
             }
         }
     }
@@ -211,17 +200,18 @@ struct CustomerView: View {
             Section("Tab charges · \(list.count)") {
                 ForEach(Array(list), id: \.self) { ch in
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack {
+                        HStack(alignment: .firstTextBaseline) {
                             Text(Fmt.when(ch.charged_at.string))
                             Spacer()
                             if ch.overdue.bool { Tag(text: "Overdue", color: .red) }
                             else if ch.unpaid_cents.int > 0 { Tag(text: "Open") }
                             else if ch.paid_late.bool { Tag(text: "Paid late", color: .blue) }
                             else { Tag(text: "Paid", color: .green) }
+                            Text(Fmt.money(ch.net_cents.int)).monospacedDigit()
                         }
                         if let items = ch["items"].optString { Text(items).font(.caption).foregroundStyle(.secondary) }
                         if let breach = ch.breach.optString { Text(breach).font(.caption).foregroundStyle(.red) }
-                        Text("\(Fmt.money(ch.net_cents.int)) · paid \(Fmt.money(ch.paid_cents.int)) · unpaid \(Fmt.money(ch.unpaid_cents.int)) · due \(Fmt.when(ch.due_at.string, "EEE d MMM"))"
+                        Text("Paid \(Fmt.money(ch.paid_cents.int)) · unpaid \(Fmt.money(ch.unpaid_cents.int)) · due \(Fmt.when(ch.due_at.string, "EEE d MMM"))"
                              + (ch.refunded_cents.int > 0 ? " · \(Fmt.money(ch.refunded_cents.int)) refunded" : ""))
                             .font(.caption).monospacedDigit()
                     }
@@ -264,7 +254,7 @@ struct CustomerView: View {
         if !d.payments.array.isEmpty {
             Section("Square payments") {
                 ForEach(Array(d.payments.array.prefix(paymentLimit)), id: \.self) { p in
-                    Line(left: p.kind.string.replacingOccurrences(of: "_", with: " "),
+                    Line(left: { let k = p.kind.string.replacingOccurrences(of: "_", with: " "); return k.prefix(1).uppercased() + k.dropFirst() }(),
                          sub: [Fmt.when(p.created_at.string), p.tender.optString, p["items"].optString].compactMap { $0 }.joined(separator: " · "),
                          right: Fmt.money(p.amount_cents.int))
                 }
@@ -302,7 +292,8 @@ struct CustomerView: View {
                     Line(left: x.decision.string.capitalized, sub: [Fmt.when(x.created_at.string), x.note.optString].compactMap { $0 }.joined(separator: " · "), right: x.staff.string)
                 }
             }
-            DisclosureGroup("Activity log") {
+            DisclosureGroup("Activity log (\(d.audit_rows.count))") {
+                if d.audit_rows.array.isEmpty { Text("None.").foregroundStyle(.secondary) }
                 ForEach(d.audit_rows.array, id: \.self) { a in
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(a.action.string) · \(a.staff.string)").font(.subheadline)

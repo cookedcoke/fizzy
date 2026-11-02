@@ -8,8 +8,8 @@ struct LogView: View {
         PageList(page: page, title: "Activity log") { d in
             Section {
                 DownloadButton(title: "Export all", path: "tools/export/audit_log.csv")
-            } footer: { Text("Latest 500 actions") }
-            Section {
+            }
+            Section("Latest 500 actions") {
                 ForEach(d.rows.array, id: \.self) { a in
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {

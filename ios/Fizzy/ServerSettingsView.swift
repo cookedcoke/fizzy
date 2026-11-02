@@ -22,7 +22,8 @@ struct ServerSettingsView: View {
             NavigationLink("Maintenance mode") { MaintenanceForm(page: page) }
             updates(d)
             backups(d)
-            NavigationLink("Security keys · \(d.passkey_list.count)") { SecurityKeysView(page: page) }
+            NavigationLink("Security keys") { SecurityKeysView(page: page) }
+                .badge(d.passkey_list.count)
             NavigationLink("Devices") { DevicesView(page: page) }
         }
     }
@@ -73,49 +74,96 @@ struct PermissionsForm: View {
     @State private var bigPoints = ""
     @State private var bigDollars = ""
     @State private var error: String?
+    @State private var busy = false
     @Environment(\.dismiss) private var dismiss
 
-    private let groups = ["claim": "Everyday", "points": "Points and rewards", "tab_decisions": "Tabs", "customers": "Customers", "ask": "Ask (Gemini)",
-                          "qr_login": "Customers", "money": "Money", "school_tools": "Big stuff", "admin_accounts": "Special accounts"]
-    private let levels = [("open", "Anyone signed in"), ("pin", "PIN"), ("owner", "Owner only")]
+    /// Where each group starts, as on the website: an action listed here opens a new section.
+    private let groupStarts = ["claim": "Everyday", "points": "Points and rewards", "tab_decisions": "Tabs", "customers": "Customers",
+                               "ask": "Ask (Gemini)", "qr_login": "Customers", "money": "Money", "school_tools": "Big stuff",
+                               "admin_accounts": "Special accounts"]
+    private let levels = [("open", "Anyone"), ("pin", "PIN"), ("owner", "Owner")]
+
+    private struct Group: Identifiable { let id: Int; let title: String; let actions: [(id: String, label: String)] }
+
+    /// The actions in the server's order, cut into sections.
+    private var groups: [Group] {
+        var out: [Group] = []
+        for a in page.data.actions.array {
+            let aid = a[0].string
+            if let title = groupStarts[aid] {
+                out.append(Group(id: out.count, title: title, actions: []))
+            } else if out.isEmpty {
+                out.append(Group(id: 0, title: "Everyday", actions: []))
+            }
+            let g = out.removeLast()
+            out.append(Group(id: g.id, title: g.title, actions: g.actions + [(aid, a[1].string)]))
+        }
+        return out
+    }
 
     var body: some View {
-        let d = page.data
         Form {
-            if let error { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
-            ForEach(d.actions.array.map { $0[0].string }, id: \.self) { aid in
-                let label = d.actions.array.first { $0[0].string == aid }?[1].string ?? aid
-                if let g = groups[aid] { Text(g).font(.footnote.bold()).foregroundStyle(.secondary).listRowBackground(Color.clear) }
-                Picker(label, selection: Binding(get: { perms[aid] ?? "open" }, set: { perms[aid] = $0 })) {
-                    ForEach(levels, id: \.0) { Text($0.1).tag($0.0) }
+            if let error { Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) } }
+            Section {
+                Text("Pick who can do each thing. “Anyone” is anyone signed in; “PIN” asks for the counter PIN first; “Owner” needs the owner's password.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            ForEach(groups) { g in
+                Section(g.title) {
+                    ForEach(g.actions, id: \.id) { a in row(a.label, key: a.id) }
                 }
             }
-            Section("Limits") {
-                Text("Big changes by hand").font(.footnote.bold())
-                HStack { Text("More than"); TextField("points", text: $bigPoints).keyboardType(.numberPad).textFieldStyle(.roundedBorder); Text("points") }
-                HStack { Text("or more than $"); TextField("dollars", text: $bigDollars).keyboardType(.numberPad).textFieldStyle(.roundedBorder) }
-                Text("or anything for everyone at once").font(.caption).foregroundStyle(.secondary)
-                Picker("Needs", selection: Binding(get: { perms["big"] ?? "open" }, set: { perms["big"] = $0 })) {
-                    ForEach(levels, id: \.0) { Text($0.1).tag($0.0) }
+            Section {
+                row("Big changes by hand", key: "big")
+                LabeledContent("More than (points)") {
+                    TextField("500", text: $bigPoints).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
                 }
+                LabeledContent("Or more than ($)") {
+                    TextField("50", text: $bigDollars).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
+            } header: {
+                Text("Limits")
+            } footer: {
+                Text("A change bigger than either number, or anything for everyone at once, needs the level chosen above.")
             }
-            Section { Button("Save") { Task { await save() } }.disabled(page.busy) }
+            Section {
+                Button { Task { await save() } } label: {
+                    HStack { Spacer(); if busy { ProgressView() } else { Text("Save").bold() }; Spacer() }
+                }
+                .disabled(busy)
+            }
         }
         .navigationTitle("Who can do what")
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .toolbar { KeyboardDoneButton() }
         .onAppear {
-            for (k, v) in d.perms.dict where !["big_points", "big_dollars"].contains(k) { perms[k] = v.string }
-            bigPoints = d.perms.big_points.string
-            bigDollars = d.perms.big_dollars.string
+            for (k, v) in page.data.perms.dict where !["big_points", "big_dollars"].contains(k) { perms[k] = v.string }
+            bigPoints = page.data.perms.big_points.string
+            bigDollars = page.data.perms.big_dollars.string
         }
     }
 
+    /// One thing and who can do it: its name, then the three choices under it, the same on every row.
+    private func row(_ label: String, key: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+            Picker(label, selection: Binding(get: { perms[key] ?? "open" }, set: { perms[key] = $0 })) {
+                ForEach(levels, id: \.0) { Text($0.1).tag($0.0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        .padding(.vertical, 2)
+    }
+
     private func save() async {
+        busy = true
+        error = nil
         var form: Params = perms.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
         form += [("big_points", bigPoints), ("big_dollars", bigDollars)]
         let o = await page.submit("settings/permissions", form)
+        busy = false
         if o.ok { dismiss() } else { error = o.message; page.flash = nil }
     }
 }
@@ -139,7 +187,7 @@ struct SettingsForm<Content: View>: View {
             if let error { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
             content
             Section {
-                Button(action) {
+                Button {
                     busy = true
                     error = nil
                     Task {
@@ -147,6 +195,8 @@ struct SettingsForm<Content: View>: View {
                         busy = false
                         if o.ok { dismiss() } else { error = o.message; page.flash = nil }
                     }
+                } label: {
+                    HStack { Spacer(); if busy { ProgressView() } else { Text(action).bold() }; Spacer() }
                 }
                 .disabled(!ready || busy)
             }
@@ -160,6 +210,13 @@ struct SettingsForm<Content: View>: View {
 
 struct TabRulesForm: View {
     let page: Page
+    private func money(_ text: Binding<String>) -> some View {
+        HStack(spacing: 1) {
+            Spacer(minLength: 0)
+            Text("$").foregroundStyle(.secondary)
+            TextField("0.00", text: text).keyboardType(.decimalPad).fixedSize().monospacedDigit()
+        }
+    }
     @State private var limit = ""
     @State private var days = ""
     @State private var minScore = ""
@@ -169,9 +226,12 @@ struct TabRulesForm: View {
             await page.submit("settings", [("tab_limit", limit), ("due_days", days), ("min_score", minScore)])
         }) {
             Section {
-                labelled("Highest tab limit ($)") { TextField("", text: $limit).keyboardType(.decimalPad) }
-                labelled("Days to pay") { TextField("", text: $days).keyboardType(.numberPad) }
-                labelled("Minimum tab score (0 to 100)") { TextField("", text: $minScore).keyboardType(.numberPad) }
+                // Short labels, so none are cut off; the values don't need much room.
+                LabeledContent("Highest limit") { money($limit) }
+                LabeledContent("Days to pay") { TextField("0", text: $days).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit() }
+                LabeledContent("Minimum score") { TextField("0", text: $minScore).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit() }
+            } footer: {
+                Text("Everyone whose tab score is at the minimum or over has a tab, sized by their score. The score is 0 to 100.")
             }
         }
         .onAppear {
@@ -179,13 +239,6 @@ struct TabRulesForm: View {
             limit = dollars(c.tab_limit_cents.int); days = "\(c.tab_due_days.int)"
             minScore = "\(c.tab_min_score.int)"
         }
-    }
-}
-
-private func labelled<C: View>(_ title: String, @ViewBuilder _ field: () -> C) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-        Text(title).font(.footnote).foregroundStyle(.secondary)
-        field()
     }
 }
 
@@ -311,7 +364,9 @@ struct MaintenanceForm: View {
                 }
             }
         } else {
-            Form { Text("Needs an owner password on the server.").foregroundStyle(.orange) }.navigationTitle("Maintenance mode")
+            Form { Text("Needs an owner password on the server.").foregroundStyle(.orange) }
+                .navigationTitle("Maintenance mode")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
@@ -320,6 +375,7 @@ struct MaintenanceForm: View {
 
 struct SecurityKeysView: View {
     let page: Page
+    @State private var ask: ConfirmAsk?
 
     var body: some View {
         let d = page.data
@@ -337,9 +393,11 @@ struct SecurityKeysView: View {
                             Text("Added \(Fmt.when(k.created_at.string, "d MMM yyyy")) · \(k.created_by.string) · last used \(k.last_used_at.optString.map { Fmt.when($0) } ?? "never")")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        ConfirmButton(title: "Remove", message: "Remove \(k.name.string)?", confirmLabel: "Remove") { page.act("settings/passkeys/\(k.id.int)/remove") }
-                            .buttonStyle(.bordered).controlSize(.small)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Remove", role: .destructive) {
+                            ask = ConfirmAsk(message: "Remove \(k.name.string)?", confirmLabel: "Remove") { page.act("settings/passkeys/\(k.id.int)/remove") }
+                        }
                     }
                 }
                 if d.passkey_list.array.isEmpty { Text("None yet.").foregroundStyle(.secondary) }
@@ -347,11 +405,13 @@ struct SecurityKeysView: View {
         }
         .navigationTitle("Security keys")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmAsk($ask)
     }
 }
 
 struct DevicesView: View {
     let page: Page
+    @State private var ask: ConfirmAsk?
     @State private var name = ""
 
     var body: some View {
@@ -378,14 +438,19 @@ struct DevicesView: View {
                     ForEach(d.device_list.array, id: \.self) { dev in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(dev.name.string) + (dev.revoked_at.isNull ? Text("") : Text("  Removed").foregroundStyle(.red))
+                                HStack(spacing: 4) {
+                                    Text(dev.name.string)
+                                    if !dev.revoked_at.isNull { Tag(text: "Removed", color: .red) }
+                                }
                                 Text("Added \(Fmt.when(dev.created_at.string, "d MMM yyyy")) · \(dev.created_by.string) · last used \(dev.last_seen_at.optString.map { Fmt.when($0) } ?? "never")")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
-                            Spacer()
+                        }
+                        .swipeActions(edge: .trailing) {
                             if dev.revoked_at.isNull {
-                                ConfirmButton(title: "Remove", message: "Remove \(dev.name.string)?", confirmLabel: "Remove") { page.act("settings/devices/\(dev.id.int)/revoke") }
-                                    .buttonStyle(.bordered).controlSize(.small)
+                                Button("Remove", role: .destructive) {
+                                    ask = ConfirmAsk(message: "Remove \(dev.name.string)?", confirmLabel: "Remove") { page.act("settings/devices/\(dev.id.int)/revoke") }
+                                }
                             }
                         }
                     }
@@ -394,5 +459,6 @@ struct DevicesView: View {
         }
         .navigationTitle("Devices")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmAsk($ask)
     }
 }

@@ -29,7 +29,7 @@ struct TransactionsView: View {
                 if showDates {
                     DayField(title: "From", text: $start)
                     DayField(title: "To", text: $end)
-                    Button("Show") { Task { await reload() } }
+                    Button("Show these dates") { Task { await reload() } }
                 }
                 Picker("Show", selection: $show) {
                     ForEach(["", "sales", "tab", "repaid", "nobody"], id: \.self) { Text(d.shows[$0].optString ?? $0).tag($0) }

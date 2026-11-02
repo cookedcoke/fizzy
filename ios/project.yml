@@ -8,7 +8,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.1.0"
-    CURRENT_PROJECT_VERSION: "2"
+    CURRENT_PROJECT_VERSION: "4"
 targets:
   Fizzy:
     type: application
@@ -22,12 +22,37 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Fizzy/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Fizzy
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO   # HTTPS only, which is exempt
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.business
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "To save a receipt photo from Fizzy to your photos."
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "To reach a test Fizzy server on the local network, if you set one in This app."
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: Brand
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"   # iPhone only
+        CODE_SIGN_STYLE: Automatic
+  CookedCoke:
+    type: application
+    platform: iOS
+    sources:
+      - path: Student
+      - path: Fizzy/JSON.swift    # the page data type and formatting, shared with the staff app
+    settings:
+      base:
+        PRODUCT_NAME: CookedCoke
+        PRODUCT_BUNDLE_IDENTIFIER: co.cookedcoke.student
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: My CCC
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO   # HTTPS only, which is exempt
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.food-and-drink
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: "To read the sign-in code staff show you at the counter."
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "To reach a test server on the local network, if you set one."
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: Brand
+        TARGETED_DEVICE_FAMILY: "1"   # iPhone only
         CODE_SIGN_STYLE: Automatic

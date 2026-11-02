@@ -37,23 +37,28 @@ struct SquareView: View {
                 }
             }
             if !d.item_errors.array.isEmpty {
-                Section("Last sync skipped \(d.item_errors.count) item(s)") {
+                Section("Last sync skipped \(d.item_errors.count) item\(d.item_errors.count == 1 ? "" : "s")") {
                     ForEach(d.item_errors.strings, id: \.self) { Text($0).font(.caption.monospaced()) }
                 }
             }
             Section("How Fizzy reads Square") {
-                LabeledContent("Tab sale") {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tab sale")
                     Text([d.tab_discount.optString.map { "Sale with the “\($0)” discount" }, d.tab_tenders.array.isEmpty ? nil : "paid with " + d.tab_tenders.strings.joined(separator: " / ")]
-                        .compactMap { $0 }.joined(separator: ", or ").ifEmpty("Not set up")).multilineTextAlignment(.trailing)
+                        .compactMap { $0 }.joined(separator: ", or ").ifEmpty("Not set up")).font(.subheadline).foregroundStyle(.secondary)
                 }
-                LabeledContent("Tab repayment") {
-                    Text(d.repay_item.optString.map { "A sale with an item called “\($0)”" } ?? "Recorded in Fizzy only").multilineTextAlignment(.trailing)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tab repayment")
+                    Text(d.repay_item.optString.map { "A sale with an item called “\($0)”" } ?? "Recorded in Fizzy only").font(.subheadline).foregroundStyle(.secondary)
                 }
-                LabeledContent("Everything else") { Text("A normal sale").multilineTextAlignment(.trailing) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Everything else")
+                    Text("A normal sale").font(.subheadline).foregroundStyle(.secondary)
+                }
             }
             Section {
                 ForEach(d.rows.array, id: \.self) { p in payment(p, d) }
-                if d.rows.array.isEmpty { Text("No payments yet.").foregroundStyle(.secondary) }
+                if d.rows.array.isEmpty { Text(onlyUnlinked ? "No payments waiting for a customer." : "No payments yet.").foregroundStyle(.secondary) }
             } header: {
                 HStack {
                     Text(onlyUnlinked ? "Payments with no customer" : "Recent payments")

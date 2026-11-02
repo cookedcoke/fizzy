@@ -3,7 +3,7 @@
 import Foundation
 
 @dynamicMemberLookup
-enum J: Decodable, Hashable {
+enum J: Codable, Hashable {
     case null
     case bool(Bool)
     case num(Double)
@@ -20,6 +20,18 @@ enum J: Decodable, Hashable {
         else if let v = try? c.decode([J].self) { self = .arr(v) }
         else if let v = try? c.decode([String: J].self) { self = .obj(v) }
         else { self = .null }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let v): try c.encode(v)
+        case .num(let v): try c.encode(v)
+        case .str(let v): try c.encode(v)
+        case .arr(let v): try c.encode(v)
+        case .obj(let v): try c.encode(v)
+        }
     }
 
     subscript(dynamicMember key: String) -> J { self[key] }

@@ -23,7 +23,7 @@ struct AppSettingsView: View {
                     .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                     .onSubmit(save)
                 if !baseURL.isEmpty {
-                    Button("Use Default") { address = ""; save() }
+                    Button("Use default") { address = ""; save() }
                 }
             } header: {
                 Text("Fizzy address")

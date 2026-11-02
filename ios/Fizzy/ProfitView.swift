@@ -42,15 +42,19 @@ struct ProfitView: View {
                     Text("No items sold \(d.label.string.lowercased()) yet" + (d.square_on.bool ? " - press Get items from Square below to list everything you sell." : "."))
                         .foregroundStyle(.secondary)
                 }
-                if hasChanges {
-                    Button("Save costs") { Task { await save() } }.buttonStyle(.borderedProminent).disabled(page.busy)
-                }
             }
             if d.square_on.bool {
                 Section {
                     Button { page.act("profit/refresh") } label: { Label("Get items from Square", systemImage: "arrow.triangle.2.circlepath") }
                 } footer: {
                     Text(d.catalog_sync.optString.map { "\(d.catalog_count.int) items · \(Fmt.when($0))" } ?? "Not read from Square yet")
+                }
+            }
+        }
+        .toolbar {
+            if hasChanges {
+                ToolbarItem(placement: .confirmationAction) {
+                    if page.busy { ProgressView() } else { Button("Save") { Task { await save() } } }
                 }
             }
         }
@@ -90,12 +94,15 @@ struct ProfitView: View {
                     }
                 }
                 Spacer()
-                HStack(spacing: 2) {
+                // "$" and the number in one box; orange when there's no cost yet
+                HStack(spacing: 1) {
                     Text("$").foregroundStyle(.secondary)
-                    TextField("e.g. 1.20", text: Binding(get: { costs[key] ?? "" }, set: { costs[key] = $0 }))
-                        .keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 70)
-                        .padding(4).background(missing ? Color.orange.opacity(0.2) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                    TextField("1.20", text: Binding(get: { costs[key] ?? "" }, set: { costs[key] = $0 }))
+                        .keyboardType(.decimalPad).fixedSize().frame(minWidth: 44, alignment: .leading)
                 }
+                .monospacedDigit()
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(missing ? Color.orange.opacity(0.18) : Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
             }
             if !r.margin.isNull { Text("\(r.margin.int)% margin").font(.caption).foregroundStyle(r.margin.int < 20 ? .red : .secondary) }
         }

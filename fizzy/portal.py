@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from . import badges, config, events, logic, rewards, rules, stats
 from .db import audit, now_iso
-from .web import get_conn, staff, templates
+from .web import get_conn, staff, templates, wants_json
 
 router = APIRouter()
 
@@ -217,6 +217,56 @@ def _page(request, name, **ctx):
     return response
 
 
+def _json(body, status=200):
+    """The student iOS app's answer: the same as the page, as data."""
+    return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+
+def _event(e):
+    return {"name": e["name"], "multiplier": e["multiplier"], "start_date": e["start_date"], "end_date": e["end_date"]}
+
+
+def _whats_on(conn):
+    """Live rewards and double points days, shown before signing in too."""
+    return {"rewards": [{"name": r["name"], "points_cost": r["points_cost"]} for r in rewards.active(conn)],
+            "events_on": [_event(e) for e in events.on(conn)], "events_soon": [_event(e) for e in events.upcoming(conn)]}
+
+
+def student_payload(conn, c):
+    """Everything the student page shows, for the app. Picked field by field, not the page's whole
+    context: the customer row and tab charges carry staff notes and names a student shouldn't see."""
+    s = logic.customer_summary(conn, c)
+    st, led = s["status"], s["ledger"]
+    sc = st["score"]
+    unpaid = [ch["due_at"] for ch in led["charges"] if ch["unpaid_cents"]]
+    me = _with_custom(conn, badges.for_customer(conn, c["id"]), c["id"])
+    boards = []
+    for title, since in (("This month", month_start()), ("All time", None)):
+        board, mine = leaderboard(conn, since=since, me=c["id"])
+        boards.append({"title": title, "rows": board, "mine": mine})
+    return {
+        "signed_in": True, "name": c["name"], "first": c["name"].split(" ")[0], "points": s["points"],
+        "tab": {"status": st["status"], "can_charge": st["can_charge"], "available_cents": st["available_cents"],
+                "limit_cents": st["limit_cents"], "min_score": st["min_score"], "due_days": st["due_days"],
+                "owing_cents": led["owing_cents"], "overdue_cents": led["overdue_cents"], "has_overdue": led["has_overdue"],
+                "balance_cents": led["balance_cents"], "late_count": led["late_count"], "has_charges": bool(led["charges"]),
+                "next_due": min(unpaid) if unpaid else None,
+                "score": {"score": sc["score"], "limit_cents": sc["limit_cents"], "next": sc["next"],
+                          "factors": [{"label": label, "points": pts} for label, pts in sc["factors"]], "tips": sc["tips"]}},
+        "streak": {"days": me["streak"], "best": me["best"], "today": me["today"]},
+        "offers": [{"name": o["reward"]["name"], "points_cost": o["reward"]["points_cost"],
+                    "per_customer_limit": o["reward"]["per_customer_limit"], "used": o["used"], "limit_hit": o["limit_hit"],
+                    "short": o["short"], "can_redeem": o["can_redeem"]} for o in rewards.offers_for(conn, c["id"], s["points"])],
+        "activity": activity(conn, c["id"]),
+        "boards": boards,
+        "badges": me["badges"], "badges_earned": me["earned"],
+        "custom_events": [{"name": e["name"], "summary": e["summary"], "soon": e["soon"],
+                           "start": e["start"].isoformat() if e["start"] else None} for e in rules.student_events(conn)],
+        **_whats_on(conn),
+        "tz": str(config.TZ),
+    }
+
+
 def _url(path):
     """Links on the public host drop the /me prefix (the middleware adds it back)."""
     return path if config.PUBLIC_HOST else "/me" + path
@@ -229,11 +279,15 @@ templates.env.globals["me_url"] = _url
 @router.get("/me/")
 def home(request: Request, conn=Depends(get_conn)):
     c = current(request, conn)
+    if c is None and wants_json(request):
+        return _json({"signed_in": False, **_whats_on(conn)})
     if c is None:
         return _page(request, "me_login.html", error=None, who="", live=rewards.active(conn),
                      events_on=events.on(conn), events_soon=events.upcoming(conn))
     if badges.award(conn, c["id"]):  # a badge earned since the last look pays its points now
         conn.commit()
+    if wants_json(request):
+        return _json(student_payload(conn, c))
     s = logic.customer_summary(conn, c)
     month, month_me = leaderboard(conn, since=month_start(), me=c["id"])
     alltime, alltime_me = leaderboard(conn, me=c["id"])
@@ -259,9 +313,13 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
     # Per typed name and per network first: cheap, and checked before any searching.
     buckets = _buckets(request, who)
     if any(len(_recent(k, now)) >= limit for k, limit in buckets):
+        if wants_json(request):
+            return _json({"error": "Too many tries. Wait 15 minutes and try again."}, 429)
         return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
                      error="Too many tries. Wait 15 minutes and try again.")
     if _in_flight >= MAX_IN_FLIGHT:
+        if wants_json(request):
+            return _json({"error": "Lots of people are signing in right now. Try again in a moment."}, 503)
         return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
                      error="Lots of people are signing in right now. Try again in a moment.")
     # Count the attempt before checking anything (no awaits in between), so a burst of parallel
@@ -291,12 +349,16 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
         _in_flight -= 1
     if c is None:
         await asyncio.sleep(FAIL_DELAY)
+        if wants_json(request):
+            return _json({"error": "That name and passcode don't match. No passcode yet? Ask at the Cooked Coke Co. stall."}, 401)
         return _page(request, "me_login.html", who=who, live=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn),
                      error="That name and passcode don't match. No passcode yet? Ask at the Cooked Coke Co. stall.")
     for k, _ in buckets:  # right in the end, so it doesn't count (the school shares one network)
         if now in _fails.get(k, []):
             _fails[k].remove(now)
     request.session["me"] = {"id": c["id"], "v": _session_marker(c), "at": int(now)}
+    if wants_json(request):
+        return _json({"ok": True})
     return RedirectResponse(_url("/"), status_code=303)
 
 
@@ -329,6 +391,8 @@ def promos(conn=Depends(get_conn)):
 @router.post("/me/logout")
 def logout(request: Request):
     request.session.pop("me", None)
+    if wants_json(request):
+        return _json({"ok": True})
     return RedirectResponse(_url("/"), status_code=303)
 
 
@@ -477,14 +541,20 @@ def use_qr_login(request: Request, token: str, conn=Depends(get_conn)):
     c = row and conn.execute("SELECT * FROM customers WHERE id = ? AND archived_at IS NULL AND merged_into IS NULL",
                              (row["customer_id"],)).fetchone()
     if not row or not c or row["used_at"] or row["expires_at"] < time.time():
+        if wants_json(request):
+            return _json({"error": "That code's no good now. Sign-in codes work once, for a minute. Ask at the counter for a new one."}, 410)
         return _page(request, "me_error.html", heading="That code's no good now",
                      message="Sign-in codes work once, for a minute. Ask at the counter for a new one.", home=_url("/"))
     # Used up before anything else, so two scans at once can't both get in.
     if conn.execute("UPDATE qr_logins SET used_at = ? WHERE id = ? AND used_at IS NULL", (now_iso(), row["id"])).rowcount != 1:
+        if wants_json(request):
+            return _json({"error": "That code was just used. Ask at the counter for a new one."}, 410)
         return RedirectResponse(_url("/"), status_code=303)
     audit(conn, "student", "qr_login_used", c["id"], "")
     conn.commit()
     request.session["me"] = {"id": c["id"], "v": _session_marker(c), "at": int(time.time()), "qr": 1}
+    if wants_json(request):
+        return _json({"ok": True})
     return RedirectResponse(_url("/"), status_code=303)
 
 
