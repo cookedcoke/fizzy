@@ -62,7 +62,7 @@ def test_rewards_pages_and_counter_flow(client):
     r = client.post("/rewards", data={"name": "Free Coke", "points": "1000", "square_note": "apply Points: Free Coke"})
     assert "is on." in r.text and "Rewards on:" in client.get("/").text
     page = client.get("/customers/1").text
-    assert "can have this now" in page and 'data-key="o"' in page and "In Square: apply Points: Free Coke" in page
+    assert "can have this now" in page and 'action="/customers/1/redeem/1"' in page and "In Square: apply Points: Free Coke" in page
     assert "Needs 1,000 more points" in client.get("/customers/2").text
     tags = {r["name"]: r["reward"] for r in client.get("/api/index").json()}
     assert tags == {"Rich Kid": True, "Poor Kid": False}

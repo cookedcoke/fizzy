@@ -173,7 +173,7 @@ def test_customer_page_shows_only_what_needs_doing(client):
         conn.close()
     page = client.get("/customers/1").text
     assert "$4.00 overdue." in page and "Has an overdue charge" in page and "Money overdue right now" in page
-    assert "Repayment <kbd>R</kbd></h2>" in page and "Tab charges" in page  # overdue: no approval prompt
+    assert "Repayment</h2>" in page and "Tab charges" in page  # overdue: no approval prompt
 
 
 def test_dashboard_on_a_closed_day_shows_a_recap_not_zeros(client):

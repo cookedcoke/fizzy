@@ -19,7 +19,7 @@ their tab?*
 6. [Rewards (points shop)](#6-rewards-points-shop)
 7. [Student site](#7-student-site)
 8. [Tools](#8-tools)
-9. [Search and keyboard shortcuts](#9-search-and-keyboard-shortcuts)
+9. [Search](#9-search)
 10. [Setting up](#10-setting-up)
 11. [Running it](#11-running-it)
 12. [Configuration reference](#12-configuration-reference)
@@ -32,19 +32,19 @@ their tab?*
 ## 1. At the counter
 
 **The quick way: claim it in Fizzy (type the name once)**
-1. In Fizzy: `Esc`, type their name, `Enter`. Their page shows points, tab and rewards.
+1. In Fizzy: type their name in the search box and pick them. Their page shows points, tab and rewards.
 2. On the Square Terminal, ring it up **without adding a customer** (with the Fizzy Tab
    discount or the Tab repayment item if needed) and take payment.
-3. Back in Fizzy, press `K` (**Claim sale**). The newest sale with no customer is at the top:
-   `Enter` gives it to them (or `1`–`6` for an earlier one). Points, tab charges and
+3. Back in Fizzy, press **Claim sale**. The newest sale with no customer is at the top:
+   click it to give it to them (or an earlier one below it). Points, tab charges and
    repayments land straight away.
 
 **Even quicker:** if their page is already open when you take the payment, a *New sale* box
-pops up within a few seconds: `Enter` claims it for them, `Esc` if it isn't theirs. (It only
-offers sales from about the time the page was opened, never older ones, and never claims
-anything without a key press.)
+pops up within a few seconds: **Claim** gives it to them, **Not theirs** dismisses it. (It
+only offers sales from about the time the page was opened, never older ones, and never
+claims anything without a click.)
 
-Fizzy asks Square for the latest sales when you press `K`, so there's no waiting. If a tab sale
+Fizzy asks Square for the latest sales when you open **Claim sale**, so there's no waiting. If a tab sale
 is more than they're allowed, the claim page says so before you claim it. Forget to claim?
 Nothing breaks: the sale waits on the **Square** page to be assigned later.
 
@@ -55,7 +55,7 @@ Nothing breaks: the sale waits on the **Square** page to be assigned later.
 2. Points arrive in Fizzy automatically (within seconds with webhooks, otherwise within 5 minutes).
 
 **Someone wants to put it on their tab**
-1. In Fizzy: `Esc`, type their name, then `Enter` (or the result's number, `1`–`8`).
+1. In Fizzy: type their name in the search box and pick them (arrow keys and `Enter` work too).
 2. Read the answer at the top of their page:
    - **Green tick:** they can, up to the amount shown.
    - **Red cross:** no (overdue, tab turned off, or at the limit). The line underneath says why.
@@ -75,7 +75,7 @@ Nothing breaks: the sale waits on the **Square** page to be assigned later.
    **Record without Square**.
 
 **Who's on the counter**: the name in the top-right is recorded against everything you do.
-Switch it with `W` or the dropdown. **Lock** signs the device out.
+Switch it with the dropdown. **Lock** signs the device out.
 
 ---
 
@@ -346,7 +346,7 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 | **Dashboard** | Search; noticeboard; warnings (Square not connected, tabs paused). **Today's sales:** sold, taken, orders and average, customers, put on tabs and repaid; sold by hour against the same day last week; the last 7 school days; top items; latest sales. It refreshes itself every minute while nobody's touching it. **Tabs:** totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers; people waiting for tab approval |
 | **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend; record repayment; tab limit (pick a band or set a score adjustment, turn the tab off or on); tab score with every line explained; adjust points; tab charges with due dates and status; repayments; points history; Square payments; tab history; activity log; edit (name, Square ID, archive) |
 | **Customers** | Search with a results table; download the Square import CSV |
-| **Claim sale** (`K` on a customer) | The latest Square sales with no customer; `Enter` gives the newest to this customer |
+| **Claim sale** (button on a customer) | The latest Square sales with no customer; click one to give it to this customer |
 | **Rewards** | Start and end reward events; see how many were redeemed |
 | **Square** | Connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer |
 | **Tools** | Occasional jobs (next section) |
@@ -403,7 +403,7 @@ The pages are kept to labels and buttons. What they used to explain:
 
 ## 5. Profit
 
-**Profit** (dashboard button, or `G` then `P`) needs no Square Retail Plus: type what one of
+**Profit** (dashboard button, or the top bar) needs no Square Retail Plus: type what one of
 each item costs you in the table and press **Save costs**.
 
 **Where the items come from.** Fizzy reads your item list from Square every 6 hours (or press
@@ -421,7 +421,7 @@ access token has it); without it, items show up here once they've sold.
   revenue that is. Refunds aren't taken off.
 - **Today / Last 7 days / Last 30 days** switch the range. The dashboard shows today's profit.
 
-**Money** (dashboard button, or `G` then `M`) is a record of what was bought and who got
+**Money** (dashboard button, or the top bar) is a record of what was bought and who got
 paid. It doesn't try to track how much money the stall has.
 - **Add a restock:** day, shop, each item with quantity and the cost for the whole line
   (24 Coke for $18), and optionally a receipt photo (phones open the camera). The cost of one
@@ -447,7 +447,7 @@ stays live until you end it.
 - optionally, a limit per customer.
 
 **At the counter:** while a reward is live, it shows on every customer's page.
-- **They have enough points:** it's green, with a **Redeem** button (shortcut `O`). Offer it;
+- **They have enough points:** it's green, with a **Redeem** button. Offer it;
   they can take it or leave it.
 - **They don't:** it shows how many more points they need, which is worth telling them too.
 - **Search results** show a green **Reward** tag next to anyone who can redeem something.
@@ -633,7 +633,7 @@ tries locks it for 10 minutes. Forgot it? On the home PC:
 docker compose exec -u fizzy fizzy python -m fizzy clear-pin
 ```
 
-## 9. Search and keyboard shortcuts
+## 9. Search
 
 ### Search
 
@@ -658,32 +658,8 @@ page and in the Tools customer boxes all use the same matching. The Python
 (`fizzy/fuzzy.py`) and browser (`fizzy/static/fuzzy.js`) copies are tested to rank
 identically.
 
-### Shortcuts
-
-Press **`?`** on any page for the list. Buttons and sections with a shortcut show its key
-in a small grey box (e.g. **Claim sale `K`**), and hovering over anything with a shortcut, including
-the top-bar links, names it. Shortcuts don't fire while you're typing in a box; `Esc` gets
-you out of the box first.
-
-| Key | Does |
-|---|---|
-| `/` or `S` | Search |
-| `↑` `↓` `Enter` | Pick a search result |
-| `1`–`8` | Open that search result (results are numbered). While searching by student number, use `Alt`+number, since plain digits are part of the number |
-| `Esc` | Leave the box you're in, then press again to go back to the dashboard |
-| `K` | Customer: claim the sale just rung up in Square with no customer (`Enter` claims the newest, `1`–`6` pick one) |
-| `R` | Customer: record repayment (amount pre-filled; `Enter` saves) |
-| `P` | Customer: adjust points (`Tab` to the reason, `Enter` saves) |
-| `O` | Customer: redeem the reward they can have (asks first) |
-| `X` | Customer: turn tab off (asks first), or back on |
-| `N` | Customer: note for a tab change |
-| `H` `L` `E` | Customer: tab history, activity log, edit |
-| `W` | Switch who's on the counter |
-| `U` | Square page: sync now |
-| `1`–`8` | Tools page: jump to a section |
-| `G` then `D` `C` `S` `R` `T` `I` `L` `,` | Go to Dashboard, Customers, Square, Rewards, Tools, Import, Log, Settings |
-| `Ctrl` + `Enter` | Submit the form you're in |
-| `?` | Show shortcuts |
+There are no keyboard shortcuts: everything is a button. In the search box, the arrow keys and
+`Enter` pick a result, and `Esc` clears it. A card scanner works on any page (see above).
 
 ---
 
@@ -1092,7 +1068,7 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
 | `fizzy/square.py` | Square API client, payment/refund processing (safe to repeat), webhook check |
 | `fizzy/fuzzy.py` | Name matching (fzf scoring + typo tolerance) |
 | `fizzy/static/fuzzy.js` | Browser copy of `fuzzy.py`. **Change both together**; a test compares them |
-| `fizzy/static/app.js` | In-browser search, keyboard shortcuts, `?` panel |
+| `fizzy/static/app.js` | In-browser search, card scans, confirm and passcode boxes, the New sale pop-up |
 | `fizzy/tools.py` | The Tools page: each tool is a `TOOLS` entry plus an `h_<id>` handler |
 | `fizzy/app.py` | Routes, login, background jobs |
 | `fizzy/customers.py` | CSV import, search, Square export |
@@ -1106,10 +1082,8 @@ dependency-free scripts; no build step. Runs comfortably on a Raspberry Pi.
 - Square payments and refunds are processed at most once (keyed by Square ID), so webhooks
   and polling can overlap safely.
 - Anything that changes data writes to `audit_log`.
-- Keyboard shortcuts: add `data-key="x"` (and optionally `data-key-label`, `data-confirm`) to
-  any button, field or `<details>`. It then works, gets a hover tip and appears in the `?`
-  panel automatically. Add a visible `<kbd>X</kbd>` in the template next to it. Avoid `s`,
-  `f`, `g` and `/`, which are taken.
+- No keyboard shortcuts (removed: nobody used them). A button that needs a second look gets
+  `data-confirm="Question?"`, and Fizzy asks in its own box first.
 
 ---
 

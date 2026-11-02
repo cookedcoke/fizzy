@@ -192,7 +192,6 @@ form > :first-child, .tool-body > :first-child { margin-top: 0 }
   height: 52px; font-size: 18px; padding: 0 var(--s4) 0 46px; border-color: var(--line-strong);
   background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%235F6672' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 16px center;
 }
-.search > kbd { position: absolute; right: 14px; top: 16px; font: 11px var(--mono); color: var(--faint); border: 1px solid var(--line-strong); border-radius: 3px; padding: 1px 5px; pointer-events: none }
 .results:empty { display: none }
 .results { position: absolute; left: 0; right: 0; top: 56px; z-index: 15; background: var(--surface); border: 1px solid var(--line-strong);
   border-radius: var(--r); box-shadow: 0 8px 24px rgba(21, 23, 27, .12); overflow: hidden }
@@ -302,29 +301,11 @@ input[type=search]::-webkit-search-decoration { -webkit-appearance: none }
 .hsearch .results { top: 36px; left: auto; right: 0; width: min(560px, 92vw) }
 
 /* ---- keyboard hints ---- */
-kbd { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 3px;
-  background: var(--surface); font: 600 11px/16px var(--mono); color: var(--muted); text-align: center; text-transform: none; letter-spacing: 0; vertical-align: 1px }
-h2 kbd { margin-left: 4px; font-size: 10.5px; line-height: 14px; min-width: 16px }
-button kbd { margin-left: 4px; background: transparent; color: inherit; opacity: .7; border-color: currentColor }
-.keys-btn { width: 30px; height: 30px; padding: 0; background: #22252B; color: #B7BCC4; border: 1px solid #3A3E46; font-weight: 700 }
-.keys-btn:hover { background: #2C3038; color: #fff; border-color: #3A3E46 }
-dialog#keys { border: 1px solid var(--line-strong); border-radius: 6px; padding: var(--s5); width: min(760px, 94vw); box-shadow: 0 20px 60px rgba(0, 0, 0, .25) }
 dialog.ask { border: 1px solid var(--line-strong); border-radius: 6px; padding: var(--s5); width: min(420px, 92vw); box-shadow: 0 20px 60px rgba(0, 0, 0, .25) }
 dialog.ask p { margin: 0 0 var(--s4); font-size: 15px }
-dialog.ask::backdrop, dialog#keys::backdrop { background: rgba(21, 23, 27, .45) }
-dialog#keys h2 { margin-bottom: var(--s2) }
-dialog#keys td { border: none; padding: 5px var(--s3) 5px 0; vertical-align: middle }
-dialog#keys td:first-child { width: 45%; line-height: 22px }
-dialog#keys .grid { grid-template-columns: 3fr 2fr }
-@media (max-width: 720px) { dialog#keys .grid { grid-template-columns: 1fr } }
-@media (max-width: 720px) { .hsearch, .keys-btn, h2 kbd, button kbd, .btn kbd, .search > kbd { display: none } }
-#keys-page td:first-child { width: 48px }
+dialog.ask::backdrop { background: rgba(21, 23, 27, .45) }
+@media (max-width: 720px) { .hsearch { display: none } }
 .results mark { background: none; color: var(--ink); font-weight: 800; text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 3px }
-.results kbd.num { margin-right: 10px; min-width: 20px; color: var(--faint) }
-.results a.hit.sel kbd.num { color: var(--ink); border-color: var(--ink) }
-summary kbd, label kbd { margin-left: 6px; font-size: 10.5px; line-height: 14px }
-button.primary kbd { border-color: rgba(255,255,255,.45) }
-@media (max-width: 720px) { summary kbd, label kbd, .results kbd.num { display: none } }
 @media (max-width: 1400px) { header .brand small, header .who .label { display: none } }
 .assign input { height: 28px; font-size: 13px; min-width: 170px }
 .assign input:not(:focus) { border-style: dashed }
@@ -598,8 +579,6 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
 td.when { white-space: nowrap }
 td.when .small { white-space: normal }
 .todos:not(:has(*)) { display: none }
-dialog#keys #keys-page td:first-child { width: 40px }
-.toolgrid h2 kbd { display: none }
 .period input[type=date] { height: 36px }
 .tx-filters .seg .btn, .tx-filters .seg button { min-height: 36px }
 dialog.ask .err { margin: var(--s2) 0 0 }
@@ -658,7 +637,7 @@ html { -webkit-tap-highlight-color: transparent }
   /* Shadows and baked-in icon colours made for the light theme */
   .results { box-shadow: 0 8px 24px rgba(0, 0, 0, .6); border-color: #4A5059 }
   .claim-prompt { box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .8); border-color: #4A5059 }
-  dialog#keys, dialog.ask { box-shadow: 0 20px 60px rgba(0, 0, 0, .7) }
+  dialog.ask { box-shadow: 0 20px 60px rgba(0, 0, 0, .7) }
   .search input { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%239AA1AB' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") }
   .steps li.done::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='%2315171B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") }
 }
@@ -813,5 +792,5 @@ form.panel.attn:has(.red), .panel.attn.bad { box-shadow: inset 4px 0 0 var(--red
 @media (min-width: 1100px) { .panel.attn > .scroll tr:hover > td:first-child { box-shadow: inset 4px 0 0 var(--attn) } }
 button, .btn { box-shadow: var(--shadow-btn) }
 button.primary, .btn.primary { box-shadow: var(--shadow-btn-primary) }
-.lines .rm, header .who button, .keys-btn { box-shadow: none }
+.lines .rm, header .who button { box-shadow: none }
 @media print { .panel, .stats, .verdict, .todo, .offer, .claim { box-shadow: none } }

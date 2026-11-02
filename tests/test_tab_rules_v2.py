@@ -204,3 +204,19 @@ def test_the_ios_app_is_fine(client):
 def test_chrome_client_hint_counts_as_a_phone(client):
     r = client.get("/", headers={"User-Agent": "Mozilla/5.0 (Linux; Android 10; K)", "Sec-CH-UA-Mobile": "?1"})
     assert r.status_code == 403
+
+
+# ---- no keyboard shortcuts ---------------------------------------------------------------------
+
+def test_no_keyboard_shortcuts_left(client):
+    """Shortcuts were removed (nobody used them): no key chips, no data-key, no ? panel."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "fizzy"
+    for f in list((root / "templates").glob("*.html")) + [root / "static" / "app.js", root / "static" / "style.css"]:
+        if f.name.startswith(("me", "_me")):
+            continue
+        text = f.read_text(encoding="utf-8")
+        assert "data-key" not in text and "<kbd" not in text and "keys-btn" not in text, f.name
+    for path in ("/", "/customers/1", "/customers/1/claim", "/tools", "/square", "/profit"):
+        page = client.get(path).text
+        assert "<kbd" not in page and "Keyboard shortcuts" not in page, path

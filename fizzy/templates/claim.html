@@ -9,9 +9,7 @@
 {% if checkouts %}
 <form method="post" action="/customers/{{ c.id }}/claim" class="claims">
   {% for k in checkouts %}
-  <button name="key" value="{{ k.key }}" class="claim {{ 'first' if loop.first }}" data-key="{{ loop.index }}"
-    data-key-label="Claim the {{ k.at|local('%H:%M') }} sale" {{ 'autofocus' if loop.first }}>
-    <kbd class="num">{{ loop.index }}</kbd>
+  <button name="key" value="{{ k.key }}" class="claim {{ 'first' if loop.first }}" {{ 'autofocus' if loop.first }}>
     <span class="when">{{ k.at|local('%H:%M') }}<small>{{ k.at|local('%a %-d %b') }}</small></span>
     <span class="what">{{ k['items'] or ('Tab repayment' if k.repay_cents else 'Sale') }}
       <small>{% for t in k.tenders %}{{ t }}{{ ' · ' if not loop.last }}{% endfor %}</small></span>
@@ -21,13 +19,13 @@
         {% if not st.can_charge or k.tab_cents > st.available_cents %}<small class="red">{{ c.name.split(' ')[0] }} can't put this on a tab{% if st.can_charge %} (only {{ st.available_cents|money }} left){% endif %} - it'll be flagged</small>{% endif %}{% endif %}
       {% if k.repay_cents %}<span class="repay">{{ k.repay_cents|money }} <small>repaid</small></span>{% endif %}
     </span>
-    {% if loop.first %}<span class="go">Claim <kbd>Enter</kbd></span>{% endif %}
+    {% if loop.first %}<span class="go">Claim</span>{% endif %}
   </button>
   {% endfor %}
 </form>
 {% else %}
 <div class="panel"><p class="empty">No unclaimed sales from the last {{ hours }} hours.
-  {% if square_on %}If you just took it, give Square a moment, then <a href="/customers/{{ c.id }}/claim" data-key="k" data-key-label="Check again">check again <kbd>K</kbd></a>.
+  {% if square_on %}If you just took it, give Square a moment, then <a href="/customers/{{ c.id }}/claim">check again</a>.
   {% else %}Square isn't connected yet, so there's nothing to claim. Ask the owner.{% endif %}</p></div>
 {% endif %}
 {% endblock %}

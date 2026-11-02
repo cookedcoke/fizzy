@@ -833,11 +833,9 @@ def register(app):
         audit_rows = conn.execute(
             "SELECT * FROM audit_log WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100", (cid,)
         ).fetchall()
-        opened = datetime.now(timezone.utc)
-        watch_since = (opened - timedelta(seconds=90)).isoformat(timespec="seconds")
-        opened = opened.isoformat(timespec="seconds")
+        watch_since = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat(timespec="seconds")
         kind_levels = {lv: pin.customer_level(conn, c["kind"], lv) for lv in (pin.OPEN, pin.PIN, pin.OWNER)}
-        return render(request, "customer.html", kind_levels=kind_levels, s=s, c=c, points=points, payments=payments, watch_since=watch_since, opened=opened,
+        return render(request, "customer.html", kind_levels=kind_levels, s=s, c=c, points=points, payments=payments, watch_since=watch_since,
                       decisions=decisions, audit_rows=audit_rows, bands=logic.bands(logic.settings(conn)),
                       offers=(offers := rewards.offers_for(conn, cid, s["points"])),
                       display_msg={"type": "show", "customer": display.payload(conn, c, s, offers)},
