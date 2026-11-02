@@ -287,3 +287,50 @@ def test_sweep_pays_badges_nobody_has_looked_at(conn, cust):
     assert badges.sweep(conn) >= 1
     after = conn.execute("SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = ?", (a["id"],)).fetchone()[0]
     assert after > before and badges.sweep(conn) == 0                    # paid once, not again
+
+
+# ---- the student iOS app ------------------------------------------------------------------------
+
+J = {"X-Fizzy-Format": "json"}
+
+
+def test_app_signs_in_and_gets_the_page_as_data(client):
+    setup_student(client)
+    client.post("/rewards", data={"name": "Free Coke", "points": "1000"})
+    client.post("/logout")
+    out = client.get("/me", headers=J).json()
+    assert out["signed_in"] is False and out["rewards"] == [{"name": "Free Coke", "points_cost": 1000}]
+    bad = client.post("/me/login", data={"who": "Nora Le Fevre", "passcode": "nope"}, headers=J)
+    assert bad.status_code == 401 and "don't match" in bad.json()["error"]
+    ok = client.post("/me/login", data={"who": "rns5", "passcode": PC}, headers=J, follow_redirects=False)
+    assert ok.status_code == 200 and ok.json() == {"ok": True}
+    me = client.get("/me", headers=J).json()
+    assert me["signed_in"] and me["first"] == "Nora" and me["points"] == 1500
+    assert me["offers"][0]["can_redeem"] and me["tab"]["score"]["score"] >= 0 and me["boards"][0]["title"] == "This month"
+    assert me["badges"] and "days" in me["streak"] and me["tz"] == "Australia/Sydney"
+    text = client.get("/me", headers=J).text
+    assert "staff-only note xyz" not in text and "passcode" not in text.lower()
+    assert client.post("/me/logout", headers=J).json() == {"ok": True}
+    assert client.get("/me", headers=J).json()["signed_in"] is False
+
+
+def test_app_sign_in_code_works_once(client, monkeypatch):
+    monkeypatch.setattr(portal.secrets, "token_urlsafe", lambda n: "tok-app")
+    cid = setup_student(client)
+    client.post(f"/customers/{cid}/qr-login")
+    token = "tok-app"
+    client.post("/logout")
+    assert client.get(f"/me/q/{token}", headers=J).json() == {"ok": True}
+    assert client.get("/me", headers=J).json()["first"] == "Nora"
+    client.post("/me/logout", headers=J)
+    again = client.get(f"/me/q/{token}", headers=J)
+    assert again.status_code == 410 and "no good" in again.json()["error"]
+
+
+def test_app_gets_too_many_tries_as_data(client):
+    setup_student(client)
+    client.post("/logout")
+    for _ in range(portal.LIMIT_PER_NAME):
+        client.post("/me/login", data={"who": "Nora Le Fevre", "passcode": "wrong"}, headers=J)
+    r = client.post("/me/login", data={"who": "Nora Le Fevre", "passcode": "wrong"}, headers=J)
+    assert r.status_code in (401, 429) and "error" in r.json()
