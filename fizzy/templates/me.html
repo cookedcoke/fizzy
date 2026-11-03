@@ -53,7 +53,21 @@
 {% endset %}
 <div class="me-cols"><div class="me-main">
   {% if urgent %}{{ tab_block }}{% endif %}
+  {% if note %}<div class="event on" role="status">{{ note }}</div>{% endif %}
   {% include "_me_events.html" %}
+  {% for k in cards %}
+  <h2 class="section">{{ k.kicker }}{% if k.when %} <small>{{ k.when }}</small>{% endif %}</h2>
+  <div class="card reward {{ 'ready' if k.done }}">
+    <div class="icon" aria-hidden="true">{{ k.icon }}</div>
+    <div><b>{{ k.title }}</b><span class="cost">{{ k.prize }}</span>
+      <div class="what">{{ k.status or k.text }}</div>
+      {% if k.progress.total > 1 and not k.done %}<div class="bar"><i style="width:{{ (100 * k.progress.done / k.progress.total)|round|int }}%"></i></div>
+        <div class="what">{{ k.progress.done }} of {{ k.progress.total }} done</div>{% endif %}
+      <ul class="feed">{% for st in k.steps %}<li><span class="when">{{ '✓' if st.done else '○' }}</span><span class="what">{{ st.label }}{% if st.detail and not st.done %} <span class="muted">· {{ st.detail }}</span>{% endif %}</span></li>{% endfor %}</ul>
+      {% if k.actions %}<p class="tab-sub">Scan the codes with your phone's camera, or in the My CCC app.</p>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
   <div class="points" data-pts="{{ s.points }}" data-who="{{ c.id }}">
     <div class="k">Your points <span class="gain" hidden></span></div>
     <div class="v">{{ '{:,}'.format(s.points) }}</div>

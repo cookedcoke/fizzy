@@ -314,6 +314,26 @@ CREATE TABLE IF NOT EXISTS claim_waits (
     done_by TEXT                             -- who cancelled it, or 'at once'
 );
 
+-- Challenges (challenges.py, a kind of rule): which codes each student has scanned, and the prizes won.
+CREATE TABLE IF NOT EXISTS challenge_scans (
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    rule_id INTEGER NOT NULL,
+    step INTEGER NOT NULL,                   -- index into the rule's steps
+    scanned_at TEXT NOT NULL,
+    PRIMARY KEY (customer_id, rule_id, step)
+);
+CREATE TABLE IF NOT EXISTS prizes (
+    id INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    rule_id INTEGER NOT NULL,
+    text TEXT NOT NULL,                      -- handed over at the counter, e.g. "A free drink"; '' for points only
+    points INTEGER NOT NULL DEFAULT 0,
+    won_at TEXT NOT NULL,
+    given_at TEXT,
+    given_by TEXT,
+    UNIQUE (customer_id, rule_id)
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);

@@ -1,0 +1,140 @@
+"""Challenges (fizzy/challenges.py): steps to finish for a prize, e.g. a scavenger hunt."""
+import json
+
+import pytest
+
+from fizzy import challenges, config, rules
+from tests.test_app import client, login  # noqa: F401  (fixture)
+from tests.test_custom_rules import make, sale
+from tests.test_portal import PC, setup_student
+
+J = {"X-Fizzy-Format": "json"}
+
+
+def hunt(conn, **extra):
+    rule = {"kind": "challenge", "name": "Find the Fizz", "summary": "Find all 3 codes",
+            "steps": [{"label": "Library", "scan": True, "hint": "By the returns desk"}, {"label": "Gym", "scan": True},
+                      {"label": "Level 7", "scan": True}],
+            "prize": {"text": "A free drink", "points": 100}}
+    rule.update(extra)
+    rid = make(conn, rule)
+    spec = json.loads(conn.execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])
+    return rid, [s["code"] for s in spec["steps"]]
+
+
+def test_scanning_every_code_wins_the_prize_once(conn, cust):
+    c = cust()
+    rid, codes = hunt(conn)
+    assert len(set(codes)) == 3 and all(len(x) >= 12 for x in codes)
+    ok, msg = challenges.scan(conn, c["id"], challenges.code_url(codes[0]))      # the QR is a link
+    assert ok and "Library" in msg and "1 of 3" in msg
+    ok, msg = challenges.scan(conn, c["id"], codes[0])                            # or just the code
+    assert ok and "already" in msg
+    challenges.scan(conn, c["id"], codes[1])
+    ok, msg = challenges.scan(conn, c["id"], codes[2])
+    assert ok and "finished" in msg and "free drink" in msg
+    prize = conn.execute("SELECT * FROM prizes WHERE customer_id = ?", (c["id"],)).fetchall()
+    assert len(prize) == 1 and prize[0]["text"] == "A free drink" and prize[0]["given_at"] is None
+    pts = conn.execute("SELECT SUM(delta) FROM points_ledger WHERE customer_id = ? AND rule_key = ?", (c["id"], f"rule:{rid}")).fetchone()[0]
+    assert pts == 100
+    rules.award(conn, c["id"])                                                    # never paid twice
+    assert conn.execute("SELECT COUNT(*) FROM prizes").fetchone()[0] == 1
+    assert conn.execute("SELECT SUM(delta) FROM points_ledger WHERE rule_key IS NOT NULL").fetchone()[0] == 100
+
+
+def test_unknown_paused_and_sign_in_codes_are_refused(conn, cust):
+    c = cust()
+    rid, codes = hunt(conn)
+    assert challenges.scan(conn, c["id"], "not-a-real-code-at-all")[0] is False
+    assert "sign-in" in challenges.scan(conn, c["id"], "https://my.example.com/q/abcdefgh123")[1]
+    rules.set_state(conn, rid, "pause", "Will")
+    assert challenges.scan(conn, c["id"], codes[0])[0] is False
+
+
+def test_purchase_steps_and_the_card(conn, cust):
+    c = cust()
+    rid = make(conn, {"kind": "challenge", "name": "Taste test", "summary": "Try two things",
+                      "steps": [{"label": "A Chi Forest", "need": {"metric": "units", "op": ">=", "value": 1, "where": {"items": ["chi forest"]}}},
+                                {"label": "Find the code", "scan": True}],
+                      "prize": {"points": 50}})
+    card = challenges.cards(conn, c["id"])[0]
+    assert card["progress"] == {"done": 0, "total": 2} and card["actions"][0]["kind"] == "scan"
+    assert [s["kind"] for s in card["steps"]] == ["buy", "scan"] and card["prize"] == "50 points"
+    sale(conn, "p1", ("Chi Forest Peach", 350))
+    card = challenges.cards(conn, c["id"])[0]
+    assert card["steps"][0]["done"] and not card["done"]
+    code = json.loads(conn.execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])["steps"][1]["code"]
+    challenges.scan(conn, c["id"], code)
+    card = challenges.cards(conn, c["id"])[0]
+    assert card["done"] and card["actions"] == [] and code not in json.dumps(card)          # the secret never goes out
+
+
+def test_editing_keeps_printed_codes(conn, cust):
+    rid, codes = hunt(conn)
+    spec = json.loads(conn.execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])
+    spec["name"] = "Find the Fizz 2"
+    spec["steps"].append({"label": "Canteen", "scan": True})
+    for s in spec["steps"]:
+        s.pop("code", None)                                          # Fizz sends it back without codes
+    rules.update(conn, rid, spec, "Will")
+    after = json.loads(conn.execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])
+    assert [s["code"] for s in after["steps"]][:3] == codes and after["steps"][3]["code"] not in codes
+
+
+def test_bad_challenges_are_explained(conn):
+    for bad, words in [({"steps": []}, "list of steps"), ({"steps": [{"label": "x"}]}, "scan"),
+                       ({"prize": {}}, "prize"), ({"steps": [{"scan": True}]}, "label")]:
+        rule = {"kind": "challenge", "name": "X", "summary": "Y", "steps": [{"label": "A", "scan": True}],
+                "prize": {"text": "A drink"}}
+        rule.update(bad)
+        with pytest.raises(rules.RuleError, match=words):
+            rules.validate(conn, rule)
+
+
+def test_apps_scan_and_staff_give_the_prize(client):
+    cid = setup_student(client)
+    client.post("/challenges", data={"name": "Find the Fizz", "stops": "Library | By the desk\nGym", "prize_text": "A free drink"})
+    from fizzy import db
+    conn = db.connect()
+    try:
+        spec = json.loads(conn.execute("SELECT spec FROM rules WHERE kind = 'challenge'").fetchone()[0])
+    finally:
+        conn.close()
+    codes = [s["code"] for s in spec["steps"]]
+    assert spec["steps"][0]["hint"] == "By the desk"
+    page = client.get("/challenges/1/codes").text
+    assert "<svg" in page and "Library" in page
+    client.post("/logout")
+    client.post("/me/login", data={"who": "rns5", "passcode": PC}, headers=J)
+    me = client.get("/me", headers=J).json()
+    card = me["cards"][0]
+    assert card["title"] == "Find the Fizz" and card["actions"][0]["kind"] == "scan" and not any(x in json.dumps(me) for x in codes)
+    r = client.post("/me/scan", data={"code": "https://example.com/me/c/" + codes[0]}, headers=J)
+    assert r.status_code == 200 and "1 of 2" in r.json()["message"]
+    bad = client.post("/me/scan", data={"code": "nonsense"}, headers=J)
+    assert bad.status_code == 400 and "error" in bad.json()
+    r = client.get(f"/me/c/{codes[1]}", follow_redirects=True)             # the phone camera's way in
+    assert "finished" in r.text
+    assert client.get("/me", headers=J).json()["cards"][0]["done"]
+    client.post("/me/logout")
+    login(client)
+    page = client.get(f"/customers/{cid}").text
+    assert "Challenge prizes" in page and "A free drink" in page
+    client.post(f"/customers/{cid}/prizes/1/given")   # no PIN set in tests, so nothing asks for one
+    page = client.get(f"/customers/{cid}", headers=J).json()
+    assert page["prizes"][0]["given_at"] and page["prizes"][0]["given_by"] == "Mike"
+
+
+def test_code_scanned_before_signing_in_counts_after(client):
+    setup_student(client)
+    client.post("/challenges", data={"name": "Hunt", "stops": "A\nB", "prize_text": "A drink"})
+    from fizzy import db
+    conn = db.connect()
+    try:
+        code = json.loads(conn.execute("SELECT spec FROM rules WHERE kind = 'challenge'").fetchone()[0])["steps"][0]["code"]
+    finally:
+        conn.close()
+    client.post("/logout")
+    assert "Sign in to count that code" in client.get(f"/me/c/{code}").text
+    r = client.post("/me/login", data={"who": "rns5", "passcode": PC}, follow_redirects=True)
+    assert "Found it: A" in r.text

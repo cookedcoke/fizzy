@@ -1,9 +1,10 @@
 """Custom badges and events, made from building blocks (usually by asking Gemini on the Ask page).
 
-A rule is JSON that Fizzy checks and runs itself: no generated code ever runs. Two kinds:
+A rule is JSON that Fizzy checks and runs itself: no generated code ever runs. Three kinds:
 
-  badge  "Buy 20 Chi Forest and 10 milk tea in a term" -> +500 points, once (or once a week/month/term)
-  event  "Double points on noodles at lunch on Fridays", "every 5th Coke gets 100 bonus points"
+  badge      "Buy 20 Chi Forest and 10 milk tea in a term" -> +500 points, once (or once a week/month/term)
+  event      "Double points on noodles at lunch on Fridays", "every 5th Coke gets 100 bonus points"
+  challenge  "Find the 6 codes around the school" -> a free drink (challenges.py)
 
 Purchases are Fizzy's checkouts (stats.checkouts): when, items (name, qty, cents), money split
 (sale / tab), tenders, customer. Points from rules go in points_ledger (reason 'rule', rule_key
@@ -20,7 +21,7 @@ from .db import audit, get_setting, now_iso
 
 SPEC = r"""
 RULE = {
-  "kind": "badge" | "event",
+  "kind": "badge" | "event" | "challenge",
   "name": short name students see, e.g. "Bubble Boss",
   "summary": one plain-English sentence students see, e.g. "Buy 20 Chi Forest and 10 milk teas this term",
   "icon": optional single emoji for the student site (badges only),
@@ -38,7 +39,19 @@ RULE = {
          | {"type": "points", "points": int 1..2000},   # flat bonus per qualifying purchase
   "every_nth": int (optional; only every Nth qualifying purchase by that student gets the bonus),
   "limit": {"per": "day" | "week" | "month" | "term" | "ever", "times": int} (optional; most bonuses per student)
+
+  # challenge only (finish every step to win the prize, once; purchase steps only count purchases from
+  # when it starts, unless "count_past": true):
+  "steps": [STEP, ...],              # 1..30
+  "prize": {"points": int 1..5000 (optional), "text": "A free drink" (optional; handed over at the counter)},
+                                     # at least one of the two
+  "icon": optional single emoji for the student apps
 }
+
+STEP (challenge only):
+  {"label": what students see, e.g. "The library", "scan": true, "hint": optional clue, e.g. "Near the returns desk"}
+      # a QR code to find and scan: Fizzy makes the code; staff print it from the Rewards page
+  {"label": e.g. "Try a Chi Forest", "need": CONDITION}   # anything a badge can count, inside the window
 
 WINDOW (pick one form):
   {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}   # either end optional, inclusive, Sydney dates
@@ -224,8 +237,8 @@ def validate(conn, rule):
     if len(json.dumps(rule)) > 8000:
         raise RuleError("That rule is too big.")
     kind = rule.get("kind")
-    if kind not in ("badge", "event"):
-        raise RuleError("kind must be badge or event.")
+    if kind not in ("badge", "event", "challenge"):
+        raise RuleError("kind must be badge, event or challenge.")
     name = " ".join(str(rule.get("name") or "").split())[:40]
     summary = " ".join(str(rule.get("summary") or "").split())[:200]
     if not name or not summary:
@@ -233,6 +246,9 @@ def validate(conn, rule):
     rule = dict(rule, name=name, summary=summary)
     _check_window(rule.get("window"), conn)
     _check_filter(rule.get("where"))
+    if kind == "challenge":
+        from . import challenges
+        return challenges.validate(conn, rule)
     if kind == "badge":
         if "need" not in rule:
             raise RuleError("A badge needs a \"need\" condition.")
@@ -429,7 +445,7 @@ def window_range(conn, rule, today=None):
         a, b = today - timedelta(days=w["last_days"] - 1), today
     else:
         a, b = None, None
-    if rule["kind"] == "event" or rule.get("count_past") is False:
+    if rule["kind"] == "event" or rule.get("count_past") is False or (rule["kind"] == "challenge" and rule.get("count_past") is not True):
         a = max(a, created) if a else created  # events never pay for purchases before they existed
     return a, b
 
@@ -584,7 +600,12 @@ def award(conn, cid):
         return []
     paid = {r[0] for r in conn.execute("SELECT rule_key FROM points_ledger WHERE customer_id = ? AND rule_key IS NOT NULL", (cid,))}
     ps, ctx, new = purchases(conn, cid), _ctx(conn), []
+    if any(r["kind"] == "challenge" for r in rules):
+        from . import challenges
+        new += challenges.award(conn, cid, ps, ctx)
     for rule in rules:
+        if rule["kind"] == "challenge":
+            continue
         for key, pts, note in grants(conn, cid, rule, ps, ctx):
             if key not in paid:
                 conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, note, rule_key, created_at) "
@@ -610,6 +631,12 @@ def preview(conn, rule):
         for p in ps:
             p["student_first"] = p["day"] not in seen
             seen.add(p["day"])
+        if rule["kind"] == "challenge":
+            from . import challenges
+            if all(challenges.done_steps(conn, cid, rule, ps, ctx)):
+                who.append({"name": names[cid], "points": rule["prize"].get("points", 0), "times": 1})
+                total += rule["prize"].get("points", 0)
+            continue
         g = grants(conn, cid, rule, ps, ctx)
         if g:
             who.append({"name": names[cid], "points": sum(x[1] for x in g), "times": len(g)})
@@ -625,6 +652,9 @@ def create(conn, rule, staff, source="Fizz"):
     rule = validate(conn, rule)
     for k in ("id", "created_at"):
         rule.pop(k, None)
+    if rule["kind"] == "challenge":
+        from . import challenges
+        challenges.give_codes(rule)
     cur = conn.execute("INSERT INTO rules(kind, name, spec, created_by, created_at) VALUES (?, ?, ?, ?, ?)",
                        (rule["kind"], rule["name"], json.dumps(rule), staff, now_iso()))
     audit(conn, staff, "rule_add", None, f"{rule['kind']} {rule['name']}: {rule['summary']} (via {source})")
@@ -638,6 +668,9 @@ def update(conn, rule_id, rule, staff, source="Fizz"):
     rule = validate(conn, rule)
     for k in ("id", "created_at"):
         rule.pop(k, None)
+    if rule["kind"] == "challenge":
+        from . import challenges
+        challenges.give_codes(rule, json.loads(row["spec"]))
     conn.execute("UPDATE rules SET kind = ?, name = ?, spec = ? WHERE id = ?", (rule["kind"], rule["name"], json.dumps(rule), rule_id))
     audit(conn, staff, "rule_change", None, f"{rule['name']}: {rule['summary']} (via {source})")
 
@@ -657,9 +690,13 @@ def listing(conn):
         n = conn.execute("SELECT COUNT(DISTINCT customer_id), COALESCE(SUM(delta), 0) FROM points_ledger WHERE rule_key LIKE ?",
                          (f"rule:{r['id']}%",)).fetchone()
         shown = {k: v for k, v in spec.items() if k != "icon"}  # no emojis on the staff site
-        out.append({"id": r["id"], "kind": r["kind"], "name": r["name"], "summary": spec.get("summary", ""), "spec": shown,
-                    "paused": bool(r["paused_at"]), "created_at": r["created_at"], "created_by": r["created_by"],
-                    "students": n[0], "points": n[1]})
+        item = {"id": r["id"], "kind": r["kind"], "name": r["name"], "summary": spec.get("summary", ""), "spec": shown,
+                "paused": bool(r["paused_at"]), "created_at": r["created_at"], "created_by": r["created_by"],
+                "students": n[0], "points": n[1]}
+        if r["kind"] == "challenge":
+            from . import challenges
+            item["challenge"] = challenges.staff_info(conn, r["id"], spec)
+        out.append(item)
     return out
 
 
