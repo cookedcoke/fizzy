@@ -75,6 +75,16 @@ final class StudentAPI {
         _ = try await answer(URLRequest(url: url("/q/" + token)))
     }
 
+    /// Whatever a challenge's Scan button read. The server says what it meant ("Found it: the library. 2 of 5 done.").
+    func scan(_ code: String) async throws -> String {
+        var request = URLRequest(url: url("/scan"))
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        request.httpBody = "code=\(code.addingPercentEncoding(withAllowedCharacters: safe) ?? "")".data(using: .utf8)
+        return try await answer(request).message.string
+    }
+
     func signOut() async {
         var request = URLRequest(url: url("/logout"))
         request.httpMethod = "POST"
