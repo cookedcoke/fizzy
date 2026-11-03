@@ -42,6 +42,13 @@ GATE_PAGE = ("<!doctype html><meta name=viewport content='width=device-width'><t
 PHONE_EXEMPT = GATE_EXEMPT + ("/me",)
 
 
+def apple_app_site_association():
+    """For link.cookedcoke.co: the My CCC app opens any link there, and its App Clip opens when it isn't installed."""
+    app_id = f"{config.APPLE_TEAM_ID}.{config.STUDENT_APP_ID}"
+    return {"applinks": {"details": [{"appIDs": [app_id], "components": [{"/": "/*", "comment": "hunt codes"}]}]},
+            "appclips": {"apps": [f"{app_id}.Clip"]}}
+
+
 def phone_page():
     student = (f'<p>Checking your points or tab? Go to <a href="https://{config.PUBLIC_HOST}/">{config.PUBLIC_HOST}</a>.</p>'
                if config.PUBLIC_HOST else "")
@@ -289,6 +296,22 @@ def create_app(background=True):
         served on the staff hosts. Added last, so it runs before the device gate."""
         host = (request.headers.get("host") or "").split(":")[0].strip().rstrip(".").lower()
         path = request.url.path
+        if config.LINK_HOST and host == config.LINK_HOST:
+            # Hunt posters' short links: /<code> is a code to scan; Apple's file lets the App Clip open them.
+            if path == "/.well-known/apple-app-site-association":
+                return JSONResponse(apple_app_site_association(), headers={"Cache-Control": "public, max-age=3600"})
+            if path == "/robots.txt":
+                return PlainTextResponse("User-agent: *\nDisallow: /\n")
+            code = path.strip("/")
+            if code == "hunt":   # what this phone has found (the App Clip, opened without a code)
+                request.scope["path"] = "/me/hunt"
+                request.state.public = True
+                return await call_next(request)
+            if not code or "/" in code:
+                return RedirectResponse(f"https://{config.PUBLIC_HOST}/" if config.PUBLIC_HOST else "/me", status_code=303)
+            request.scope["path"] = f"/me/c/{code}"
+            request.state.public = True
+            return await call_next(request)
         if config.PUBLIC_HOST and host == config.PUBLIC_HOST:
             if path == "/robots.txt":
                 return PlainTextResponse("User-agent: *\nDisallow: /\n")
@@ -946,7 +969,7 @@ def register(app):
                       display_msg={"type": "show", "customer": display.payload(conn, c, s, offers)},
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
                       passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None, tool_ctx=tools.form_ctx(conn),
-                      prizes=challenges.prizes_for(conn, cid))
+                      prizes=challenges.prizes_for(conn, cid), hunts_on=bool(rules.active(conn, "challenge")))
 
     @app.get("/customers/{cid:int}/claim", response_class=HTMLResponse)
     def claim_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):

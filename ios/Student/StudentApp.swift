@@ -79,6 +79,21 @@ final class Student {
         await load()
     }
 
+    /// A hunt poster's link, opened with the app installed (link.cookedcoke.co). Signed in, it counts on
+    /// their account; not, it's kept against this phone like on the website, and moves over when they sign in.
+    func openLink(_ url: URL) async -> String {
+        do {
+            if phase == .signedIn {
+                let message = try await StudentAPI.shared.scan(url.absoluteString)
+                await load()
+                return message
+            }
+            return try await StudentAPI.shared.guestScan(url)
+        } catch {
+            return isOffline(error) ? "No signal. Scan it again when there is." : error.localizedDescription
+        }
+    }
+
     func signOut() async {
         SavedSignIn.clear()
         SavedPage.clear()
@@ -92,6 +107,7 @@ final class Student {
 struct RootView: View {
     @Environment(Student.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @State private var linkResult: String?
 
     var body: some View {
         Group {
@@ -106,6 +122,12 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, now in
             if now == .active, model.phase != .loading { Task { await model.load() } }
         }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { Task { linkResult = await model.openLink(url) } }
+        }
+        .alert("Hunt", isPresented: Binding(get: { linkResult != nil }, set: { if !$0 { linkResult = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(linkResult ?? "") }
     }
 }
 

@@ -30,6 +30,11 @@ CF_ACCESS_AUD = _env("CF_ACCESS_AUD")                            # the Access ap
 # Student site (see portal.py): students check their own points and tab. Only the student
 # pages are served on this host. Unset: the student pages are at /me on the staff site.
 PUBLIC_HOST = _env("FIZZY_PUBLIC_HOST").lower()                  # e.g. my.cookedcoke.co
+# Short links printed on hunt posters (challenges.py): link.cookedcoke.co/<code>. Fizzy answers on this
+# host too, with the file Apple needs so the My CCC App Clip (and app) open these links. Off unless set.
+LINK_HOST = _env("FIZZY_LINK_HOST").lower()                      # e.g. link.cookedcoke.co
+APPLE_TEAM_ID = _env("FIZZY_APPLE_TEAM_ID", "9MQ6DTJYXF")
+STUDENT_APP_ID = _env("FIZZY_STUDENT_APP_ID", "co.cookedcoke.student")
 # Discord announcements for new rewards and double points days (see discord.py). Off unless set.
 DISCORD_WEBHOOK_URL = _env("DISCORD_WEBHOOK_URL")
 DISCORD_MENTION = _env("DISCORD_MENTION")                        # e.g. @everyone, or <@&ROLE_ID>

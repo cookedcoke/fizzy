@@ -60,6 +60,9 @@ def validate(conn, rule):
         else:
             raise RuleError(f"Step {i} needs \"scan\": true or a \"need\" condition.")
         out.append(step)
+    given = [s["code"].upper() for s in out if s.get("code")]
+    if len(given) != len(set(given)):
+        raise RuleError("Two steps have the same code.")
     prize = rule.get("prize")
     if not isinstance(prize, dict):
         raise RuleError("A challenge needs a prize: points, text (something given at the counter), or both.")
@@ -95,11 +98,11 @@ def code_url(code, base=None):
 
 
 def token_of(text):
-    """The code from what a scanner read: a link ending in /c/<code>, or the bare code."""
+    """The code from what a scanner read: the last part of a link (ours, .../c/<code>, or any other,
+    like posters printed for a hunt), or the bare code."""
     t = (text or "").strip()
-    m = re.search(r"/c/([A-Za-z0-9_-]{8,40})/?(?:[?#].*)?$", t)
-    if m:
-        return m.group(1)
+    if "://" in t or t.startswith("/"):
+        t = re.split(r"[?#]", t, maxsplit=1)[0].rstrip("/").rsplit("/", 1)[-1]
     return t if CODE_RE.match(t) else None
 
 
@@ -163,6 +166,11 @@ def find(conn, code):
     for rule in rules.active(conn, "challenge"):
         for i, s in enumerate(rule["steps"]):
             if s.get("scan") and s.get("code") and secrets.compare_digest(s["code"], code):
+                return rule, i
+    # A printed code read as all capitals (QR codes often are): match ignoring case.
+    for rule in rules.active(conn, "challenge"):
+        for i, s in enumerate(rule["steps"]):
+            if s.get("scan") and s.get("code") and secrets.compare_digest(s["code"].upper(), code.upper()):
                 return rule, i
     return None, None
 
@@ -261,6 +269,107 @@ def cards(conn, cid):
     return out
 
 
+# ---- playing without signing in ----------------------------------------------------------------------
+# A phone camera opens a code's link without anyone signed in (a new student, or one with no passcode
+# yet). Their scans are kept against that phone (a random id in its session). Finishing every scan step
+# gives a short claim code; at the stall, staff type it on the student's page (adding them first if
+# they're new) and the prize is theirs. Signing in moves the phone's progress onto their account.
+
+CLAIM_ALPHABET = "ACDEFGHJKMNPQRTUVWXY3479"   # nothing that looks like something else
+
+
+def _guest_steps(conn, guest, rid):
+    return {r[0] for r in conn.execute("SELECT step FROM guest_scans WHERE guest = ? AND rule_id = ?", (guest, rid))}
+
+
+def guest_scan(conn, guest, text):
+    """(ok, message, rule) for a code opened with no one signed in. The caller commits."""
+    code = token_of(text)
+    rule, i = find(conn, code) if code else (None, None)
+    if rule is None:
+        return False, "That code isn't part of a challenge that's on.", None
+    a, b = _window(conn, rule)
+    today = stats.today()
+    if a and today < a:
+        return False, f"{rule['name']} starts on {a.strftime('%A %-d %b')}. Come back then.", rule
+    if b and today > b:
+        return False, f"{rule['name']} has finished.", rule
+    added = conn.execute("INSERT OR IGNORE INTO guest_scans(guest, rule_id, step, scanned_at) VALUES (?, ?, ?, ?)",
+                         (guest, rule["id"], i, now_iso())).rowcount
+    label = rule["steps"][i]["label"]
+    done = _guest_steps(conn, guest, rule["id"])
+    scans = [j for j, s in enumerate(rule["steps"]) if s.get("scan")]
+    if all(j in done for j in scans) and len(scans) == len(rule["steps"]):
+        claim = _claim_for(conn, guest, rule["id"])
+        return True, f"Found it: {label}. That's everything! Show your claim code {claim} at the stall.", rule
+    left = f"{sum(j in done for j in scans)} of {len(rule['steps'])} found."
+    return True, (f"Found it: {label}. {left}" if added else f"You've already found {label}. {left}"), rule
+
+
+def _claim_for(conn, guest, rid):
+    row = conn.execute("SELECT claim FROM guest_finishes WHERE guest = ? AND rule_id = ?", (guest, rid)).fetchone()
+    if row:
+        return row[0]
+    while True:
+        claim = "".join(secrets.choice(CLAIM_ALPHABET) for _ in range(5))
+        if not conn.execute("SELECT 1 FROM guest_finishes WHERE claim = ?", (claim,)).fetchone():
+            break
+    conn.execute("INSERT INTO guest_finishes(guest, rule_id, claim, finished_at) VALUES (?, ?, ?, ?)", (guest, rid, claim, now_iso()))
+    return claim
+
+
+def guest_cards(conn, guest):
+    """What this phone has found, for challenges that are on (the student site's hunt page)."""
+    from . import rules
+    out = []
+    for rule in rules.active(conn, "challenge"):
+        if not is_on(conn, rule):
+            continue
+        done = _guest_steps(conn, guest, rule["id"]) if guest else set()
+        if not done:
+            continue
+        fin = conn.execute("SELECT * FROM guest_finishes WHERE guest = ? AND rule_id = ?", (guest, rule["id"])).fetchone()
+        steps = [{"label": s["label"], "detail": s.get("hint", ""), "done": i in done} for i, s in enumerate(rule["steps"])]
+        out.append({"title": rule["name"], "text": rule["summary"], "prize": prize_line(rule["prize"]), "steps": steps,
+                    "progress": {"done": sum(x["done"] for x in steps), "total": len(steps)},
+                    "claim": fin["claim"] if fin else None, "claimed": bool(fin and fin["claimed_at"])})
+    return out
+
+
+def merge_guest(conn, guest, cid):
+    """A phone's progress onto the student's account (they signed in, or staff claimed it). The caller commits."""
+    for r in conn.execute("SELECT rule_id, step, scanned_at FROM guest_scans WHERE guest = ?", (guest,)).fetchall():
+        conn.execute("INSERT OR IGNORE INTO challenge_scans(customer_id, rule_id, step, scanned_at) VALUES (?, ?, ?, ?)",
+                     (cid, r["rule_id"], r["step"], r["scanned_at"]))
+    conn.execute("UPDATE guest_finishes SET customer_id = ? WHERE guest = ? AND customer_id IS NULL", (cid, guest))
+    return award(conn, cid)
+
+
+def claim(conn, code, cid, staff_name):
+    """Staff typed a claim code on a student's page: the phone's progress is theirs, and so is the
+    prize, handed over now. Returns (ok, message). The caller commits."""
+    code = re.sub(r"[^A-Za-z0-9]", "", code or "").upper()
+    fin = conn.execute("SELECT f.*, r.name FROM guest_finishes f LEFT JOIN rules r ON r.id = f.rule_id WHERE f.claim = ?",
+                       (code,)).fetchone()
+    if fin is None:
+        return False, f"No hunt finished with the claim code {code}."
+    if fin["claimed_at"]:
+        return False, f"{code} was already claimed."
+    if fin["customer_id"] and fin["customer_id"] != cid:
+        return False, f"{code} belongs to someone else's account."
+    merge_guest(conn, fin["guest"], cid)
+    prize = conn.execute("SELECT * FROM prizes WHERE customer_id = ? AND rule_id = ?", (cid, fin["rule_id"])).fetchone()
+    if prize is None:
+        return False, f"That doesn't finish {fin['name']} for them yet."
+    conn.execute("UPDATE guest_finishes SET customer_id = ?, claimed_at = ?, claimed_by = ? WHERE id = ?",
+                 (cid, now_iso(), staff_name, fin["id"]))
+    if prize["text"] and not prize["given_at"]:
+        conn.execute("UPDATE prizes SET given_at = ?, given_by = ? WHERE id = ?", (now_iso(), staff_name, prize["id"]))
+    audit(conn, staff_name, "prize_claimed", cid, f"{fin['name']} ({code})")
+    what = prize["text"] or f"{prize['points']:,} points"
+    return True, f"{fin['name']}: claimed. Give them {what.lower()}." + (f" They got {prize['points']:,} points too." if prize["text"] and prize["points"] else "")
+
+
 # ---- for staff -----------------------------------------------------------------------------------------
 
 def prizes_for(conn, cid):
@@ -281,13 +390,21 @@ def staff_info(conn, rule_id, spec, base=None):
 
 
 def new_hunt(name, summary, start, end, stops, prize_text, prize_points):
-    """The Rewards page's form: a scavenger hunt, one stop per line ("Label | hint")."""
+    """The Rewards page's form: a scavenger hunt, one stop per line ("Label | hint"), or with codes
+    already printed on posters, "Label | hint | CODE" (the code, or the whole link it's in)."""
     steps = []
     for line in (stops or "").splitlines():
         if not line.strip():
             continue
-        label, _, hint = line.partition("|")
-        steps.append({"label": label.strip(), "scan": True, "hint": hint.strip()})
+        parts = [x.strip() for x in line.split("|")]
+        step = {"label": parts[0], "scan": True, "hint": parts[1] if len(parts) > 1 else ""}
+        if len(parts) > 2 and parts[2]:
+            from .rules import RuleError
+            code = token_of(parts[2])
+            if not code:
+                raise RuleError(f"\"{parts[2]}\" isn't a code (8 to 40 letters, numbers, - or _).")
+            step["code"] = code
+        steps.append(step)
     window = {k: v for k, v in (("from", start), ("to", end)) if v}
     rule = {"kind": "challenge", "name": name, "summary": summary or f"Find all {len(steps)} codes around the school.",
             "steps": steps, "prize": {"text": prize_text, "points": int(prize_points) if str(prize_points).strip().isdigit() else 0}}
@@ -321,6 +438,15 @@ def challenge_codes(request: Request, rid: int, who=Depends(staff), conn=Depends
     for c in info["codes"]:
         c["svg"] = segno.make(c["url"], error="m").svg_inline(scale=1, border=2, dark="#1B1A1F", light="#FFFFFF", omitsize=True)
     return render(request, "challenge_codes.html", rule=dict(spec, id=rid), info=info)
+
+
+@router.post("/customers/{cid:int}/claim-prize")
+def prize_claim(request: Request, cid: int, code: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+    if conn.execute("SELECT 1 FROM customers WHERE id = ?", (cid,)).fetchone() is None:
+        raise HTTPException(404)
+    ok, msg = claim(conn, code, cid, who)
+    conn.commit()
+    return back(request, f"/customers/{cid}", msg, "ok" if ok else "bad")
 
 
 @router.post("/customers/{cid:int}/prizes/{pid:int}/given")

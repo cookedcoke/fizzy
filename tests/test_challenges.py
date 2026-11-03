@@ -1,5 +1,6 @@
 """Challenges (fizzy/challenges.py): steps to finish for a prize, e.g. a scavenger hunt."""
 import json
+import re
 
 import pytest
 
@@ -125,16 +126,70 @@ def test_apps_scan_and_staff_give_the_prize(client):
     assert page["prizes"][0]["given_at"] and page["prizes"][0]["given_by"] == "Mike"
 
 
-def test_code_scanned_before_signing_in_counts_after(client):
-    setup_student(client)
-    client.post("/challenges", data={"name": "Hunt", "stops": "A\nB", "prize_text": "A drink"})
-    from fizzy import db
-    conn = db.connect()
-    try:
-        code = json.loads(conn.execute("SELECT spec FROM rules WHERE kind = 'challenge'").fetchone()[0])["steps"][0]["code"]
-    finally:
-        conn.close()
+# ---- codes already printed on posters, and playing without signing in -----------------------------
+
+POSTERS = "Start | the master poster | HTTPS://LINK.COOKEDCOKE.CO/XP6RCECMRQ\nPoster 1 | bakery stall | PPUCH7QEGB"
+
+
+def test_printed_codes_from_any_link(conn, cust):
+    c = cust()
+    rules.create(conn, challenges.new_hunt("Market Day", "", "", "", POSTERS, "A free drink", ""), "Will")
+    spec = json.loads(conn.execute("SELECT spec FROM rules").fetchone()[0])
+    assert [s["code"] for s in spec["steps"]] == ["XP6RCECMRQ", "PPUCH7QEGB"]
+    assert challenges.scan(conn, c["id"], "HTTPS://LINK.COOKEDCOKE.CO/PPUCH7QEGB")[0]       # the poster's own link
+    assert challenges.scan(conn, c["id"], "https://link.cookedcoke.co/xp6rcecmrq/")[0]      # any case, a trailing slash
+    assert conn.execute("SELECT COUNT(*) FROM prizes").fetchone()[0] == 1
+    with pytest.raises(rules.RuleError, match="same code"):
+        rules.create(conn, challenges.new_hunt("Twice", "", "", "", "A | | PPUCH7QEGB\nB | | ppuch7qegb", "A drink", ""), "Will")
+
+
+def test_guest_plays_then_staff_claim_it_onto_a_new_student(client):
+    login(client)
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink", "prize_points": "100"})
     client.post("/logout")
-    assert "Sign in to count that code" in client.get(f"/me/c/{code}").text
+    phone = client
+    r = phone.get("/me/c/XP6RCECMRQ")
+    assert "1 of 2 found" in r.text and "Sign in" in r.text
+    r = phone.get("/me/c/PPUCH7QEGB")
+    claim = re.search(r"claim code ([A-Z0-9]{5})", r.text).group(1)
+    assert claim in r.text and "Show this at the stall" in r.text
+    assert claim in phone.get("/me/hunt").text                                   # coming back to it
+    # at the stall: a new student, added there and then
+    login(client)
+    client.post("/tools/add_customer", data={"name": "New Kid", "email": "rns20260001@reddamnorthshore.nsw.edu.au"})
+    cid = client.get("/api/index").json()[-1]["id"]
+    assert "No hunt finished" in client.post(f"/customers/{cid}/claim-prize", data={"code": "NOPE1"}).text
+    r = client.post(f"/customers/{cid}/claim-prize", data={"code": claim.lower()})
+    assert "claimed" in r.text and "free drink" in r.text
+    page = client.get(f"/customers/{cid}", headers=J).json()
+    assert page["prizes"][0]["given_at"] and page["s"]["points"] == 100
+    assert "already claimed" in client.post(f"/customers/{cid}/claim-prize", data={"code": claim}).text
+
+
+def test_signing_in_moves_the_phones_progress(client):
+    setup_student(client)
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink"})
+    client.post("/logout")
+    client.get("/me/c/XP6RCECMRQ")                                               # one found before signing in
     r = client.post("/me/login", data={"who": "rns5", "passcode": PC}, follow_redirects=True)
-    assert "Found it: A" in r.text
+    assert r.status_code == 200
+    me = client.get("/me", headers=J).json()
+    assert me["cards"][0]["progress"] == {"done": 1, "total": 2}
+    client.post("/me/scan", data={"code": "PPUCH7QEGB"}, headers=J)
+    assert client.get("/me", headers=J).json()["cards"][0]["done"]
+
+
+def test_link_host_serves_apples_file_and_poster_codes(client, monkeypatch):
+    login(client)
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink"})
+    client.post("/logout")
+    monkeypatch.setattr(config, "LINK_HOST", "link.cookedcoke.co")
+    aasa = client.get("/.well-known/apple-app-site-association", headers={"host": "link.cookedcoke.co"}).json()
+    assert aasa["appclips"]["apps"] == ["9MQ6DTJYXF.co.cookedcoke.student.Clip"]
+    assert aasa["applinks"]["details"][0]["appIDs"] == ["9MQ6DTJYXF.co.cookedcoke.student"]
+    r = client.get("/XP6RCECMRQ", headers={"host": "link.cookedcoke.co"})                     # a poster, opened in Safari
+    assert "1 of 2 found" in r.text
+    r = client.get("/PPUCH7QEGB", headers={"host": "link.cookedcoke.co", **J}).json()        # the App Clip
+    assert r["ok"] and r["cards"][0]["claim"] and "claim code" in r["message"]
+    page = client.get("/tools", headers={"host": "link.cookedcoke.co"}, follow_redirects=False)   # never a staff page
+    assert "Tools" not in page.text
