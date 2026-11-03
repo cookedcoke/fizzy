@@ -27,8 +27,10 @@
     </table></div></div>{% endif %}
   <div class="panel" id="rules"><h2>Custom badges and events <span class="count">{{ custom|length }}</span></h2>
     {% for r in custom %}<div class="rule-row {{ 'paused' if r.paused }}">
-      <div><b>{{ r.name }}</b> <span class="tag">{{ 'Badge' if r.kind == 'badge' else 'Event' }}</span>{% if r.paused %} <span class="tag">Paused</span>{% endif %}
+      <div><b>{{ r.name }}</b> <span class="tag">{{ {'badge': 'Badge', 'event': 'Event', 'challenge': 'Challenge'}[r.kind] }}</span>{% if r.paused %} <span class="tag">Paused</span>{% endif %}
         <div class="small">{{ r.summary }}{% if r.kind == 'badge' %} · {{ r.spec.points }} points{% if r.spec.repeat and r.spec.repeat != 'once' %} each {{ r.spec.repeat }}{% endif %}{% endif %}</div>
+        {% if r.challenge %}<div class="small">{{ r.challenge.steps }} step{{ '' if r.challenge.steps == 1 else 's' }} · prize: {{ r.challenge.prize }} · {{ r.challenge.started }} started, {{ r.challenge.finished }} finished{% if r.challenge.finished %} ({{ r.challenge.given }} given){% endif %}
+          {% if r.challenge.codes %} · <a href="/challenges/{{ r.id }}/codes">Print the codes</a>{% endif %}</div>{% endif %}
         <div class="small muted">{{ r.students }} student{{ '' if r.students == 1 else 's' }} · {{ '{:,}'.format(r.points) }} points given · made by {{ r.created_by }} {{ r.created_at|local('%-d %b') }}</div>
         <details class="small"><summary>The rule</summary><pre class="mono">{{ r.spec|tojson(indent=2) }}</pre></details></div>
       <div class="actions" style="margin:0;flex:none">
@@ -63,6 +65,19 @@
     <label>What to do in Square<input type="text" name="square_note" placeholder="e.g. Points: Free Coke discount"></label>
     <label>Limit per customer <span class="muted">(optional)</span><input type="number" name="limit" min="1" max="1000" step="1" placeholder="No limit"></label>
     {% if discord_on %}<label class="check"><input type="checkbox" name="announce" value="1" checked> Announce on Discord</label>{% endif %}
+    <div class="actions"><button class="primary">Start</button></div>
+  </form>
+  <form class="panel" id="new-challenge" method="post" action="/challenges"><h2>Start a scavenger hunt</h2>
+    <label>Name<input type="text" name="name" placeholder="e.g. Find the Fizz" required></label>
+    <label>What to do <span class="muted">(optional)</span><input type="text" name="summary" placeholder="Find all the codes around the school"></label>
+    <label>Stops, one per line <span class="muted">(add a clue after |)</span>
+      <textarea name="stops" rows="4" placeholder="The library | Near the returns desk&#10;The gym&#10;Level 7 lifts" required></textarea></label>
+    <div class="row"><div><label for="ch-start">First day</label><input id="ch-start" type="date" name="start" value="{{ today }}"></div>
+      <div><label for="ch-end">Last day</label><input id="ch-end" type="date" name="end"></div></div>
+    <div class="row"><div><label for="ch-prize">Prize at the counter</label><input id="ch-prize" type="text" name="prize_text" placeholder="A free drink"></div>
+      <div><label for="ch-pts">Points <span class="muted">(optional)</span></label><input id="ch-pts" type="number" name="prize_points" min="0" max="5000" step="1"></div></div>
+    <p class="hint">Fizzy makes a QR code for each stop to print. Students scan them in My CCC or with their phone's camera.
+      For other kinds of challenge (like "try 3 new drinks"), ask Fizz.</p>
     <div class="actions"><button class="primary">Start</button></div>
   </form>
   <form class="panel" id="new-event" method="post" action="/events"><h2>Schedule double points</h2>

@@ -53,6 +53,8 @@ ACTIONS = [
     ("redeem", "Redeem rewards, and undo them", [("POST", r"^/customers/\d+/redeem/"), ("POST", r"^/redemptions/")], "pin"),
     ("rewards", "Set up and end rewards", [("POST", r"^/rewards")], "pin"),
     ("events", "Double points days", [("POST", r"^/events")], "pin"),
+    ("challenges", "Start challenges (scavenger hunts), and give their prizes",
+     [("POST", r"^/challenges$"), ("POST", r"^/customers/\d+/prizes/\d+/given$")], "pin"),
     ("tab_decisions", "Change someone's tab limit (tab score adjustment), or turn their tab off", [("POST", r"^/customers/\d+/tab$")], "pin"),
     ("tab_money", "Tab money by hand: repayments, charges, write-offs, more time",
      [("POST", r"^/customers/\d+/repay$"), ("POST", r"^/tools/(manual_charge|write_off|extend_due)$")], "pin"),

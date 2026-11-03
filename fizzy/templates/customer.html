@@ -125,6 +125,14 @@
 <div class="cols forms-first cust-cols">
 <div class="col cust-main">
 
+{# Challenge prizes (challenges.py): the student shows their phone, staff hand it over and press Given. #}
+{% set waiting = prizes|rejectattr('given_at')|list %}
+{% if prizes %}<div class="panel {{ 'attn' if waiting }}"><h2>Challenge prizes{% if waiting %} <span class="count">{{ waiting|length }} to give</span>{% endif %}</h2>
+  <table>{% for p in prizes %}<tr><td><b>{{ p.text }}</b><div class="small muted">{{ p.name or 'A challenge' }} · won {{ p.won_at|local('%a %-d %b') }}</div></td>
+    <td class="n">{% if p.given_at %}<span class="muted small">Given {{ p.given_at|local('%a %-d %b') }}{{ ' by ' ~ p.given_by if p.given_by }}</span>
+      {% else %}<form class="inline" method="post" action="/customers/{{ c.id }}/prizes/{{ p.id }}/given"><button class="primary sm">Given</button></form>{% endif %}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+
 {% if led.charges %}<div class="panel"><h2>Tab charges <span class="count">{{ led.charges|length }}</span></h2>
   {% if led.charges %}<div class="scroll"><table>
     <tr><th>Charged</th><th>Items</th><th class="n">Amount</th><th class="n">Paid</th><th class="n">Unpaid</th><th>Due</th><th>Status</th></tr>

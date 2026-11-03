@@ -21,7 +21,7 @@ import anyio
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from . import badges, config, events, logic, rewards, rules, stats
+from . import badges, challenges, config, events, logic, rewards, rules, stats
 from .db import audit, now_iso
 from .web import get_conn, staff, templates, wants_json
 
@@ -260,6 +260,9 @@ def student_payload(conn, c):
         "activity": activity(conn, c["id"]),
         "boards": boards,
         "badges": me["badges"], "badges_earned": me["earned"],
+        # Cards: challenges and anything like them, as plain data the app draws with its own controls
+        # (challenges.card), so new ones never need an app update.
+        "cards": challenges.cards(conn, c["id"]),
         "custom_events": [{"name": e["name"], "summary": e["summary"], "soon": e["soon"],
                            "start": e["start"].isoformat() if e["start"] else None} for e in rules.student_events(conn)],
         **_whats_on(conn),
@@ -291,7 +294,9 @@ def home(request: Request, conn=Depends(get_conn)):
     s = logic.customer_summary(conn, c)
     month, month_me = leaderboard(conn, since=month_start(), me=c["id"])
     alltime, alltime_me = leaderboard(conn, me=c["id"])
-    return _page(request, "me.html", c=c, s=s, offers=rewards.offers_for(conn, c["id"], s["points"]),
+    note = request.session.pop("me_note", None)
+    return _page(request, "me.html", c=c, s=s, offers=rewards.offers_for(conn, c["id"], s["points"]), note=note,
+                 cards=challenges.cards(conn, c["id"]),
                  activity=activity(conn, c["id"]), boards=[("This month", month, month_me), ("All time", alltime, alltime_me)],
                  me=_with_custom(conn, badges.for_customer(conn, c["id"]), c["id"]), events_on=events.on(conn), events_soon=events.upcoming(conn),
                  custom_events=rules.student_events(conn))
@@ -357,6 +362,7 @@ async def login(request: Request, who: str = Form(""), passcode: str = Form(""),
         if now in _fails.get(k, []):
             _fails[k].remove(now)
     request.session["me"] = {"id": c["id"], "v": _session_marker(c), "at": int(now)}
+    _pending_scan(request, conn, c)
     if wants_json(request):
         return _json({"ok": True})
     return RedirectResponse(_url("/"), status_code=303)
@@ -553,6 +559,7 @@ def use_qr_login(request: Request, token: str, conn=Depends(get_conn)):
     audit(conn, "student", "qr_login_used", c["id"], "")
     conn.commit()
     request.session["me"] = {"id": c["id"], "v": _session_marker(c), "at": int(time.time()), "qr": 1}
+    _pending_scan(request, conn, c)
     if wants_json(request):
         return _json({"ok": True})
     return RedirectResponse(_url("/"), status_code=303)
@@ -569,3 +576,40 @@ def sign_out_phones(request: Request, cid: int, who=Depends(staff), conn=Depends
     conn.commit()
     request.session["flash"] = f"Signed {c['name'].split(' ')[0]} out on every phone."
     return RedirectResponse(f"/customers/{cid}", status_code=303)
+
+
+# ---- challenges: scanning their codes ----------------------------------------------------------------
+
+def _pending_scan(request, conn, c):
+    """A challenge code scanned with the phone camera before signing in: count it now."""
+    code = request.session.pop("me_scan", None)
+    if code:
+        ok, msg = challenges.scan(conn, c["id"], code)
+        conn.commit()
+        request.session["me_note"] = msg
+
+
+@router.post("/me/scan")
+async def scan(request: Request, conn=Depends(get_conn)):
+    """The app's Scan button: whatever the camera read. The server decides what it means."""
+    c = current(request, conn)
+    form = await request.form()
+    if c is None:
+        return _json({"error": "You're signed out. Sign in again."}, 401)
+    ok, msg = challenges.scan(conn, c["id"], str(form.get("code") or "")[:500])
+    conn.commit()
+    return _json({"ok": True, "message": msg} if ok else {"error": msg}, 200 if ok else 400)
+
+
+@router.get("/me/c/{code}")
+def scan_link(request: Request, code: str, conn=Depends(get_conn)):
+    """A challenge code opened with the phone camera (the QR is a link to here)."""
+    c = current(request, conn)
+    if c is None:
+        request.session["me_scan"] = code[:60]   # counted once they sign in
+        return _page(request, "me_login.html", who="", live=rewards.active(conn), events_on=events.on(conn),
+                     events_soon=events.upcoming(conn), error="Sign in to count that code.")
+    ok, msg = challenges.scan(conn, c["id"], code[:60])
+    conn.commit()
+    request.session["me_note"] = msg
+    return RedirectResponse(_url("/"), status_code=303)

@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Codes: {{ rule.name }}{% endblock %}
+{% block body %}
+<div class="pagehead noprint"><div><h1>{{ rule.name }}</h1><div class="meta">{{ info.codes|length }} code{{ '' if info.codes|length == 1 else 's' }} to print · prize: {{ info.prize }}</div></div>
+  <div class="actions" style="margin:0"><button type="button" class="primary" onclick="print()">Print</button><a class="btn" href="/rewards#rules">Back to Rewards</a></div></div>
+<p class="hint noprint">Print this page and stick each code up at its stop. Students scan them in My CCC, or with their phone's camera.
+  {{ info.started }} started, {{ info.finished }} finished.</p>
+<div class="codes">
+  {% for c in info.codes %}<div class="code-card">
+    <div class="code-qr">{{ c.svg|safe }}</div>
+    <div class="code-name">{{ c.label }}</div>
+    {% if c.hint %}<div class="code-hint">{{ c.hint }}</div>{% endif %}
+    <div class="code-foot">{{ rule.name }} · scan with My CCC or your camera</div>
+  </div>{% endfor %}
+</div>
+<style>
+  .codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .code-card { border: 2px solid var(--ink, #1b1a1f); border-radius: 14px; padding: 16px; text-align: center; break-inside: avoid; }
+  .code-qr svg { width: 100%; height: auto; max-width: 220px; }
+  .code-name { font-weight: 800; font-size: 1.25rem; margin-top: 8px; }
+  .code-hint { color: var(--muted, #666); margin-top: 2px; }
+  .code-foot { font-size: .75rem; color: var(--muted, #666); margin-top: 8px; }
+  @media print { .noprint, header, nav, .site-header { display: none !important; } .codes { grid-template-columns: repeat(2, 1fr); } }
+</style>
+{% endblock %}

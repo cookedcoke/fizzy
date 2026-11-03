@@ -12,6 +12,7 @@ struct MeView: View {
         List {
             if urgent { TabSection(tab: tab) }
             WhatsOnSection(page: p)
+            ForEach(p.cards.array, id: \.id.string) { CardSection(card: $0) }
             PointsSection(points: p.points.int, owner: p.name.string)
             StreakSection(streak: p.streak)
             if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
@@ -254,5 +255,87 @@ private struct ActivitySection: View {
                 Text(Fmt.money(a.money.int)).monospacedDigit()
             }
         }
+    }
+}
+
+/// A card from the server (a challenge today, maybe something else tomorrow): a title, text, steps
+/// with ticks, progress, a prize and actions. Drawn only from that data, with the app's own controls,
+/// so new cards need no app update. Anything the app doesn't know is left out, not guessed at.
+struct CardSection: View {
+    let card: J
+    @Environment(Student.self) private var model
+    @State private var scanning = false
+    @State private var result: String?
+    @State private var failed = false
+
+    var body: some View {
+        let steps = card.steps.array, done = card.done.bool
+        let total = card.progress.total.int, have = card.progress.done.int
+        Section {
+            HStack(alignment: .top, spacing: 12) {
+                if let icon = card.icon.optString {
+                    Text(icon).font(.system(size: 34)).frame(width: 44)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(card.title.string).font(.headline)
+                    if let text = (card.status.optString ?? card.text.optString) {
+                        Text(text).font(.subheadline).foregroundStyle(done ? .green : .secondary)
+                    }
+                    if let prize = card.prize.optString {
+                        Label(prize, systemImage: "gift.fill").font(.subheadline.bold()).foregroundStyle(.pink)
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+            if total > 1 && !done {
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: Double(have), total: Double(max(total, 1)))
+                    Text("\(have) of \(total) done").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.label.string)
+                        if let detail = step.detail.optString, !step.done.bool {
+                            Text(detail).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } icon: {
+                    Image(systemName: step.done.bool ? "checkmark.circle.fill" : (step.kind.string == "scan" ? "qrcode" : "circle"))
+                        .foregroundStyle(step.done.bool ? Color.green : Color.secondary)
+                }
+            }
+            ForEach(Array(card.actions.array.enumerated()), id: \.offset) { _, action in
+                if action.kind.string == "scan" {
+                    Button { scanning = true } label: {
+                        Label(action.label.optString ?? "Scan a code", systemImage: "qrcode.viewfinder").bold()
+                    }
+                }
+            }
+        } header: {
+            HStack {
+                Text(card.kicker.optString ?? "")
+                Spacer()
+                if let when = card.when.optString { Text(when).textCase(nil) }
+            }
+        }
+        .sheet(isPresented: $scanning) {
+            CodeScanner(title: card.title.string) { code in scanning = false; Task { await send(code) } }
+        }
+        .alert(failed ? "That didn't work" : "Scanned", isPresented: Binding(get: { result != nil }, set: { if !$0 { result = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(result ?? "") }
+    }
+
+    private func send(_ code: String) async {
+        do {
+            result = try await StudentAPI.shared.scan(code)
+            failed = false
+        } catch {
+            failed = true
+            result = isOffline(error) ? "No signal. Scan it again when there is." : error.localizedDescription
+        }
+        await model.load()
     }
 }

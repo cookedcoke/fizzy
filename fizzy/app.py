@@ -24,7 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import ask, badges, display, jobs, passkeys, pwa, rules, transactions, updater
+from . import ask, badges, challenges, display, jobs, passkeys, pwa, rules, transactions, updater
 from .web import (HERE, LoginRequired, back, cents, claim_bar, get_conn, is_phone, local, money, render, sale_amounts, sale_time,
                   session_gen, staff, take, templates, wants_json)
 
@@ -304,6 +304,7 @@ def create_app(background=True):
     register(app)
     app.include_router(tools.router)
     app.include_router(rewards.router)
+    app.include_router(challenges.router)
     app.include_router(portal.router)
     app.include_router(events.router)
     app.include_router(pin.router)
@@ -944,7 +945,8 @@ def register(app):
                       offers=(offers := rewards.offers_for(conn, cid, s["points"])),
                       display_msg={"type": "show", "customer": display.payload(conn, c, s, offers)},
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
-                      passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None, tool_ctx=tools.form_ctx(conn))
+                      passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None, tool_ctx=tools.form_ctx(conn),
+                      prizes=challenges.prizes_for(conn, cid))
 
     @app.get("/customers/{cid:int}/claim", response_class=HTMLResponse)
     def claim_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):

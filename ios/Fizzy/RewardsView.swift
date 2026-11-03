@@ -1,3 +1,4 @@
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 /// Rewards the stall is running, repeating double-points days, and custom badges and events.
@@ -10,6 +11,7 @@ struct RewardsView: View {
             Section {
                 NavigationLink { NewRewardForm(page: page) } label: { Label("Start a reward", systemImage: "gift") }
                 NavigationLink { NewEventForm(page: page) } label: { Label("Schedule double points", systemImage: "bolt") }
+                NavigationLink { NewHuntForm(page: page) } label: { Label("Start a scavenger hunt", systemImage: "qrcode") }
             }
             Section("Live · \(d.live.count)") {
                 ForEach(d.live.array, id: \.self) { r in
@@ -52,24 +54,35 @@ struct RewardsView: View {
                     }
                 }
             }
-            Section("Custom badges and events · \(d.custom.count)") {
+            Section("Custom badges, events and challenges · \(d.custom.count)") {
                 ForEach(d.custom.array, id: \.self) { r in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(r.name.string).bold()
-                            Tag(text: r.kind.string == "badge" ? "Badge" : "Event")
+                            Tag(text: ["badge": "Badge", "event": "Event", "challenge": "Challenge"][r.kind.string] ?? r.kind.string)
                             if r.paused.bool { Tag(text: "Paused", color: .orange) }
                         }
                         Text(r.summary.string + (r.kind.string == "badge" ? " · \(r.spec.points.int) points" + (r.spec.repeat.optString.map { $0 != "once" ? " each \($0)" : "" } ?? "") : ""))
                             .font(.caption).foregroundStyle(.secondary)
                         Text("\(r.students.int) student\(r.students.int == 1 ? "" : "s") · \(Fmt.number(r.points.int)) points given · made by \(r.created_by.string) \(Fmt.when(r.created_at.string, "d MMM"))")
                             .font(.caption).foregroundStyle(.secondary)
+                        let ch = r.challenge
+                        if !ch.isNull {
+                            Text("\(ch.steps.int) steps · prize: \(ch.prize.string) · \(ch.started.int) started, \(ch.finished.int) finished" + (ch.finished.int > 0 ? " (\(ch.given.int) given)" : ""))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     .swipeActions(edge: .trailing) {
                         Button("Delete", role: .destructive) {
                             ask = ConfirmAsk(message: "Delete \(r.name.string)? Points already given stay.") { page.act("rules/\(r.id.int)/delete") }
                         }
                         Button(r.paused.bool ? "Restart" : "Pause") { page.act("rules/\(r.id.int)/\(r.paused.bool ? "resume" : "pause")") }.tint(.orange)
+                    }
+                    // Its own row: a link inside a row doesn't take taps.
+                    if !r.challenge.codes.array.isEmpty {
+                        NavigationLink { ChallengeCodesView(name: r.name.string, codes: r.challenge.codes.array) } label: {
+                            Label("Codes to print", systemImage: "qrcode")
+                        }
                     }
                 }
                 if d.custom.array.isEmpty { Text("None yet. Make one with Fizz.").foregroundStyle(.secondary) }
@@ -225,5 +238,95 @@ struct NewEventForm: View {
             if page.data.discord_on.bool { Section { Toggle("Announce on Discord", isOn: $announce) } }
         }
         .onAppear { if start.isEmpty { start = page.data.today.string; end = start } }
+    }
+}
+
+/// A scavenger hunt: one stop per line, a clue after "|" (the website's Start a scavenger hunt).
+/// Fizz can make other kinds of challenge.
+struct NewHuntForm: View {
+    let page: Page
+    @State private var name = ""
+    @State private var summary = ""
+    @State private var stops = ""
+    @State private var start = ""
+    @State private var end = ""
+    @State private var hasEnd = false
+    @State private var prizeText = "A free drink"
+    @State private var prizePoints = ""
+
+    var body: some View {
+        SettingsForm(page: page, title: "Scavenger hunt", action: "Start",
+                     ready: !name.trimmingCharacters(in: .whitespaces).isEmpty && !stops.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, send: {
+            await page.submit("challenges", [("name", name), ("summary", summary), ("stops", stops), ("start", start),
+                                             ("end", hasEnd ? end : ""), ("prize_text", prizeText), ("prize_points", prizePoints)])
+        }) {
+            Section {
+                TextField("Name, e.g. Find the Fizz", text: $name)
+                TextField("What to do (optional)", text: $summary)
+            }
+            Section {
+                TextEditor(text: $stops).frame(minHeight: 110)
+            } header: {
+                Text("Stops, one per line")
+            } footer: {
+                Text("Add a clue after |, e.g. \"The library | Near the returns desk\". Fizzy makes a code for each stop to print.")
+            }
+            Section {
+                DayField(title: "First day", text: $start)
+                Toggle("Has a last day", isOn: $hasEnd)
+                if hasEnd { DayField(title: "Last day", text: $end) }
+            }
+            Section("Prize") {
+                TextField("At the counter, e.g. A free drink", text: $prizeText)
+                LabeledContent("Points (optional)") {
+                    TextField("0", text: $prizePoints).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
+            }
+        }
+        .onAppear { if start.isEmpty { start = page.data.today.string; end = start } }
+    }
+}
+
+/// A challenge's codes, drawn on the phone, to show or share for printing. (The website has a page to print them all.)
+struct ChallengeCodesView: View {
+    let name: String
+    let codes: [J]
+
+    var body: some View {
+        List {
+            Section {
+                Text("Print these and stick each one up at its stop. Students scan them in My CCC or with their phone's camera. The website's Rewards page prints them all on one sheet.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            ForEach(Array(codes.enumerated()), id: \.offset) { _, c in
+                Section {
+                    if let image = QR.image(c.url.string) {
+                        Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
+                            .frame(maxWidth: 240).frame(maxWidth: .infinity)
+                        ShareLink(item: Image(uiImage: image), preview: SharePreview(c.label.string, image: Image(uiImage: image))) {
+                            Label("Share or print", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                } header: {
+                    Text(c.label.string)
+                } footer: {
+                    if let hint = c.hint.optString { Text(hint) }
+                }
+            }
+        }
+        .navigationTitle(name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+
+enum QR {
+    static func image(_ text: String) -> UIImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(text.utf8)
+        filter.correctionLevel = "M"
+        guard let out = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)),
+              let cg = CIContext().createCGImage(out, from: out.extent) else { return nil }
+        return UIImage(cgImage: cg)
     }
 }
