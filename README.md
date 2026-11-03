@@ -54,12 +54,19 @@ doesn't matter what order or how late Square sends sales. The one thing it can't
 nobody pressed for (say, someone not in Fizzy) rung up in the same 30 seconds as Mia's, that Square
 sends before hers. Mia's press takes it (the newest in), so fix that on the Square page.
 
+**A teacher, or someone without an account (or who'd rather not record it)?** Mark their sale
+**No account** before the next person's press: on the *New sale* pop-up, on **Pick a sale**, or on
+the **Square** page. Otherwise the next press may take it. A No account sale still counts in takings,
+profit and reports, but nobody gets it: no points, no tab, never offered to claim. Marked one by
+mistake? **Undo** next to it on the Square page.
+
 **Pick a sale** (next to Claim sale) lists the latest sales from the last 6 hours with no customer,
 newest first: click one to give it to them. Use it when the button missed one (older ones are on the
 **Square** page). If a tab sale is more than they're allowed, the list says so before you claim it.
 
 **Or let it pop up:** if their page is open when you take the payment, a *New sale* box pops up
-within a few seconds: **Claim** gives it to them, **Not theirs** dismisses it. (It only offers sales
+within a few seconds: **Claim** gives it to them, **Not theirs** dismisses it, **No account** marks it
+as nobody's (above). (It only offers sales
 from about the time the page was opened, never older ones, never claims anything without a click,
 and stays away while a Claim sale press is waiting for anyone, so the two never argue.)
 
@@ -379,7 +386,7 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 | **Claim sale** (button on a customer) | Gives this customer the Square sale rung up in the 30 seconds before the press, or waits for Square to send it (the bar under the header, with Undo) |
 | **Pick a sale** (button on a customer) | The latest Square sales with no customer; click one to give it to this customer |
 | **Rewards** | Start and end reward events; see how many were redeemed |
-| **Square** | Connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer |
+| **Square** | Connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer; **No account** on a sale with nobody on it (it still counts, nobody gets it), with **Undo** |
 | **Tools** | Occasional jobs (next section) |
 | **Import** | Upload the school CSV: preview, then confirm |
 | **Settings** | Tab limit, days to pay, spend threshold; backups (back up now, download a copy) |
@@ -417,7 +424,7 @@ The pages are kept to labels and buttons. What they used to explain:
 - **Restocks and payouts.** Restocks take the cost of the whole lot ($18 for 24 Cokes); profit uses the cost of one. Payouts split evenly between whoever's ticked; change the amounts to what people actually got.
 - **Profit.** Clear a cost to remove it; under 20% margin shows red. Renaming an item in Square keeps its cost. Revenue counts discounts such as rewards, counts tab sales at full price, and doesn't take refunds off.
 - **Square profiles not linked.** Profiles with the same email as someone already in Fizzy are probably doubles: merge them in Square (Customers, select both, Merge), or assign their sales on the Square page.
-- **Claiming sales.** Ring the sale up first, then press Claim sale: it takes the sale from the 30 seconds before the press (the newest, if there are two), as soon as Square sends it. A sale goes to the first press after it, so pressing for the next person never takes the last one's. Pick a sale lists the latest sales with nobody on them, newest first. Picked the wrong one? Fix it on the Square page.
+- **Claiming sales.** Ring the sale up first, then press Claim sale: it takes the sale from the 30 seconds before the press (the newest, if there are two), as soon as Square sends it. A sale goes to the first press after it, so pressing for the next person never takes the last one's. Pick a sale lists the latest sales with nobody on them, newest first. Picked the wrong one? Fix it on the Square page. A teacher's sale, or anyone's without an account: mark it No account (it still counts in takings) before the next press, or it may go to the next customer. Tab sales can't be No account.
 - **History import.** Safe to run again. Takes a minute or two for a lot of history; Fizzy keeps working meanwhile.
 - **Directory import.** Needs a name column (`Cleaned Name` or `Name`) and `Email`; everything else is ignored. Adds new students and fixes names, never deletes anyone.
 - **Backups.** `fizzy.db` has students' names and emails in it, so keep downloads private.
@@ -1135,6 +1142,13 @@ scripts in `<head>` from page to page; only `<body>` is swapped. So:
   before Turbo, since any page can show points, tabs or who's on the counter that changed elsewhere.
 - A control that sends its form as soon as it changes keeps the saved value in `data-was`; if the
   passcode box for that form is cancelled, `app.js` puts it back.
+
+**No account.** `POST /square/no-account` with `key` (a checkout key from Pick a sale) marks every row of
+that checkout (`square_payments.no_account` = when, `no_account_by` = who); `POST /square/no-account/undo`
+clears it. With `X-Fizzy-Format: json` they answer `{"ok": true, "key", "no_account", "message"}` or
+`{"error": "..."}` (400). `kind` is left alone, so stats count it as before; `square.unclaimed`, `_link`
+(so `link_pending` and syncs), claiming and assigning all skip marked rows, and a late part of the same
+order is marked too. A checkout with a customer or any tab money can't be marked.
 
 **Claim sale for the iOS app.** `POST /customers/{id}/claim/next` with `X-Fizzy-Format: json` answers
 `{"claimed": {...}}` (the same fields as a sale in `GET /customers/{id}/claim`; with `"already": true` when

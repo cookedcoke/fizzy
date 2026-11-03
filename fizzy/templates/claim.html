@@ -7,8 +7,10 @@
 </div>
 {% if note %}<div class="err">{{ note }} Showing what Fizzy already has.</div>{% endif %}
 {% if checkouts %}
+<form method="post" action="/square/no-account" id="no-account"></form>
 <form method="post" action="/customers/{{ c.id }}/claim" class="claims">
   {% for k in checkouts %}
+  <div class="claim-row">
   <button name="key" value="{{ k.key }}" class="claim {{ 'first' if loop.first }}" {{ 'autofocus' if loop.first }}>
     <span class="when">{{ k.at|local('%H:%M') }}<small>{{ k.at|local('%a %-d %b') }}</small></span>
     <span class="what">{{ k['items'] or ('Tab repayment' if k.repay_cents else 'Sale') }}
@@ -21,6 +23,9 @@
     </span>
     {% if loop.first %}<span class="go">Claim</span>{% endif %}
   </button>
+  {% if not k.tab_cents and not k.repay_cents %}<button class="sm noacct-btn" form="no-account" name="key" value="{{ k.key }}"
+    title="A teacher, or someone without an account: it still counts, but nobody gets it">No account</button>{% endif %}
+  </div>
   {% endfor %}
 </form>
 {% if more %}<p class="meta">Only the latest {{ checkouts|length }} are here. Older ones are on the <a href="/square?show=unlinked">Square page</a>.</p>{% endif %}

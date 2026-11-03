@@ -55,9 +55,10 @@ def transactions(request: Request, start: str = "", end: str = "", show: str = "
                      "test": h["kind"] == "test"})
     live = square.live_from(conn)  # history-only sales were never expected to have anyone on them
     nobody = sum(1 for r in rows if r["source"] == "square" and not r["customer_id"] and (r["sold_cents"] or r["repay_cents"])
-                 and r["at"] >= live)
+                 and r["at"] >= live and not r["no_account"])
     keep = {"sales": lambda r: r["sale_cents"], "tab": lambda r: r["tab_cents"], "repaid": lambda r: r["repay_cents"],
-            "nobody": lambda r: r["source"] == "square" and not r["customer_id"] and r["at"] >= live}.get(show)
+            "nobody": lambda r: r["source"] == "square" and not r["customer_id"] and r["at"] >= live
+            and not r["no_account"]}.get(show)
     if keep:
         rows = [r for r in rows if keep(r)]
     needle = " ".join(q.lower().split())

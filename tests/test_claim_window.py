@@ -770,7 +770,7 @@ def test_pick_a_sale_says_when_there_are_older_ones(on):
     for i in range(square.PICK_SHOWN + 1):
         put(lambda c: square.process_payment(c, pay(f"p{i}", 100 + i, cust=None, ts=(now - timedelta(minutes=i)).isoformat()), None))
     page = on.get("/customers/1/claim").text
-    assert page.count('name="key"') == square.PICK_SHOWN and "Only the latest 6 are here." in page
+    assert page.count('<button name="key"') == square.PICK_SHOWN and "Only the latest 6 are here." in page
     assert 'href="/square?show=unlinked"' in page
     assert len(on.get("/customers/1/claim", headers=JSON).json()["checkouts"]) == square.PICK_SHOWN
 

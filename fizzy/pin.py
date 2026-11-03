@@ -43,9 +43,9 @@ LOCKED = [r"^/settings/(pin|permissions|maintenance|update|ask)$", r"^/settings/
 
 # (id, label, [(method, path)], default level). First match wins, so specific ones go first.
 ACTIONS = [
-    ("claim", "Claim Square sales, and say whose sale it was",
+    ("claim", "Claim Square sales, say whose sale it was, or mark it No account",
      [("POST", r"^/customers/\d+/claim$"), ("POST", r"^/customers/\d+/claim/next$"), ("POST", r"^/claim-waits/\d+/cancel$"),
-      ("POST", r"^/square/payments/[^/]+/assign$")], "open"),
+      ("POST", r"^/square/payments/[^/]+/assign$"), ("POST", r"^/square/no-account(/undo)?$")], "open"),
     ("sync", "Sync with Square, refresh the catalogue",
      [("POST", r"^/square/sync$"), ("POST", r"^/tools/sync_now$"), ("POST", r"^/profit/refresh$")], "open"),
     ("warnings", "Dismiss warnings, back up now", [("POST", r"^/breach/"), ("POST", r"^/settings/backup$")], "open"),

@@ -31,6 +31,7 @@
     {% for r in rows %}<tr>
       <td class="when">{{ r.at|local('%a %-d %b') }}<br><span class="muted small">{{ r.at|local('%H:%M') }}</span></td>
       <td>{% if r.customer_id %}<a href="/customers/{{ r.customer_id }}">{{ r.customer }}</a>
+        {% elif r.no_account %}<span class="tag" title="A real sale nobody gets. Undo it on the Square page.">No account</span>
         {% elif r.payment_ids %}<form class="assign" method="post" action="/square/payments/{{ r.payment_ids[0] }}/assign">
           <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required title="Type who it was, then Enter"></form>{% endif %}
         <div class="small muted show-sm">{% for i in r['items'] %}{{ i.qty }}× {{ i.name }}{{ ', ' if not loop.last }}{% endfor %}</div></td>

@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS square_payments (
     raw_json TEXT,
     created_at TEXT NOT NULL,
     processed_at TEXT NOT NULL
+    -- no_account, no_account_by: added by MIGRATIONS below
 );
 
 CREATE TABLE IF NOT EXISTS square_refunds (
@@ -360,6 +361,10 @@ MIGRATIONS = [
     ("restocks", "client_id", "TEXT"),  # set by the iOS app, so a restock sent again after a lost answer isn't added twice
     ("points_ledger", "rule_key", "TEXT"),  # rules.py: one grant per key, paid once  # bumped by "Sign out their phones" on the customer page
     ("customers", "score_adjust", "INTEGER"),  # staff adjustment to the tab score (logic.set_score_adjust), NULL = none
+    # "No account" (square.mark_no_account): a real sale (a teacher, someone not recording) that nobody gets.
+    # When it was marked, and by whom; NULL = not marked. Every row of the checkout is marked together.
+    ("square_payments", "no_account", "TEXT"),
+    ("square_payments", "no_account_by", "TEXT"),
 ]
 
 

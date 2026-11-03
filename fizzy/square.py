@@ -357,9 +357,17 @@ def _insert_sp(conn, sp):
     if sp["amount_cents"] > MAX_SALE_CENTS:  # e.g. a $1,000,000 custom amount: kept, but counts for nothing
         sp = {**sp, "kind": "void"}
         audit(conn, "square", "reclassify", sp["customer_id"], f"{sp['square_payment_id']} -> void (over ${MAX_SALE_CENTS // 100})")
+    sp = {"no_account": None, "no_account_by": None, **sp}
+    mark = sp["square_order_id"] and conn.execute(
+        "SELECT no_account, no_account_by FROM square_payments WHERE square_order_id = ? AND no_account IS NOT NULL LIMIT 1",
+        (sp["square_order_id"],)).fetchone()
+    if mark:  # a late part of a checkout marked "No account": the same, whatever Square says about the customer
+        sp = {**sp, "customer_id": None, "no_account": mark[0], "no_account_by": mark[1]}
     conn.execute(
-        "INSERT INTO square_payments VALUES (:square_payment_id, :square_order_id, :square_customer_id, :customer_id, "
-        ":kind, :amount_cents, :tender, :items, :raw_json, :created_at, :processed_at)",
+        "INSERT INTO square_payments(square_payment_id, square_order_id, square_customer_id, customer_id, kind, amount_cents, "
+        "tender, items, raw_json, created_at, processed_at, no_account, no_account_by) VALUES (:square_payment_id, "
+        ":square_order_id, :square_customer_id, :customer_id, :kind, :amount_cents, :tender, :items, :raw_json, :created_at, "
+        ":processed_at, :no_account, :no_account_by)",
         sp,
     )
     apply_payment_effects(conn, sp)
@@ -554,6 +562,8 @@ def assign_customer(conn, square_payment_id, customer, staff):
     if order:  # the rest of the same checkout (e.g. the tab charge from the order) moves with it
         rows = conn.execute("SELECT * FROM square_payments WHERE square_payment_id IN (?, ?) OR square_order_id = ?",
                             (base, f"{base}:sale", order)).fetchall()
+    if any(r["no_account"] for r in rows):
+        raise ValueError(NO_ACCOUNT_TAKEN)
     for sp in rows:
         if sp["customer_id"] is not None:
             undo_payment_effects(conn, sp)
@@ -600,7 +610,8 @@ def unclaimed(conn, hours=CLAIM_HOURS, limit=6):
     """Recent checkouts with nobody attached, newest first."""
     since = max((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds"), live_from(conn))
     # A checkout part of which is already someone's isn't anyone else's to claim (see process_payment).
-    out = _group(conn.execute("SELECT * FROM square_payments WHERE customer_id IS NULL AND kind != 'void' AND created_at >= ? "
+    out = _group(conn.execute("SELECT * FROM square_payments WHERE customer_id IS NULL AND kind != 'void' AND no_account IS NULL "
+                              "AND created_at >= ? "
                               "AND (square_order_id IS NULL OR square_order_id NOT IN (SELECT square_order_id FROM square_payments "
                               "WHERE customer_id IS NOT NULL AND square_order_id IS NOT NULL)) ORDER BY created_at DESC", (since,)))
     out.sort(key=lambda g: g["at"], reverse=True)
@@ -636,14 +647,70 @@ def claim(conn, key, customer, staff):
     if not rows or any(r["customer_id"] is not None for r in rows):
         # someone (or a sync) got there first: never move a sale that's already somebody's
         raise ValueError("That sale has already been claimed.")
+    if any(r["no_account"] for r in rows):
+        raise ValueError(NO_ACCOUNT_TAKEN)
     bases = {r["square_payment_id"].removesuffix(":sale") for r in rows}
     for base in sorted(bases):
         assign_customer(conn, base, customer, staff)
     return len(bases)
 
 
+NO_ACCOUNT_TAKEN = "That sale is marked No account. Undo that on the Square page first."
+
+
+def mark_no_account(conn, key, staff):
+    """Staff say a checkout (a key as unclaimed() gives it) was a real sale with nobody to give it to:
+    a teacher, a student who'd rather not record it, anyone without an account. Every part of it is
+    marked, so it's never claimed, linked or matched to a Claim sale press, but its kind stays as it
+    is, so the money counts in takings and reports like any other sale. Returns the checkout, or
+    None if it was already marked. Raises ValueError if it's someone's, or any of it is tab money
+    (that always needs a person)."""
+    _write_lock(conn)
+    rows = _checkout_rows(conn, key)
+    if not rows:
+        raise ValueError("Fizzy hasn't seen that sale.")
+    if any(r["customer_id"] is not None for r in rows):
+        raise ValueError("That sale is already someone's, so it can't be No account. Move it on the Square page if it's wrong.")
+    if all(r["no_account"] for r in rows):
+        return None
+    if any(r["kind"] in ("tab_charge", "tab_repayment") for r in rows):
+        raise ValueError("Part of that sale is on a tab or pays one off, so it needs a customer.")
+    ids = [r["square_payment_id"] for r in rows]
+    conn.execute(f"UPDATE square_payments SET no_account = ?, no_account_by = ? WHERE no_account IS NULL "
+                 f"AND square_payment_id IN ({','.join('?' * len(ids))})", (now_iso(), staff, *ids))
+    k = checkout(conn, key)
+    audit(conn, staff, "no_account", None, f"{key}: {_describe(k, rows)}")
+    return k
+
+
+def undo_no_account(conn, key, staff):
+    """Undo mark_no_account: it's a normal sale with nobody on it again (it goes to a customer now if
+    Square had one on it that Fizzy knows). Returns the checkout; ValueError if it wasn't marked."""
+    _write_lock(conn)
+    rows = [r for r in _checkout_rows(conn, key) if r["no_account"]]
+    if not rows:
+        raise ValueError("That sale isn't marked No account.")
+    ids = [r["square_payment_id"] for r in rows]
+    conn.execute(f"UPDATE square_payments SET no_account = NULL, no_account_by = NULL "
+                 f"WHERE square_payment_id IN ({','.join('?' * len(ids))})", ids)
+    audit(conn, staff, "no_account_undo", None, f"{key}: {_describe(checkout(conn, key), rows)}")
+    for r in rows:
+        c = _customer_for(conn, r["square_customer_id"])
+        if c is not None:
+            _link(conn, r["square_payment_id"], c["id"])
+    return checkout(conn, key)
+
+
+def _describe(k, rows):
+    if not k:
+        return ", ".join(r["square_payment_id"] for r in rows)
+    cents = k["sale_cents"] + k["tab_cents"] + k["repay_cents"]
+    return f"{k['items'] or 'Sale'}, ${cents / 100:.2f}"
+
+
 def link_pending(conn):
-    """After customers are linked, apply payments that arrived before their customer was known."""
+    """After customers are linked, apply payments that arrived before their customer was known.
+    A sale marked No account stays nobody's (see _link)."""
     rows = conn.execute(
         "SELECT sp.square_payment_id, c.id AS cid FROM square_payments sp JOIN customers c "
         "ON c.square_customer_id = sp.square_customer_id WHERE sp.customer_id IS NULL ORDER BY sp.created_at"
@@ -653,9 +720,10 @@ def link_pending(conn):
 
 def _link(conn, square_payment_id, customer_id):
     """Put a payment with nobody on it on a customer and apply it. False if it's someone's already
-    (claims hold the write lock while they work, so one made in the meantime wins)."""
-    if conn.execute("UPDATE square_payments SET customer_id = ? WHERE square_payment_id = ? AND customer_id IS NULL",
-                    (customer_id, square_payment_id)).rowcount == 0:
+    (claims hold the write lock while they work, so one made in the meantime wins), or it's marked
+    No account."""
+    if conn.execute("UPDATE square_payments SET customer_id = ? WHERE square_payment_id = ? AND customer_id IS NULL "
+                    "AND no_account IS NULL", (customer_id, square_payment_id)).rowcount == 0:
         return False
     sp = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (square_payment_id,)).fetchone()
     apply_payment_effects(conn, sp)

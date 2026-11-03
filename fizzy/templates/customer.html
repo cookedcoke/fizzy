@@ -232,7 +232,9 @@
   <div class="cp-amts"></div>
   <div class="cp-warn red small" hidden>{{ c.name.split(' ')[0] }} can't put this on a tab - it'll be flagged.</div>
   <div class="cp-actions"><button class="primary" type="submit">Claim for {{ c.name.split(' ')[0] }}</button>
-    <button type="button" class="cp-no">Not theirs</button></div>
+    <button type="button" class="cp-no">Not theirs</button>
+    <button type="submit" class="cp-noacct" formaction="/square/no-account"
+            title="A teacher, or someone without an account: it still counts, but nobody gets it">No account</button></div>
 </form>
 {% endif %}
 {% endblock %}

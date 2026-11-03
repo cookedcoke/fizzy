@@ -80,7 +80,7 @@ EXPORTS = {
     "points": "SELECT p.*, c.name FROM points_ledger p JOIN customers c ON c.id = p.customer_id",
     "tab_charges": "SELECT t.*, c.name FROM tab_charges t JOIN customers c ON c.id = t.customer_id",
     "repayments": "SELECT r.*, c.name FROM tab_repayments r JOIN customers c ON c.id = r.customer_id",
-    "square_payments": "SELECT square_payment_id, square_order_id, square_customer_id, customer_id, kind, amount_cents, tender, items, created_at FROM square_payments",
+    "square_payments": "SELECT square_payment_id, square_order_id, square_customer_id, customer_id, kind, amount_cents, tender, items, created_at, no_account, no_account_by FROM square_payments",
     "tab_decisions": "SELECT d.*, c.name FROM tab_decisions d JOIN customers c ON c.id = d.customer_id",
     "audit_log": "SELECT * FROM audit_log",
 }
@@ -691,7 +691,8 @@ def h_integrity(request, conn, who, form):
         n = conn.execute(sql).fetchone()[0]
         checks.append([label, n, "ok" if n == 0 else fix])
 
-    count("Square payments with no customer", "SELECT COUNT(*) FROM square_payments WHERE customer_id IS NULL AND kind != 'void'",
+    count("Square payments with no customer", "SELECT COUNT(*) FROM square_payments WHERE customer_id IS NULL AND kind != 'void' "
+          "AND no_account IS NULL",
           link("Attach customers in Square, or link their Square IDs", "/square?show=unlinked"))
     count("Customers with negative points",
           "SELECT COUNT(*) FROM (SELECT customer_id FROM points_ledger GROUP BY customer_id HAVING SUM(delta) < 0)",

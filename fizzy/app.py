@@ -1169,11 +1169,12 @@ def register(app):
 
     @app.get("/square", response_class=HTMLResponse)
     def square_page(request: Request, show: str = "", who=Depends(staff), conn=Depends(get_conn)):
-        where = "WHERE customer_id IS NULL AND sp.kind != 'void' AND sp.created_at >= ?" if show == "unlinked" else ""
-        rows = conn.execute(
+        where = ("WHERE customer_id IS NULL AND sp.kind != 'void' AND sp.no_account IS NULL AND sp.created_at >= ?"
+                 if show == "unlinked" else "")
+        rows = [{**r, "key": square._checkout_key(r)} for r in conn.execute(
             f"SELECT sp.*, c.name FROM square_payments sp LEFT JOIN customers c ON c.id = sp.customer_id {where} "
             "ORDER BY sp.created_at DESC LIMIT 200", (square.live_from(conn),) if where else ()
-        ).fetchall()
+        ).fetchall()]
         people = conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
         unlinked_customers = conn.execute(
             "SELECT COUNT(*) FROM customers WHERE square_customer_id IS NULL AND archived_at IS NULL AND kind IS NOT 'test'"
@@ -1214,6 +1215,36 @@ def register(app):
         square.claim_waiting_safely(conn)  # a Claim sale press waiting for this sale is done now
         conn.commit()
         return back(request, request.headers.get("referer") or "/square", f"Assigned to {c['name']}.")
+
+    @app.post("/square/no-account")
+    def square_no_account(request: Request, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
+        """A sale nobody gets (a teacher, someone not recording, no account): its money still counts,
+        but it's never claimed or linked (square.mark_no_account)."""
+        return _no_account(request, conn, key, who, undo=False)
+
+    @app.post("/square/no-account/undo")
+    def square_no_account_undo(request: Request, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
+        return _no_account(request, conn, key, who, undo=True)
+
+    def _no_account(request, conn, key, who, undo):
+        to = request.headers.get("referer") or "/square"
+        try:
+            k = (square.undo_no_account if undo else square.mark_no_account)(conn, key, who)
+        except ValueError as e:
+            conn.rollback()
+            if wants_json(request):
+                return JSONResponse({"error": str(e)}, status_code=400, headers={"Cache-Control": "no-store"})
+            return back(request, to, str(e), "bad")
+        if undo:
+            square.claim_waiting_safely(conn)  # a Claim sale press waiting for this sale may take it now
+            msg = "Undone: it's a sale with nobody on it again."
+        else:
+            msg = "Marked No account. It still counts in takings, but nobody gets it." if k else "That sale is already No account."
+        conn.commit()
+        if wants_json(request):
+            return JSONResponse({"ok": True, "key": key, "no_account": not undo, "message": msg},
+                                headers={"Cache-Control": "no-store"})
+        return back(request, to, msg)
 
     @app.post("/square/sync")
     def square_sync_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):

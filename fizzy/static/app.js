@@ -300,10 +300,10 @@
   document.addEventListener("submit", function (e) {
     var f = e.target, method = (f.getAttribute("method") || "get").toUpperCase();
     if (e.defaultPrevented || f.closest("dialog.ask")) return;
-    var n = needsPin(method, f.action, new FormData(f));
+    var by = e.submitter;  // a button with its own formaction (the pop-up's No account) is checked as that
+    var n = needsPin(method, by && by.hasAttribute("formaction") ? by.formAction : f.action, new FormData(f));
     if (!n) return;
     e.preventDefault();
-    var by = e.submitter;
     askPin(n, function () { f.requestSubmit(by && by.form === f ? by : undefined); }, function () { unsent(f); });
   });
   // The server has the last word: when it wants a higher passcode than this page worked out (it knows
@@ -408,7 +408,7 @@
 
   // ---- "new sale - claim it?" (customer page) ------------------------------------------------
   // While a customer's page is open, a sale rung up in Square with no customer pops up here
-  // within a few seconds, with Claim and Not theirs buttons. Nothing is claimed without a click.
+  // within a few seconds, with Claim, Not theirs and No account buttons. Nothing is claimed without a click.
   function claimPrompt(cp) {
     var seenKey = "fizzy-dismissed-" + cp.dataset.cid, shownKey = null;
     var dismissed = function () { try { return JSON.parse(sessionStorage.getItem(seenKey) || "[]"); } catch (e) { return []; } };
@@ -431,6 +431,7 @@
       $(".cp-amts", cp).innerHTML = [s.paid && esc(s.paid) + " <small>paid</small>", s.tab && '<span class="tab">' + esc(s.tab) + " <small>on tab</small></span>",
                                      s.repaid && '<span class="repay">' + esc(s.repaid) + " <small>repaid</small></span>"].filter(Boolean).join(" · ");
       $(".cp-warn", cp).hidden = !s.tab_warning;
+      $(".cp-noacct", cp).hidden = !!(s.tab || s.repaid);  // tab money always needs a person
       cp.hidden = false;
       document.body.classList.add("has-claim-prompt");  // room at the bottom so it doesn't cover anything
       cp.classList.remove("pop"); void cp.offsetWidth; cp.classList.add("pop");
@@ -443,6 +444,11 @@
         .then(function (r) { return r.ok ? r.json() : null; }).then(function (s) { if (s && !gone) showSale(s); }).catch(function () {});
     };
     listen($(".cp-no", cp), "click", function () { dismiss(cp.elements.key.value); });
+    // No account (a teacher's sale, someone not recording it): the form goes to /square/no-account, and the
+    // page comes back with its message. Hidden now, so it doesn't sit there while that's on its way.
+    listen(cp, "turbo:submit-start", function (e) {
+      if (e.detail.formSubmission.submitter && e.detail.formSubmission.submitter.classList.contains("cp-noacct")) dismiss(cp.elements.key.value);
+    });
     poll();
     every(poll, 3000);
   }
