@@ -581,12 +581,13 @@ def sign_out_phones(request: Request, cid: int, who=Depends(staff), conn=Depends
 # ---- challenges: scanning their codes ----------------------------------------------------------------
 
 def _pending_scan(request, conn, c):
-    """A challenge code scanned with the phone camera before signing in: count it now."""
-    code = request.session.pop("me_scan", None)
-    if code:
-        ok, msg = challenges.scan(conn, c["id"], code)
+    """Codes found on this phone before signing in (a hunt played without an account): theirs now."""
+    guest = request.session.get("guest")
+    if guest:
+        won = challenges.merge_guest(conn, guest, c["id"])
         conn.commit()
-        request.session["me_note"] = msg
+        if won:
+            request.session["me_note"] = f"Your hunt progress is on your account now. You've finished {', '.join(won)}!"
 
 
 @router.post("/me/scan")
@@ -603,13 +604,24 @@ async def scan(request: Request, conn=Depends(get_conn)):
 
 @router.get("/me/c/{code}")
 def scan_link(request: Request, code: str, conn=Depends(get_conn)):
-    """A challenge code opened with the phone camera (the QR is a link to here)."""
+    """A challenge code opened with the phone camera (the QR is a link to here, or to a link that
+    redirects here). Signed in: it counts on their account. Not: it's kept against this phone, so new
+    students and those without a passcode yet can play, and claim at the stall."""
     c = current(request, conn)
-    if c is None:
-        request.session["me_scan"] = code[:60]   # counted once they sign in
-        return _page(request, "me_login.html", who="", live=rewards.active(conn), events_on=events.on(conn),
-                     events_soon=events.upcoming(conn), error="Sign in to count that code.")
-    ok, msg = challenges.scan(conn, c["id"], code[:60])
+    if c is not None:
+        ok, msg = challenges.scan(conn, c["id"], code[:60])
+        conn.commit()
+        request.session["me_note"] = msg
+        return RedirectResponse(_url("/"), status_code=303)
+    guest = request.session.get("guest") or secrets.token_urlsafe(12)
+    request.session["guest"] = guest
+    ok, msg, rule = challenges.guest_scan(conn, guest, code[:60])
     conn.commit()
-    request.session["me_note"] = msg
-    return RedirectResponse(_url("/"), status_code=303)
+    return _page(request, "me_hunt.html", note=msg, ok=ok, cards=challenges.guest_cards(conn, guest))
+
+
+@router.get("/me/hunt")
+def hunt_page(request: Request, conn=Depends(get_conn)):
+    """What this phone has found so far, without signing in."""
+    guest = request.session.get("guest")
+    return _page(request, "me_hunt.html", note=None, ok=True, cards=challenges.guest_cards(conn, guest) if guest else [])

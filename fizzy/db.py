@@ -334,6 +334,26 @@ CREATE TABLE IF NOT EXISTS prizes (
     UNIQUE (customer_id, rule_id)
 );
 
+-- Challenges played without signing in (challenges.py): scans kept against a phone, and its claim code once finished.
+CREATE TABLE IF NOT EXISTS guest_scans (
+    guest TEXT NOT NULL,                     -- a random id in that phone's session
+    rule_id INTEGER NOT NULL,
+    step INTEGER NOT NULL,
+    scanned_at TEXT NOT NULL,
+    PRIMARY KEY (guest, rule_id, step)
+);
+CREATE TABLE IF NOT EXISTS guest_finishes (
+    id INTEGER PRIMARY KEY,
+    guest TEXT NOT NULL,
+    rule_id INTEGER NOT NULL,
+    claim TEXT NOT NULL UNIQUE,              -- shown on the phone, typed by staff on the student's page
+    finished_at TEXT NOT NULL,
+    customer_id INTEGER REFERENCES customers(id),   -- once they sign in or staff claim it
+    claimed_at TEXT,
+    claimed_by TEXT,
+    UNIQUE (guest, rule_id)
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);

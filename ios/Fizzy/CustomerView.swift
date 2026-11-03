@@ -28,6 +28,7 @@ struct CustomerView: View {
         let seconds: Int
     }
 
+    @State private var claimCode = ""
     private var customer: J { page.data.c }
     private var first: String { customer.name.string.split(separator: " ").first.map(String.init) ?? "them" }
 
@@ -200,8 +201,21 @@ struct CustomerView: View {
     /// Challenge prizes they've won: hand it over at the counter, then press Given.
     @ViewBuilder private func prizes(_ d: J) -> some View {
         let list = d.prizes.array
-        if !list.isEmpty {
-            Section("Challenge prizes") {
+        if !list.isEmpty || (d.hunts_on.bool && d.c.archived_at.isNull) {
+            Section {
+                if d.hunts_on.bool && d.c.archived_at.isNull {
+                    HStack {
+                        TextField("Claim code from their phone", text: $claimCode)
+                            .textInputAutocapitalization(.characters).autocorrectionDisabled().monospaced()
+                        Button("Claim") {
+                            let code = claimCode
+                            claimCode = ""
+                            page.act("customers/\(d.c.id.int)/claim-prize", [("code", code)])
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .disabled(claimCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
                 ForEach(list, id: \.self) { p in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -218,6 +232,10 @@ struct CustomerView: View {
                         }
                     }
                 }
+            } header: {
+                Text("Challenge prizes")
+            } footer: {
+                if d.hunts_on.bool { Text("Played a hunt without signing in? Type the claim code on their phone: it moves to this account and gives the prize.") }
             }
         }
     }

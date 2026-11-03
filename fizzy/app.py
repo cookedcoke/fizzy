@@ -946,7 +946,7 @@ def register(app):
                       display_msg={"type": "show", "customer": display.payload(conn, c, s, offers)},
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
                       passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None, tool_ctx=tools.form_ctx(conn),
-                      prizes=challenges.prizes_for(conn, cid))
+                      prizes=challenges.prizes_for(conn, cid), hunts_on=bool(rules.active(conn, "challenge")))
 
     @app.get("/customers/{cid:int}/claim", response_class=HTMLResponse)
     def claim_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):

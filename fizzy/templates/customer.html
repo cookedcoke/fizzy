@@ -127,7 +127,11 @@
 
 {# Challenge prizes (challenges.py): the student shows their phone, staff hand it over and press Given. #}
 {% set waiting = prizes|rejectattr('given_at')|list %}
-{% if prizes %}<div class="panel {{ 'attn' if waiting }}"><h2>Challenge prizes{% if waiting %} <span class="count">{{ waiting|length }} to give</span>{% endif %}</h2>
+{% if prizes or hunts_on %}<div class="panel {{ 'attn' if waiting }}"><h2>Challenge prizes{% if waiting %} <span class="count">{{ waiting|length }} to give</span>{% endif %}</h2>
+  {% if hunts_on and not c.archived_at %}<form class="row" method="post" action="/customers/{{ c.id }}/claim-prize">
+    <input type="text" name="code" placeholder="Claim code from their phone, e.g. K7QMR" autocapitalize="characters" autocomplete="off" required>
+    <button class="primary">Claim</button></form>
+  <p class="hint">For a hunt played without signing in: the code on their phone moves it onto this account and gives the prize.</p>{% endif %}
   <table>{% for p in prizes %}<tr><td><b>{{ p.text }}</b><div class="small muted">{{ p.name or 'A challenge' }} · won {{ p.won_at|local('%a %-d %b') }}</div></td>
     <td class="n">{% if p.given_at %}<span class="muted small">Given {{ p.given_at|local('%a %-d %b') }}{{ ' by ' ~ p.given_by if p.given_by }}</span>
       {% else %}<form class="inline" method="post" action="/customers/{{ c.id }}/prizes/{{ p.id }}/given"><button class="primary sm">Given</button></form>{% endif %}</td></tr>{% endfor %}
