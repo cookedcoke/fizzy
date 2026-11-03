@@ -46,21 +46,30 @@
   </nav>
   <details class="nav-more" hidden><summary>More</summary><div class="nav-menu"></div></details>
   <script>/* Runs before first paint. Wider than a phone: tabs that don't fit go into a "More" menu at the end
-     (never the current page's). Phone: the row scrolls, kept on the current tab, edges faded. */
+     (never the current page's). Before any tab moves, the extras give way one at a time, in the order a
+     narrower window drops them (style.css, 1600px and below), so a wider window never shows less: the
+     Display menu's word, then the tagline, labels and date ("tight"), the header search down to a
+     magnifier ("fold"), the clock, and last the Display menu down to its icon. Phone: the row scrolls,
+     kept on the current tab, edges faded. */
   (function (more) {
     // From the menu too, in their first order, in case some are there already.
     var n = more.previousElementSibling, menu = more.querySelector(".nav-menu"),
         links = Array.prototype.slice.call(more.parentNode.querySelectorAll("nav a, .nav-menu a")).sort(function (a, b) { return a.dataset.i - b.dataset.i; });
+    function fits() { return n.scrollWidth <= n.clientWidth + 1; }
     function fit() {
-      var clock = document.querySelector("header .clock");
+      var h = more.parentNode, clock = h.querySelector(".clock"), dm = h.querySelector(".dmode");  // this page's header, not the last one's
       links.forEach(function (a) { n.appendChild(a); });
       more.hidden = true; more.open = false;
+      h.classList.remove("tight", "fold");
       if (clock) clock.classList.remove("squeezed");
-      if (innerWidth <= 720 || n.scrollWidth <= n.clientWidth + 1) return;
-      if (clock) clock.classList.add("squeezed");  // the clock gives way before any tab does
-      if (n.scrollWidth <= n.clientWidth + 1) return;
+      if (dm) dm.classList.remove("tight", "squeezed");
+      if (innerWidth <= 720 || fits()) return;
+      var steps = [[dm, "tight"], [h, "tight"], [h, "fold"], [clock, "squeezed"], [dm, "squeezed"]];
+      for (var s = 0; s < steps.length; s++) {
+        if (steps[s][0]) { steps[s][0].classList.add(steps[s][1]); if (fits()) return; }
+      }
       more.hidden = false;
-      for (var i = links.length - 1; i >= 0 && n.scrollWidth > n.clientWidth + 1; i--) {
+      for (var i = links.length - 1; i >= 0 && !fits(); i--) {
         if (!links[i].classList.contains("on")) menu.insertBefore(links[i], menu.firstChild);
       }
       more.classList.toggle("on", !!menu.querySelector("a.on"));
@@ -70,9 +79,11 @@
     if (window.fizzyNavOff) fizzyNavOff();
     window.fizzyNavOff = function () {
       removeEventListener("resize", fit); document.removeEventListener("DOMContentLoaded", fit); removeEventListener("load", fit);
-      document.removeEventListener("click", close);
+      document.removeEventListener("turbo:render", fit); document.removeEventListener("click", close);
     };
     fit(); addEventListener("resize", fit); document.addEventListener("DOMContentLoaded", fit); addEventListener("load", fit);
+    // Again once app.js has drawn the page (the clock's time goes in then), as DOMContentLoaded does on a full load.
+    document.addEventListener("turbo:render", fit);
     if (document.fonts) document.fonts.ready.then(fit);
     document.addEventListener("click", close);
   })(document.currentScript.previousElementSibling);
@@ -96,6 +107,24 @@
   <a class="msearch" href="/customers" title="Find a customer" aria-label="Find a customer"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8.5" cy="8.5" r="6"/><path d="m13 13 5 5"/></svg></a>
   <div class="who">
     <time class="clock" data-clock data-tz="{{ TZ }}" aria-label="Current time"></time>
+    {# What the customer display shows. Chosen per device, so app.js sets it from this browser's storage
+       (nothing is marked selected here: it would be wrong on a device that chose something else). #}
+    <label class="dmode" title="What the customer display shows">
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="3" width="16" height="11" rx="1.5"/><path d="M7 17.5h6M10 14v3.5"/></svg>
+      <span class="label">Display</span>
+      <select data-display-mode aria-label="Customer display shows" autocomplete="off">
+        <option value="auto">Auto</option>
+        <optgroup label="Hold one screen">
+          <option value="hello">Welcome</option>
+          <option value="menu">On the shelf</option>
+          <option value="popular">Popular today</option>
+          <option value="leaders">Top this month</option>
+          <option value="soon">Coming up</option>
+        </optgroup>
+        <option value="rotate">Rotate all</option>
+        <option value="hide">Hidden</option>
+      </select>
+    </label>
     <form class="inline" method="post" action="/switch">
       <span class="label">On counter</span>
       {# autocomplete="off": Back to a page that was loaded in full shouldn't bring back who was on the counter then. #}

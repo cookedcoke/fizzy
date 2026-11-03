@@ -410,6 +410,8 @@ body.has-claim-prompt main { padding-bottom: 200px }
    date, then the clock); only then does the tab strip scroll, so nothing is ever pushed off. */
 header nav { flex-shrink: 1 }
 @media (max-width: 1600px) { header .brand small, header .who .label, .clock .d { display: none } }
+/* The same, wider than that, when base.html's fit() finds the header still too tight ("tight"). */
+header.tight .brand small, header.tight .who .label, header.tight .clock .d { display: none }
 header .hsearch { flex: 1 1 220px; min-width: 96px; max-width: 260px }
 
 @media (max-width: 1023px) { header nav { flex-shrink: 1 } }
@@ -558,6 +560,17 @@ td.details { max-width: 420px; overflow-wrap: anywhere }
   .hsearch input:focus { width: 280px; cursor: text; color: var(--fg); background-color: var(--surface); z-index: 16 }
   .hsearch input:focus::placeholder { color: var(--faint) }
   .hsearch input::-webkit-search-cancel-button { display: none }
+}
+/* The same, wider than that, when base.html's fit() finds the header still too tight ("fold"). */
+@media (min-width: 721px) {
+  header.fold .hsearch { flex: 0 0 30px; min-width: 30px; max-width: 30px; height: 30px }
+  header.fold .hsearch input { position: absolute; right: 0; top: 0; width: 30px; height: 30px; padding: 0 0 0 30px; cursor: pointer; color: transparent;
+    background: #22252B url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23C9CDD3' stroke-width='2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 7px center / 16px;
+    transition: width .18s ease, background-color .18s }
+  header.fold .hsearch input::placeholder { color: transparent }
+  header.fold .hsearch input:focus { width: 280px; cursor: text; color: var(--fg); background-color: var(--surface); z-index: 16 }
+  header.fold .hsearch input:focus::placeholder { color: var(--faint) }
+  header.fold .hsearch input::-webkit-search-cancel-button { display: none }
 }
 @media (prefers-reduced-motion: reduce) { .hsearch input { transition: none } }
 
@@ -812,3 +825,22 @@ button, .btn { box-shadow: var(--shadow-btn) }
 button.primary, .btn.primary { box-shadow: var(--shadow-btn-primary) }
 .lines .rm, header .who button { box-shadow: none }
 @media print { .panel, .stats, .verdict, .todo, .offer, .claim { box-shadow: none } }
+
+/* Header: what the customer display shows. Invisible (but taking its room) until app.js has set it
+   from this device's choice, so it never shows the wrong one. When the header's tight (base.html's fit())
+   the icon stands in for the word, and last of all the menu folds down to just the icon. Anything but Auto is
+   marked in amber, so it's clear the display isn't following the pages. */
+header .dmode { position: relative; display: inline-flex; align-items: center; gap: var(--s2); color: #8B919B; margin: 0; font-weight: 400 }
+header .dmode svg { display: none; flex: none }
+header .dmode select { display: inline-block; margin: 0 }
+header .dmode select:not(.ready) { visibility: hidden }
+header .dmode.held select { border-color: #A87A1E } header .dmode.held svg { color: #FFC23D }
+header .dmode.tight .label { display: none }
+header .dmode.tight svg { display: block }
+@media (max-width: 1600px) { header .dmode svg { display: block } }  /* where the labels go (above) */
+header.tight .dmode svg { display: block }
+header .dmode.squeezed select { width: 34px; padding: 0; color: transparent; -webkit-appearance: none; appearance: none; cursor: pointer }
+header .dmode.squeezed select option, header .dmode.squeezed select optgroup { color: #E8EAED; background: #22252B }
+header .dmode.squeezed svg { position: absolute; left: 9px; top: 50%; margin-top: -8px; pointer-events: none; color: #E8EAED }
+header .dmode.squeezed.held svg { color: #FFC23D }
+header .dmode.held select:focus { border-color: #fff }

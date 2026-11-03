@@ -145,9 +145,36 @@
 
 <script>
 (function () {
-  var cur = null, shown = 0, poll = null, back = null, mode = null, hidden = false;
+  var cur = null, shown = 0, poll = null, back = null, mode = null;
   var IDLE_AFTER = 90000, POLL = 3000;
   var $ = function (id) { return document.getElementById(id); };
+
+  // What staff chose for it (the staff header's "Display" menu): "auto" follows the staff pages (a
+  // customer's page shows them, any other page the idle screens); "rotate" is the idle screens taking
+  // turns whatever page is open; one slide's name holds that slide still; "hide" is the logo. Kept here
+  // too, so reloading the display comes back on the same screen.
+  var MODES = ["auto", "rotate", "hide", "hello", "menu", "popular", "leaders", "soon"], SLIDES = MODES.slice(3), KEY = "fizzy-display-showing";
+  var want = "auto",
+      menuHidden = false,  // hidden from the Mac app's menu: pages opening on the staff screen don't bring it back
+      temp = false,        // a customer is up over a held screen (the Sign-in code button); the held screen comes back after
+      pending = null;
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (saved && MODES.indexOf(saved.mode) >= 0) { want = saved.mode; menuHidden = !!saved.menu; }
+  } catch (e) { /* nothing kept: Auto */ }
+  function remember() { try { localStorage.setItem(KEY, JSON.stringify({ mode: want, menu: menuHidden })); } catch (e) { /* not kept */ } }
+  function held() { return SLIDES.indexOf(want) < 0 ? null : have[want] ? want : "hello"; }  // a slide with nothing on it: Welcome instead
+  // Where it sits when nobody's being shown: the idle screens (taking turns, or one held still) or the logo.
+  function rest() { temp = false; clearTimeout(pending); if (want === "hide") blank(""); else idle(); }
+  function setMode(m, again) {
+    if (MODES.indexOf(m) < 0) m = "auto";
+    var changed = m !== want;
+    want = m; remember();
+    if (again && !changed && temp) return;  // a page opening while a sign-in code is up: it ends by itself
+    if (want !== "auto") return rest();
+    // Auto: the staff page says what it shows straight after this. The idle screens unless it does.
+    if (changed || !again) { clearTimeout(pending); pending = setTimeout(rest, 400); }
+  }
   var calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
   function screen(id) {
     mode = id;
@@ -158,7 +185,7 @@
 
   // ---- between customers ----
   function idle() {
-    stopSignin(); cur = null; stopPoll(); screen("idle"); loadIdle();
+    stopSignin(); cur = null; stopPoll(); clearTimeout(back); screen("idle"); rotate(true); loadIdle();
   }
   function loadIdle() {
     fetch("/api/display/idle", { credentials: "same-origin", cache: "no-store" }).then(ok).then(function (d) {
@@ -191,6 +218,8 @@
   // Slides take turns every 9 seconds; ones with nothing to show are skipped.
   var slides = Array.prototype.slice.call(document.querySelectorAll(".slide")), have = { hello: true }, at = 0;
   function rotate(keep) {
+    var h = held();
+    if (h) { slides.forEach(function (s) { s.classList.toggle("on", s.dataset.s === h); }); $("dots").textContent = ""; return; }
     var on = slides.filter(function (s) { return have[s.dataset.s]; });
     if (!keep) at = (at + 1) % on.length; else at = Math.min(at, on.length - 1);
     slides.forEach(function (s) { s.classList.toggle("on", s === on[at]); });
@@ -199,10 +228,10 @@
   }
   var SLIDE_MS = 9000, nextAt = performance.now() + SLIDE_MS, cd = $("countdown"), ring = $("cd-ring"), num = $("cd-n");
   (function frame(now) {  // one clock drives both the slide change and the countdown, so they can't drift apart
-    if (mode !== "idle") nextAt = now + SLIDE_MS;           // starts fresh when the screen goes back to idle
+    if (mode !== "idle" || held()) nextAt = now + SLIDE_MS;  // starts fresh when the screen goes back to idle (or stops holding one slide)
     else if (now >= nextAt) { rotate(); nextAt = now + SLIDE_MS; }
     var left = Math.max(0, nextAt - now);
-    cd.hidden = slides.filter(function (x) { return have[x.dataset.s]; }).length < 2;
+    cd.hidden = !!held() || slides.filter(function (x) { return have[x.dataset.s]; }).length < 2;
     ring.style.strokeDashoffset = 100 - 100 * left / SLIDE_MS;   // the ring empties as time runs out
     var secs = String(Math.ceil(left / 1000)); if (num.textContent !== secs) num.textContent = secs;
     requestAnimationFrame(frame);
@@ -285,11 +314,12 @@
     }, POLL);
   }
   function stopPoll() { if (poll) clearInterval(poll); poll = null; }
-  function later() { clearTimeout(back); back = setTimeout(idle, IDLE_AFTER); }
+  function later() { clearTimeout(back); back = setTimeout(rest, IDLE_AFTER); }
 
   // ---- one-time sign-in code ----
   var qrPoll = null, qrTick = null;
   function stopSignin() { clearInterval(qrPoll); clearInterval(qrTick); qrPoll = qrTick = null; $("c-signin").hidden = true; }
+  function ended() { stopSignin(); if (temp) rest(); }  // used or run out: back to the held screen, if there is one
   function signin(l) {
     stopSignin();
     var box = $("c-signin"), until = Date.now() + l.seconds * 1000;
@@ -300,22 +330,22 @@
     function tick() {
       var s = Math.max(0, Math.round((until - Date.now()) / 1000));
       box.querySelector(".left").textContent = s + "s left";
-      if (!s) stopSignin();
+      if (!s) ended();
     }
     tick(); qrTick = setInterval(tick, 1000);
     qrPoll = setInterval(function () {
       fetch("/api/display/qr/" + l.id, { credentials: "same-origin", cache: "no-store" }).then(ok).then(function (d) {
         if (d.state === "used") {
           stopSignin(); box.className = "signin done"; box.textContent = "Signed in on a phone."; box.hidden = false;
-          setTimeout(function () { if (box.classList.contains("done")) box.hidden = true; }, 8000);
-        } else if (d.state !== "waiting") stopSignin();
+          setTimeout(function () { if (box.classList.contains("done") && !box.hidden) { box.hidden = true; if (temp) rest(); } }, 8000);
+        } else if (d.state !== "waiting") ended();
       }).catch(gone);
     }, 1500);
     later();
   }
 
   // ---- hidden / signed out ----
-  function blank(msg) { stopSignin(); cur = null; stopPoll(); clearTimeout(back); $("blank-msg").textContent = msg || ""; screen("blank"); }
+  function blank(msg) { stopSignin(); temp = false; cur = null; stopPoll(); clearTimeout(back); $("blank-msg").textContent = msg || ""; screen("blank"); }
   function ok(r) { if (r.redirected || r.status === 401 || r.status === 303) throw "out"; if (!r.ok) throw r.status; return r.json(); }
   function gone(e) { if (e === "out") blank("Sign in to Fizzy on the staff screen."); }
 
@@ -323,10 +353,24 @@
   function handle(m) {
     if (typeof m === "string") { try { m = JSON.parse(m); } catch (e) { return; } }
     if (!m || !m.type) return;
-    if (m.auto && mode === "blank" && hidden) return;  // hidden from the menu stays hidden while staff move between pages
-    if (m.type === "show") { show(m.customer); if (m.login) signin(m.login); }
-    else if (m.type === "idle") { hidden = false; idle(); }
-    else if (m.type === "hide") { hidden = true; blank(""); }
+    if (m.type === "mode") {                 // the staff header's Display menu: picked (or, with auto, sent again as each page opens)
+      if (m.auto && menuHidden) return;      // hidden from the Mac menu stays hidden while staff move between pages
+      if (!m.auto) menuHidden = false;
+      setMode(m.mode, m.auto);
+    } else if (m.type === "hide") {          // Mac menu, Hide customer display: the same as Hidden
+      menuHidden = true; setMode("hide");
+    } else if (m.auto) {                     // a staff page opening: followed only on Auto
+      if (want !== "auto" || menuHidden) return;
+      clearTimeout(pending); temp = false;
+      if (m.type === "show") show(m.customer); else if (m.type === "idle") idle();
+    } else if (m.type === "idle") {          // Mac menu, Show customer display: back to Auto
+      menuHidden = false; setMode("auto"); clearTimeout(pending); idle();
+    } else if (m.type === "show") {          // asked for on purpose (Sign-in code): shown whatever's chosen, then back
+      clearTimeout(pending);
+      var over = want !== "auto";
+      show(m.customer); if (m.login) signin(m.login);
+      temp = over && cur !== null;
+    }
   }
   // The Mac app calls this. Its staff pages also broadcast the same message, so once the app has
   // spoken, the broadcast copy is ignored (otherwise every message would land twice).
@@ -337,7 +381,7 @@
   // Keep the screen awake where the browser allows it (the Mac app does this itself).
   function awake() { if (navigator.wakeLock) navigator.wakeLock.request("screen").catch(function () {}); }
   document.addEventListener("visibilitychange", function () { if (!document.hidden) awake(); });
-  awake(); idle();
+  awake(); rest();
 })();
 </script>
 </body>

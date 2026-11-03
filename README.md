@@ -122,11 +122,24 @@ away (the staff page sends it directly, not through the server). When a Square s
 "+300 points" within a few seconds. It goes back to the idle screen 90 seconds after the last change,
 or when you go to any other page. It also shows what they owe on their tab, including anything overdue (turn that off in Settings, Customer display). Never shown: surnames or the score breakdown.
 
+**Choosing what it shows.** The **Display** menu in the staff header (a little screen icon on
+smaller screens) picks what the display shows. **Auto** (the default) is the above: a customer's
+page shows them, any other page shows the idle screens taking turns. Or hold it on one screen:
+**Welcome**, **On the shelf**, **Popular today**, **Top this month** or **Coming up** (one with nothing
+on it yet shows Welcome instead), **Rotate all** (the idle screens taking turns, whatever page is
+open), or **Hidden** (just the logo). While it's on anything but Auto, moving between pages, customers'
+pages too, doesn't change the display. The choice belongs to the device driving the display (it's
+kept in that browser, and every staff tab open in it shows the same choice), every page sends it
+again as it opens, and the display remembers it too, so reloading it comes back on the same screen. The Mac app's Display menu does the same: Hide is
+Hidden, Show is Auto.
+
 **Sign-in code.** On a customer's page, press **Sign-in code** (or Q) and a QR code appears on the
 display. Scanning it signs them in to the student site without their passcode (or before they have
 one). It only appears when you press the button, works once, lasts a minute, and the display says
 "Signed in on a phone" when it's used, so a photo taken from the queue is no good and a stolen one
-gets noticed. **Edit customer, Sign out their phones** signs them out everywhere.
+gets noticed. It shows even when the display is held on one screen or hidden: that customer and
+the code come up, and the held screen comes back once the code is used or runs out. **Edit
+customer, Sign out their phones** signs them out everywhere.
 
 ### Security keys
 

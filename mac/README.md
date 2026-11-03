@@ -56,8 +56,8 @@ The menu bar:
 
 | Menu | Item | What it does |
 | --- | --- | --- |
-| Display | Hide customer display (Cmd+Shift+H) | Tells the display to hide what it's showing |
-| Display | Show customer display | Tells the display to go back to its idle screen |
+| Display | Hide customer display (Cmd+Shift+H) | Hides what the display is showing (the same as Display: Hidden in Fizzy's header) |
+| Display | Show customer display | Puts the display back on Auto (Display: Auto in Fizzy's header) |
 | Display | Reload display | Loads the display page again |
 | Display | Move display to other screen | Puts the display on the next screen and remembers it |
 | File | Open Link (Cmd+L) | Opens a pasted Fizzy link in the staff window |

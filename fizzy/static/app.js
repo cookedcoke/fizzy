@@ -359,6 +359,51 @@
     try { new BroadcastChannel("fizzy-display").postMessage(m); } catch (e) {}
   }
 
+  // ---- what the customer display shows (header, "Display") ----------------------------------
+  // Chosen per device (the counter computer driving the display), so it's kept in localStorage.
+  // "auto": each page says what it shows (a customer's page: them; any other page: the idle screens).
+  // Anything else holds the display there whatever page is open: "rotate" (the idle screens taking
+  // turns), one idle slide held still (the display shows Welcome while that slide has nothing on it),
+  // or "hide" (the logo). Every page sends the choice again as it opens, so the display agrees.
+  // displayMem: the pick, when this browser wouldn't save it (private mode, storage full); then it's
+  // kept for this tab, and wins over whatever older value storage still gives back.
+  var DISPLAY_MODES = ["auto", "rotate", "hide", "hello", "menu", "popular", "leaders", "soon"], DISPLAY_KEY = "fizzy-display-mode", displayMem = null;
+  function displayMode() {
+    var m = displayMem;
+    if (m === null) { try { m = localStorage.getItem(DISPLAY_KEY); } catch (e) { m = null; } }
+    return DISPLAY_MODES.indexOf(m) >= 0 ? m : "auto";
+  }
+  // again: sent as a page opens, not picked (the display ignores it while hidden from the Mac app's menu).
+  function tellDisplay(again) {
+    var m = displayMode(), msg = { type: "mode", mode: m };
+    if (again) msg.auto = true;
+    sendDisplay(msg);
+    if (m === "auto" && $("header nav")) {
+      var dm = json("#display-msg") || { type: "idle" };
+      dm.auto = true;
+      sendDisplay(dm);
+    }
+  }
+  function setDisplayMode(m) {
+    if (DISPLAY_MODES.indexOf(m) < 0) m = "auto";
+    try { localStorage.setItem(DISPLAY_KEY, m); displayMem = null; } catch (e) { displayMem = m; }
+    showDisplayMode($("[data-display-mode]"));
+    tellDisplay(false);
+  }
+  // The header's menu shows this device's choice (amber when it's holding the display; the name in
+  // its tooltip, for when it's folded down to an icon).
+  function showDisplayMode(sel) {
+    if (!sel) return;
+    var m = displayMode(), box = sel.closest(".dmode");
+    sel.value = m; sel.classList.add("ready");
+    if (box) {
+      box.classList.toggle("held", m !== "auto");
+      box.title = "Customer display: " + (sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : "Auto");
+    }
+  }
+  // The Mac app's Display menu: Hide customer display is Hidden, Show customer display is Auto.
+  window.fizzyDisplayMode = setDisplayMode;
+
   // ==== each page ====================================================================================
 
   // ---- "new sale - claim it?" (customer page) ------------------------------------------------
@@ -570,12 +615,21 @@
     var auto = $("[data-autorefresh]"); if (auto) autoRefresh(auto);
     later(unprerender);
     var jb = $("#jobbar"); if (jb) jobBar(jb);
-    // Customer display: tell the screen facing the queue who's being served. Straight to it, no
-    // server in between: the Mac app's bridge, or a BroadcastChannel when it's a second browser window.
+    // Customer display: tell the screen facing the queue what to show (on Auto, who's being served).
+    // Straight to it, no server in between: the Mac app's bridge, or a BroadcastChannel when it's a
+    // second browser window. The header's Display menu shows this device's choice.
     if ($("header nav")) {
-      var dm = json("#display-msg") || { type: "idle" };
-      dm.auto = true;
-      sendDisplay(dm);
+      var dsel = $("[data-display-mode]");
+      if (dsel) {
+        showDisplayMode(dsel);
+        listen(dsel, "change", function () { setDisplayMode(dsel.value); });
+        // Picked in another tab on this device: show it here too (that tab has told the display already).
+        listen(window, "storage", function (e) {
+          if (e.key !== DISPLAY_KEY && e.key !== null) return;
+          displayMem = null; showDisplayMode(dsel);
+        });
+      }
+      tellDisplay(true);
     }
     section(location.hash.slice(1));
     // Warm the index as soon as the page is idle so the first keystroke is instant.
