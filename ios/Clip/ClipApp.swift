@@ -114,12 +114,18 @@ struct HuntView: View {
                                            description: Text("Find a Cooked Coke hunt poster and scan its code."))
                 }
                 Section {
-                    Button { scanning = true } label: { Label("Scan the next code", systemImage: "qrcode.viewfinder").bold() }
                 } footer: {
                     Text("Kept on this phone, so scan every code with it. Have My CCC? Sign in there and it moves to your account.")
                 }
             }
             .navigationTitle("Hunt")
+            .toolbar {
+                // Up top so it's always in reach, however long the list of stops.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { scanning = true } label: { HStack(spacing: 6) { Image(systemName: "qrcode.viewfinder"); Text("Scan") }.bold() }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
             .overlay { if hunt.loading && hunt.cards.isEmpty { ProgressView() } }
             .refreshable { await hunt.refresh() }
             .sheet(isPresented: $scanning) {
