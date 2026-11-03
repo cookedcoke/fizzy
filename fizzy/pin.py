@@ -53,7 +53,7 @@ ACTIONS = [
     ("redeem", "Redeem rewards, and undo them", [("POST", r"^/customers/\d+/redeem/"), ("POST", r"^/redemptions/")], "pin"),
     ("rewards", "Set up and end rewards", [("POST", r"^/rewards")], "pin"),
     ("events", "Double points days", [("POST", r"^/events")], "pin"),
-    ("challenges", "Start challenges (scavenger hunts), and give their prizes",
+    ("challenges", "Start, pause and delete challenges (scavenger hunts), and give their prizes",
      [("POST", r"^/challenges$"), ("POST", r"^/customers/\d+/prizes/\d+/given$"), ("POST", r"^/customers/\d+/claim-prize$")], "pin"),
     ("tab_decisions", "Change someone's tab limit (tab score adjustment), or turn their tab off", [("POST", r"^/customers/\d+/tab$")], "pin"),
     ("tab_money", "Tab money by hand: repayments, charges, write-offs, more time",
@@ -203,6 +203,16 @@ def required(conn, method, path, form=None, staff=None):
         if method != "POST":
             return OPEN
         level = LEVELS[OTHER]
+    if re.match(r"^/rules/\d+/(pause|resume|delete)$", path):
+        # A challenge: stopping (or restarting) it needs no more than starting one did.
+        row = conn.execute("SELECT kind FROM rules WHERE id = ?", (int(path.split("/")[2]),)).fetchone()
+        if row and row["kind"] == "challenge":
+            level = min(level, LEVELS[perms["challenges"]])
+    if path == "/challenges" and form is not None and _number(form.get("prize_points")) > 0:
+        # A hunt's prize points are points given by hand, to everyone who finishes.
+        level = max(level, LEVELS[perms["points"]])
+        if _number(form.get("prize_points")) > perms["big_points"]:
+            level = max(level, LEVELS[perms["big"]])
     payment = None
     m = re.match(r"^/square/payments/([^/]+)/(assign|kind)$", path)
     if m:
@@ -346,6 +356,10 @@ def rules(conn, staff=None):
     pts, dollars = _running(conn, staff)
     perms, eff = permissions(conn), lambda lv: _eff(conn, lv)
     acts = [[m, p, eff(LEVELS[perms[aid]])] for aid, _, pats, _ in ACTIONS for m, p in pats]
+    # Challenges' pause, restart and delete: as for starting one, when that's lower (see required).
+    hunt = min(LEVELS[perms["rules"]], LEVELS[perms["challenges"]])
+    acts = [["POST", rf"^/rules/{r[0]}/(pause|resume|delete)$", eff(hunt)]
+            for r in conn.execute("SELECT id FROM rules WHERE kind = 'challenge' AND deleted_at IS NULL")] + acts
     return {"free": FREE, "locked": [[p, eff(OWNER)] for p in LOCKED], "actions": acts, "other": eff(LEVELS[OTHER]),
             "big": {"paths": BIG_PATHS, "points": perms["big_points"], "dollars": perms["big_dollars"],
                     "level": eff(LEVELS[perms["big"]]),

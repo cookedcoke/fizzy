@@ -1,0 +1,42 @@
+{#- The hunt's pieces, shared by the guest hunt page (me_hunt.html) and the signed-in home (me.html). -#}
+
+{% macro icon(kind) -%}
+<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+{%- if kind in ('found', 'got') %}<path d="M5 12.5l4.5 4.5L19 7.5"/>
+{%- elif kind == 'already' %}<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/>
+{%- elif kind == 'done' %}<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 4M17 6h2.5a2.5 2.5 0 0 1-2.6 4"/>
+{%- elif kind == 'soon' %}<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>
+{%- elif kind == 'over' %}<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>
+{%- elif kind == 'camera' %}<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1.5-2h5L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.5"/>
+{%- else %}<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>{% endif %}
+</svg>
+{%- endmacro %}
+
+{# What the scan just did: the first thing on the page after opening a poster's link. #}
+{% macro result(r) -%}
+<section class="scan-result is-{{ r.kind }}" role="status">
+  <span class="sr-ico">{{ icon(r.kind) }}</span>
+  <div><h2>{{ r.title }}</h2><p>{{ r.line }}</p></div>
+</section>
+{%- endmacro %}
+
+{% macro progress(done, total) -%}
+{% set pct = (100 * done / total)|round|int if total else 0 %}
+<div class="hunt-count"><span class="n">{{ done }} of {{ total }} found</span>{% if done < total %}<span class="left">{{ total - done }} to go</span>{% endif %}</div>
+<div class="bar hunt-bar" role="progressbar" aria-label="Stops found" aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ done }}"><i style="width:{{ pct }}%"></i></div>
+{%- endmacro %}
+
+{# Every stop: found ones filled in; the rest show their hint (never the code). #}
+{% macro stops(steps, just=None) -%}
+<ol class="stops">{% for s in steps %}
+  <li class="stop {{ 'got' if s.done }} {{ 'just' if just and s.done and s.label == just }}">
+    <span class="dot">{% if s.done %}{{ icon('got') }}{% endif %}</span>
+    <span class="st"><b>{{ s.label }}</b>{% if s.detail and not s.done %}<small>{{ s.detail }}</small>{% endif %}<span class="vh">{{ ' (found)' if s.done else ' (not found yet)' }}</span></span>
+  </li>{% endfor %}
+</ol>
+{%- endmacro %}
+
+{% macro next_poster() -%}
+<p class="next-poster"><span class="np-ico">{{ icon('camera') }}</span>
+  <span><b>Scan the next poster.</b> Open your camera and point it at the code. You can scan in the My CCC app too.</span></p>
+{%- endmacro %}

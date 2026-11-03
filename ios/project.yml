@@ -9,6 +9,12 @@ settings:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.2.0"
     CURRENT_PROJECT_VERSION: "7"
+settingGroups:
+  # My CCC and its App Clip: the App Store needs the clip's version and build to match the app's,
+  # so both come from here. Bump the build here for each upload.
+  myccc-version:
+    MARKETING_VERSION: "1.1.0"
+    CURRENT_PROJECT_VERSION: "3"
 targets:
   Fizzy:
     type: application
@@ -42,12 +48,11 @@ targets:
     dependencies:
       - target: MyCCCClip   # the App Clip, embedded in the app
     settings:
+      groups: [myccc-version]
       base:
         PRODUCT_NAME: CookedCoke
         PRODUCT_BUNDLE_IDENTIFIER: co.cookedcoke.student
         CODE_SIGN_ENTITLEMENTS: Student/Student.entitlements   # opens hunt poster links (link.cookedcoke.co)
-        MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: My CCC
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO   # HTTPS only, which is exempt
@@ -72,11 +77,10 @@ targets:
       - path: Student/TileReader.swift
       - path: Fizzy/JSON.swift
     settings:
+      groups: [myccc-version]   # the same version and build as My CCC
       base:
         PRODUCT_NAME: MyCCCClip
         PRODUCT_BUNDLE_IDENTIFIER: co.cookedcoke.student.Clip
-        MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "2"
         CODE_SIGN_ENTITLEMENTS: Clip/Clip.entitlements
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: My CCC

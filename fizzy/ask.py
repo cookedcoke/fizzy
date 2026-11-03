@@ -204,6 +204,22 @@ def _summary(conn, start, end, group_by):
             "note": "To compare weekdays fairly, divide by trading_days_per_weekday (some weekdays had more trading days)."}
 
 
+def _for_fizz(r):
+    """A rule as Fizz sees it: never a challenge's codes, which are what stops anyone winning without finding them."""
+    out = {k: r[k] for k in ("id", "kind", "name", "summary", "paused", "students", "points", "spec")}
+    if isinstance(out["spec"].get("steps"), list):
+        out["spec"] = dict(out["spec"], steps=[{k: v for k, v in s.items() if k != "code"} if isinstance(s, dict) else s
+                                               for s in out["spec"]["steps"]])
+    return out
+
+
+def _hide_codes(action, table, column, *_):
+    """SQL for Fizz reads rules.spec as NULL (it holds the hunts' secret codes); list_rules shows rules without them."""
+    if action == sqlite3.SQLITE_READ and table == "rules" and column == "spec":
+        return sqlite3.SQLITE_IGNORE
+    return sqlite3.SQLITE_OK
+
+
 def _sql(query):
     q = query.strip().rstrip(";")
     if not re.match(r"(?is)^\s*(select|with)\b", q) or ";" in q:
@@ -214,6 +230,7 @@ def _sql(query):
     ro.set_progress_handler(lambda: 1 if time.monotonic() - started > 5 else 0, 10000)  # 5 second cap
     try:
         ro.execute("PRAGMA query_only = 1")
+        ro.set_authorizer(_hide_codes)
         cur = ro.execute(q)
         rows = cur.fetchmany(ROW_CAP + 1)
         out = [dict(r) for r in rows[:ROW_CAP]]
@@ -295,7 +312,7 @@ def run_tool(conn, who, name, args):
         if name == "list_rules":
             from . import badges
             return {"built_in_badges": badges.built_in(conn),   # always on, can't be changed from here
-                    "custom_rules": [{k: r[k] for k in ("id", "kind", "name", "summary", "paused", "students", "points", "spec")} for r in rules.listing(conn)]}
+                    "custom_rules": [_for_fizz(r) for r in rules.listing(conn)]}
         if name == "preview_rule":
             return _preview(conn, args.get("rule_json", ""))
         if name == "propose":

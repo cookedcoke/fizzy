@@ -29,6 +29,22 @@ final class Hunt {
         get { UserDefaults.standard.url(forKey: "huntBase") }
         set { UserDefaults.standard.set(newValue, forKey: "huntBase") }
     }
+    var baseHost: String? { base?.host?.lowercased() }
+    /// Bumped by every request: only the latest one's answer is shown (a launch can start two at once).
+    private var latest = 0
+    /// Something has been asked for already (the link the clip was opened with), so there's no need to refresh.
+    var started: Bool { latest > 0 }
+
+    /// The hosts whose codes are ours: the posters' short links and the student site.
+    nonisolated static let hosts: Set<String> = ["link.cookedcoke.co", "my.cookedcoke.co"]
+
+    /// A scanned code the clip can use: a hunt code's link on one of our hosts (or the one the clip was opened
+    /// from, for a test server). Not a counter sign-in code (…/q/…), and not anyone else's link.
+    nonisolated static func accepts(_ text: String, alsoHost: String?) -> Bool {
+        guard let url = URL(string: text), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              let host = url.host?.lowercased(), hosts.contains(host) || host == alsoHost else { return false }
+        return StudentAPI.huntCode(in: url) != nil
+    }
 
     private let session: URLSession = {
         let c = URLSessionConfiguration.default
@@ -41,49 +57,74 @@ final class Hunt {
 
     /// A code's link (from the camera, or the clip's own scanner): ask the server what it means.
     func open(_ url: URL) async {
-        if var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-            c.path = ""; c.query = nil; c.fragment = nil
-            base = c.url
-        }
-        await fetch(url)
+        var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        c?.path = ""; c?.query = nil; c?.fragment = nil
+        guard let root = c?.url else { return }
+        // Not a code (the link host's start page, or /hunt): what this phone has found there.
+        await fetch(StudentAPI.huntCode(in: url) != nil ? url : Self.huntPage(root), base: root)
     }
 
     /// Opened without a code: what this phone has found so far.
     func refresh() async {
         guard let base else { return }
-        // The short-link and student hosts answer /hunt; anywhere else the student pages are under /me.
-        let host = base.host ?? ""
-        await fetch(base.appendingPathComponent(host.hasPrefix("link.") || host.hasPrefix("my.") ? "hunt" : "me/hunt"))
+        await fetch(Self.huntPage(base), base: nil)
     }
 
-    private func fetch(_ url: URL) async {
+    /// The short-link and student hosts answer /hunt; anywhere else the student pages are under /me.
+    nonisolated static func huntPage(_ root: URL) -> URL {
+        let host = root.host ?? ""
+        return root.appendingPathComponent(host.hasPrefix("link.") || host.hasPrefix("my.") ? "hunt" : "me/hunt")
+    }
+
+    /// `base`: where to come back to for progress, saved once this answer has been read.
+    private func fetch(_ url: URL, base newBase: URL?) async {
+        latest += 1
+        let mine = latest
         loading = true
-        defer { loading = false }
+        defer { if mine == latest { loading = false } }
         do {
             restoreCookies(for: url)
             let (data, _) = try await session.data(from: url)
             saveCookies(for: url)
             let page = try JSONDecoder().decode(J.self, from: data)
+            guard mine == latest else { return }   // a newer request's answer is the one to show
+            if let newBase { base = newBase }
             if !page.cards.isNull { cards = page.cards.array }
             message = page.message.optString
             ok = page.ok.bool
             problem = nil
         } catch {
+            guard mine == latest else { return }
             problem = isOffline(error) ? "No signal. Try the code again when there is." : "Couldn't reach Cooked Coke. Try again."
         }
     }
 
+    private static func cookieKey(_ url: URL) -> String { "huntCookies." + (url.host?.lowercased() ?? "") }
+
     /// The session cookie is this phone's progress. iOS writes cookies to disk lazily, and a clip can be
-    /// closed seconds after a scan, so keep our own copy.
+    /// closed seconds after a scan, so keep our own copy, one per host. Only plain values are kept (UserDefaults
+    /// takes nothing else): text, dates and numbers, with any URL as text.
     private func saveCookies(for url: URL) {
         let cookies = HTTPCookieStorage.shared.cookies(for: url) ?? []
-        let saved = cookies.compactMap { $0.properties }.map { $0.reduce(into: [String: Any]()) { $0[$1.key.rawValue] = $1.value } }
-        UserDefaults.standard.set(saved, forKey: "huntCookies")
+        let saved: [[String: Any]] = cookies.compactMap { $0.properties }.map { props in
+            props.reduce(into: [String: Any]()) { out, p in
+                switch p.value {
+                case let v as String: out[p.key.rawValue] = v
+                case let v as Date: out[p.key.rawValue] = v
+                case let v as NSNumber: out[p.key.rawValue] = v
+                case let v as URL: out[p.key.rawValue] = v.absoluteString
+                default: break
+                }
+            }
+        }
+        guard PropertyListSerialization.propertyList(saved, isValidFor: .binary) else { return }
+        UserDefaults.standard.set(saved, forKey: Self.cookieKey(url))
     }
 
     private func restoreCookies(for url: URL) {
         guard HTTPCookieStorage.shared.cookies(for: url)?.isEmpty != false,
-              let saved = UserDefaults.standard.array(forKey: "huntCookies") as? [[String: Any]] else { return }
+              let saved = (UserDefaults.standard.array(forKey: Self.cookieKey(url))
+                           ?? UserDefaults.standard.array(forKey: "huntCookies")) as? [[String: Any]] else { return }   // or 1.1's one copy
         for p in saved {
             let props = Dictionary(uniqueKeysWithValues: p.map { (HTTPCookiePropertyKey($0.key), $0.value) })
             if let c = HTTPCookie(properties: props) { HTTPCookieStorage.shared.setCookie(c) }
@@ -115,7 +156,7 @@ struct HuntView: View {
                 }
                 Section {
                 } footer: {
-                    Text("Kept on this phone, so scan every code with it. Have My CCC? Sign in there and it moves to your account.")
+                    Text("Kept on this phone, so scan every code with it. Found them all? Show your claim code at the stall and staff put the prize on your account.")
                 }
             }
             .navigationTitle("Hunt")
@@ -129,7 +170,8 @@ struct HuntView: View {
             .overlay { if hunt.loading && hunt.cards.isEmpty { ProgressView() } }
             .refreshable { await hunt.refresh() }
             .sheet(isPresented: $scanning) {
-                CodeScanner(title: "Scan the next code", guide: .poster, read: { URL(string: $0)?.scheme?.lowercased().hasPrefix("http") == true ? $0 : nil }) { text in
+                CodeScanner(title: "Scan the next code", guide: .poster,
+                            read: { [alsoHost = hunt.baseHost] in Hunt.accepts($0, alsoHost: alsoHost) ? $0 : nil }) { text in
                     scanning = false
                     if let url = URL(string: text) { Task { await hunt.open(url) } }
                 }
@@ -146,7 +188,8 @@ struct HuntView: View {
             // Xcode's App Clip testing variable, for a launch that doesn't deliver the link itself.
             if let s = ProcessInfo.processInfo.environment["_XCAppClipURL"], let url = URL(string: s) { await hunt.open(url); return }
             #endif
-            if hunt.cards.isEmpty { await hunt.refresh() }
+            // Opened from a poster, the link's own answer is on its way (and is newer): don't ask twice.
+            if hunt.cards.isEmpty && !hunt.started { await hunt.refresh() }
         }
     }
 }

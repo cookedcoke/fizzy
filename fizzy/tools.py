@@ -568,8 +568,12 @@ def h_delete_test_accounts(request, conn, who, form):
                         "), so nothing was deleted. Turn that account into a normal one instead.")
     # Square sales put on a test account go back to "no customer" rather than vanishing.
     conn.execute(f"UPDATE square_payments SET customer_id = NULL WHERE customer_id IN ({marks})", ids)
-    for table in ("redemptions", "points_ledger", "tab_repayments", "tab_charges", "tab_decisions", "square_aliases"):
+    for table in ("redemptions", "points_ledger", "tab_repayments", "tab_charges", "tab_decisions", "square_aliases",
+                  "challenge_scans", "prizes", "qr_logins", "claim_waits"):
         conn.execute(f"DELETE FROM {table} WHERE customer_id IN ({marks})", ids)
+    # A hunt played as a guest and moved onto a test account: back to just that phone's.
+    conn.execute(f"UPDATE guest_finishes SET customer_id = NULL WHERE customer_id IN ({marks})", ids)
+    conn.execute(f"UPDATE guest_scans SET customer_id = NULL WHERE customer_id IN ({marks})", ids)
     conn.execute(f"DELETE FROM customers WHERE id IN ({marks})", ids)
     db.audit(conn, who, "test_accounts_deleted", None, f"{len(ids)} deleted")
     return done(request, "delete_test_accounts", f"Deleted {len(ids)} test account(s).")
@@ -594,9 +598,13 @@ def h_merge(request, conn, who, form):
         raise ToolError("Pick two different customers.")
     if (keep["kind"] == "test") != (dup["kind"] == "test"):
         raise ToolError("Can't merge a test account with a real customer.")
+    # A rule paid to both (the same badge, or the same hunt prize): keep's stays, the duplicate's goes.
+    conn.execute("DELETE FROM points_ledger WHERE customer_id = ? AND rule_key IS NOT NULL AND rule_key IN "
+                 "(SELECT rule_key FROM points_ledger WHERE customer_id = ? AND rule_key IS NOT NULL)", (dup["id"], keep["id"]))
     for table in ("points_ledger", "tab_charges", "tab_repayments", "square_payments", "tab_decisions", "audit_log",
                   "square_aliases", "redemptions"):
         conn.execute(f"UPDATE {table} SET customer_id = ? WHERE customer_id = ?", (keep["id"], dup["id"]))
+    _merge_challenges(conn, keep["id"], dup["id"])
     conn.execute("UPDATE customers SET merged_into = ? WHERE merged_into = ?", (keep["id"], dup["id"]))  # earlier merges
     # Square profiles: keep's stays primary; the duplicate's becomes an alias, so its future sales
     # (and the next customer sync) still land on the kept customer.
@@ -624,6 +632,26 @@ def h_merge(request, conn, who, form):
     logic.reconcile_tab_points(conn, dup["id"], staff=who)
     db.audit(conn, who, "merge", keep["id"], f"merged #{dup['id']} {dup['name']} <{dup['email']}> into this customer")
     return back(request, f"/customers/{keep['id']}", f"Merged {dup['name']} into {keep['name']}.")
+
+
+def _merge_challenges(conn, keep, dup):
+    """Hunt finds and prizes move to the kept customer. One prize per challenge: if both won it, keep the one
+    already handed over (else the earlier), so a drink isn't given twice or lost."""
+    conn.execute("INSERT OR IGNORE INTO challenge_scans(customer_id, rule_id, step_code, scanned_at) "
+                 "SELECT ?, rule_id, step_code, scanned_at FROM challenge_scans WHERE customer_id = ?", (keep, dup))
+    conn.execute("DELETE FROM challenge_scans WHERE customer_id = ?", (dup,))
+    for p in conn.execute("SELECT * FROM prizes WHERE customer_id = ?", (dup,)).fetchall():
+        k = conn.execute("SELECT * FROM prizes WHERE customer_id = ? AND rule_id = ?", (keep, p["rule_id"])).fetchone()
+        if k is None:
+            conn.execute("UPDATE prizes SET customer_id = ? WHERE id = ?", (keep, p["id"]))
+            continue
+        better = p if (p["given_at"] and not k["given_at"]) or (bool(p["given_at"]) == bool(k["given_at"]) and p["won_at"] < k["won_at"]) else k
+        if better is p:
+            conn.execute("UPDATE prizes SET won_at = ?, given_at = ?, given_by = ? WHERE id = ?",
+                         (p["won_at"], p["given_at"], p["given_by"], k["id"]))
+        conn.execute("DELETE FROM prizes WHERE id = ?", (p["id"],))
+    conn.execute("UPDATE guest_finishes SET customer_id = ? WHERE customer_id = ?", (keep, dup))
+    conn.execute("UPDATE guest_scans SET customer_id = ? WHERE customer_id = ?", (keep, dup))
 
 
 def h_bulk_archive(request, conn, who, form):

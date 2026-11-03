@@ -2,6 +2,7 @@
 
 Money is always integer cents. Times are UTC ISO-8601 strings.
 """
+import json
 import os
 import shutil
 import sqlite3
@@ -318,9 +319,9 @@ CREATE TABLE IF NOT EXISTS claim_waits (
 CREATE TABLE IF NOT EXISTS challenge_scans (
     customer_id INTEGER NOT NULL REFERENCES customers(id),
     rule_id INTEGER NOT NULL,
-    step INTEGER NOT NULL,                   -- index into the rule's steps
+    step_code TEXT NOT NULL,                 -- the step's code: stays put when a hunt is edited (steps can move)
     scanned_at TEXT NOT NULL,
-    PRIMARY KEY (customer_id, rule_id, step)
+    PRIMARY KEY (customer_id, rule_id, step_code)
 );
 CREATE TABLE IF NOT EXISTS prizes (
     id INTEGER PRIMARY KEY,
@@ -338,9 +339,10 @@ CREATE TABLE IF NOT EXISTS prizes (
 CREATE TABLE IF NOT EXISTS guest_scans (
     guest TEXT NOT NULL,                     -- a random id in that phone's session
     rule_id INTEGER NOT NULL,
-    step INTEGER NOT NULL,
+    step_code TEXT NOT NULL,                 -- as in challenge_scans
     scanned_at TEXT NOT NULL,
-    PRIMARY KEY (guest, rule_id, step)
+    customer_id INTEGER,                     -- whose account it was moved onto (so it moves once)
+    PRIMARY KEY (guest, rule_id, step_code)
 );
 CREATE TABLE IF NOT EXISTS guest_finishes (
     id INTEGER PRIMARY KEY,
@@ -416,6 +418,7 @@ def init(conn):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_restocks_client_id ON restocks(client_id) WHERE client_id IS NOT NULL")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_points_rule_key ON points_ledger(customer_id, rule_key) WHERE rule_key IS NOT NULL")
+    _scans_by_code(conn)
     # Passcodes were briefly stored as one-way hashes (column passcode_hash), which can't be read
     # back: those students show as "not set" so staff know to set a new one.
     if "passcode_hash" in {r["name"] for r in conn.execute("PRAGMA table_info(customers)")}:
@@ -427,6 +430,33 @@ def init(conn):
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
     conn.commit()
+
+
+def _scans_by_code(conn):
+    """Hunt scans were first kept by the step's position, which moved when a step was added or taken
+    out. They're kept by the step's code now: old rows get the code of the step that was at that position."""
+    for table, key in (("challenge_scans", "customer_id"), ("guest_scans", "guest")):
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "step_code" in cols:
+            continue
+        conn.execute(f"ALTER TABLE {table} RENAME TO {table}_by_index")
+        conn.executescript(SCHEMA)   # makes the new table (everything else is already there)
+        codes = {}
+        for r in conn.execute("SELECT id, spec FROM rules WHERE kind = 'challenge'"):
+            try:
+                codes[r["id"]] = [s.get("code") if isinstance(s, dict) else None for s in json.loads(r["spec"]).get("steps", [])]
+            except (TypeError, ValueError, AttributeError):
+                codes[r["id"]] = []
+        for r in conn.execute(f"SELECT {key}, rule_id, step, scanned_at FROM {table}_by_index").fetchall():
+            steps = codes.get(r["rule_id"], [])
+            code = steps[r["step"]] if isinstance(r["step"], int) and 0 <= r["step"] < len(steps) else None
+            if code:
+                conn.execute(f"INSERT OR IGNORE INTO {table}({key}, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?)",
+                             (r[key], r["rule_id"], code, r["scanned_at"]))
+        conn.execute(f"DROP TABLE {table}_by_index")
+        if table == "guest_scans":   # moved onto an account already: never again
+            conn.execute("UPDATE guest_scans SET customer_id = (SELECT f.customer_id FROM guest_finishes f "
+                         "WHERE f.guest = guest_scans.guest AND f.rule_id = guest_scans.rule_id)")
 
 
 def get_setting(conn, key, default=None):

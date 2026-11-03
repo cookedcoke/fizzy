@@ -24,45 +24,52 @@ struct CodeScanner: View {
         return url.lastPathComponent
     }
     @Environment(\.dismiss) private var dismiss
-    @State private var camera = Camera()
+    /// Made once the sheet is up (in .task), not each time a parent redraws: a capture session isn't cheap.
+    @State private var camera: Camera?
     @State private var pinchFrom: CGFloat?
 
     var body: some View {
         NavigationStack {
             Group {
-                if camera.denied {
-                    ContentUnavailableView("Can't use the camera", systemImage: "camera.fill",
-                                           description: Text("Allow camera access in Settings, then try again."))
+                if let camera {
+                    if camera.denied {
+                        ContentUnavailableView("Can't use the camera", systemImage: "camera.fill",
+                                               description: Text("Allow camera access in Settings, then try again."))
+                    } else {
+                        CameraPreview(session: camera.session)
+                            .ignoresSafeArea()
+                            .gesture(MagnifyGesture()
+                                .onChanged { g in
+                                    if pinchFrom == nil { pinchFrom = camera.zoom }
+                                    camera.setZoom((pinchFrom ?? 1) * g.magnification)
+                                }
+                                .onEnded { _ in pinchFrom = nil })
+                            .overlay { guides }
+                            .overlay(alignment: .bottom) { controls(camera) }
+                    }
                 } else {
-                    CameraPreview(session: camera.session)
-                        .ignoresSafeArea()
-                        .gesture(MagnifyGesture()
-                            .onChanged { g in
-                                if pinchFrom == nil { pinchFrom = camera.zoom }
-                                camera.setZoom((pinchFrom ?? 1) * g.magnification)
-                            }
-                            .onEnded { _ in pinchFrom = nil })
-                        .overlay { guides }
-                        .overlay(alignment: .bottom) { controls }
+                    Color.black.ignoresSafeArea()
                 }
             }
             .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                if camera.hasTorch {
+                if let camera, camera.hasTorch {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Torch", systemImage: camera.torch ? "flashlight.on.fill" : "flashlight.off.fill") { camera.toggleTorch() }
                     }
                 }
             }
         }
-        .sensoryFeedback(.success, trigger: camera.reads)
+        .sensoryFeedback(.success, trigger: camera?.reads ?? 0)
         .task {
+            let camera = Camera(posters: guide == .poster)   // a fresh one each time it's shown: a stopped session stays stopped
             camera.read = read
             camera.found = found
+            self.camera = camera
             await camera.start()
         }
-        .onDisappear { camera.stop() }
+        .onDisappear { camera?.stop() }
     }
 
     /// Corners to line the code or poster up in. Only a guide: anything in the frame still reads.
@@ -81,7 +88,7 @@ struct CodeScanner: View {
         .allowsHitTesting(false)
     }
 
-    private var controls: some View {
+    private func controls(_ camera: Camera) -> some View {
         VStack(spacing: 12) {
             Text(guide == .poster ? "Fit the whole poster inside the corners." : "Fit the code inside the corners.")
                 .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
@@ -97,6 +104,7 @@ struct CodeScanner: View {
 }
 
 /// The capture session. `zoom` is as the Camera app counts it: 1× is the main lens, whatever the phone.
+/// The session is set up, started and stopped on its own queue, never the main one.
 @Observable
 final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     static let presets: [CGFloat] = [1, 2, 3]
@@ -110,72 +118,115 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
     var hasTorch = false
     var reads = 0
 
+    /// Whole hunt posters: TileReader runs on frames too, for their packed codes. Off for a single code,
+    /// which the camera's own reader manages.
+    @ObservationIgnored private let posters: Bool
     @ObservationIgnored private var device: AVCaptureDevice?
     /// The zoom factor where a multi-lens camera hands over from ultra wide to the main lens.
     @ObservationIgnored private var mainLens: CGFloat = 1
     @ObservationIgnored private var done = false
     @ObservationIgnored private let queue = DispatchQueue(label: "co.cookedcoke.scanner")
+    /// On `queue`: stop() has been asked for, so a start still waiting there mustn't run the camera.
+    @ObservationIgnored private var stopped = false
     /// Frames for TileReader, for codes packed with no white border round them (the hunt posters).
     @ObservationIgnored private let frames = DispatchQueue(label: "co.cookedcoke.scanner.frames", qos: .userInitiated)
-    @ObservationIgnored private var tileBusy = false
+    /// On `frames`: when TileReader last started on a frame. It's slow, so about five a second is plenty.
+    @ObservationIgnored private var lastTile: CFTimeInterval = 0
+
+    init(posters: Bool) {
+        self.posters = posters
+        super.init()
+    }
 
     @MainActor
     func start() async {
         if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
             _ = await AVCaptureDevice.requestAccess(for: .video)
         }
+        guard !Task.isCancelled, !done else { return }   // closed while the permission question was up
         guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { denied = true; return }
         // A virtual multi-lens camera, so it moves to the ultra wide (macro) by itself when held close.
         let types: [AVCaptureDevice.DeviceType] = [.builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera]
         guard let device = AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .video, position: .back).devices.first,
               let input = try? AVCaptureDeviceInput(device: device) else { denied = true; return }
         self.device = device
-        mainLens = device.deviceType == .builtInDualCamera ? 1 : (device.virtualDeviceSwitchOverVideoZoomFactors.first.map { CGFloat(truncating: $0) } ?? 1)
+        let mainLens = device.deviceType == .builtInDualCamera ? 1 : (device.virtualDeviceSwitchOverVideoZoomFactors.first.map { CGFloat(truncating: $0) } ?? 1)
+        self.mainLens = mainLens
         hasTorch = device.hasTorch
+        let wanted = zoom
 
-        let output = AVCaptureMetadataOutput()
-        session.beginConfiguration()
-        if session.canAddInput(input) { session.addInput(input) }
-        // After the camera is attached: before that, nothing can do 4K and it quietly stays at 1080p.
-        session.sessionPreset = session.canSetSessionPreset(.hd4K3840x2160) ? .hd4K3840x2160 : .hd1920x1080
-        if session.canAddOutput(output) { session.addOutput(output) }
-        output.setMetadataObjectsDelegate(self, queue: .main)
-        output.metadataObjectTypes = output.availableMetadataObjectTypes.contains(.qr) ? [.qr] : []
-        let video = AVCaptureVideoDataOutput()
-        video.alwaysDiscardsLateVideoFrames = true   // only ever the latest frame, never a queue of old ones
-        video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
-        video.setSampleBufferDelegate(self, queue: frames)
-        if session.canAddOutput(video) { session.addOutput(video) }
-        session.commitConfiguration()
+        queue.async { [self] in
+            guard !stopped else { return }
+            let output = AVCaptureMetadataOutput()
+            session.beginConfiguration()
+            if session.canAddInput(input) { session.addInput(input) }
+            // After the camera is attached: before that, nothing can do 4K and it quietly stays at 1080p.
+            session.sessionPreset = session.canSetSessionPreset(.hd4K3840x2160) ? .hd4K3840x2160 : .hd1920x1080
+            if session.canAddOutput(output) { session.addOutput(output) }
+            output.setMetadataObjectsDelegate(self, queue: .main)
+            output.metadataObjectTypes = output.availableMetadataObjectTypes.contains(.qr) ? [.qr] : []
+            if posters {
+                let video = AVCaptureVideoDataOutput()
+                video.alwaysDiscardsLateVideoFrames = true   // only ever the latest frame, never a queue of old ones
+                video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+                video.setSampleBufferDelegate(self, queue: frames)
+                if session.canAddOutput(video) { session.addOutput(video) }
+            }
+            session.commitConfiguration()
 
-        try? device.lockForConfiguration()
-        if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
-        if device.isSmoothAutoFocusSupported { device.isSmoothAutoFocusEnabled = false }   // snap to focus, don't glide
-        device.unlockForConfiguration()
-        setZoom(zoom)
-
-        queue.async { [session] in session.startRunning() }
+            // The zoom after the preset: choosing a format puts it back to 1×.
+            let factor = Self.factor(wanted, device, mainLens)
+            do {
+                try device.lockForConfiguration()
+                if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+                if device.isSmoothAutoFocusSupported { device.isSmoothAutoFocusEnabled = false }   // snap to focus, don't glide
+                device.videoZoomFactor = factor
+                device.unlockForConfiguration()
+                DispatchQueue.main.async { self.zoom = factor / mainLens }
+            } catch {
+                // Someone else has the camera: it still reads, just without our focus and zoom.
+            }
+            session.startRunning()
+        }
     }
 
     func stop() {
-        queue.async { [session] in session.stopRunning() }
+        queue.async { [self] in
+            stopped = true
+            session.stopRunning()
+        }
+    }
+
+    /// The device's zoom factor for a Camera-app zoom, within what this camera can do (and 8× the main lens at most).
+    private static func factor(_ z: CGFloat, _ device: AVCaptureDevice, _ mainLens: CGFloat) -> CGFloat {
+        min(max(z * mainLens, device.minAvailableVideoZoomFactor), min(device.maxAvailableVideoZoomFactor, mainLens * 8))
     }
 
     func setZoom(_ z: CGFloat) {
         guard let device else { return }
-        let factor = min(max(z * mainLens, device.minAvailableVideoZoomFactor), min(device.maxAvailableVideoZoomFactor, mainLens * 8))
-        zoom = factor / mainLens
-        try? device.lockForConfiguration()
+        let factor = Self.factor(z, device, mainLens)
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            return
+        }
         device.videoZoomFactor = factor
         device.unlockForConfiguration()
+        zoom = factor / mainLens
     }
 
     func toggleTorch() {
         guard let device, device.hasTorch else { return }
-        try? device.lockForConfiguration()
-        device.torchMode = torch ? .off : .on
+        let mode: AVCaptureDevice.TorchMode = torch ? .off : .on
+        guard device.isTorchModeSupported(mode) else { return }
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            return
+        }
+        device.torchMode = mode
         device.unlockForConfiguration()
-        torch.toggle()
+        torch = mode == .on
     }
 
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject], from connection: AVCaptureConnection) {
@@ -185,16 +236,12 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
     }
 
     /// The camera's own reader needs a white border round a code; this reads the hunt posters' packed
-    /// codes, one frame at a time (frames that arrive while it's busy are dropped).
+    /// codes, a few frames a second (late frames are dropped, and so are frames between reads).
     func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard !tileBusy, let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
-        tileBusy = true
-        defer { tileBusy = false }
-        let image = CIImage(cvPixelBuffer: buffer)
-        // About 1440 pixels on the short side: enough for a whole poster, quick enough for a few frames a second.
-        let scale = min(1, 1440 / min(image.extent.width, image.extent.height))
-        let small = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        guard let frame = TileReader.ci.createCGImage(small, from: small.extent), let text = TileReader.read(frame) else { return }
+        let now = CACurrentMediaTime()
+        guard now - lastTile >= 0.2, let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
+        lastTile = now
+        guard let text = TileReader.read(buffer) else { return }
         DispatchQueue.main.async { self.use(text) }
     }
 

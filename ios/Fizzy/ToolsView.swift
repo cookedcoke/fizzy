@@ -316,7 +316,14 @@ struct ToolFormView: View {
             if let body = o.body { report = Pick(value: body); return }
             // The website shows a refusal as "<tool name>: <what was wrong>"
             if let m = o.message, m.hasPrefix("\(label):") || !o.ok { error = m; page.flash = nil; return }
-            if let from { from.flash = page.flash; Task { _ = await from.load() } }
+            if let from {
+                // After the reload, which sets the page's own message (none) and would wipe this one.
+                let flash = page.flash
+                Task {
+                    _ = await from.load()
+                    if let flash { from.flash = flash }
+                }
+            }
             dismiss()
         }
     }

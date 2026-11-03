@@ -1,29 +1,46 @@
 {% extends "me_base.html" %}{% block title %}Hunt · My Cooked Coke{% endblock %}
 {% block body %}
+{% import "_hunt.html" as hunt %}
+{% set r = scan_result(ok, note) if note else None %}
 <div class="top">
   <span class="wordmark"><img src="/static/logo.svg?v={{ V }}" alt="">My Cooked Coke</span>
-  <a class="pill" href="{{ me_url('/') }}">Sign in</a>
+  <a class="pill" href="{{ signin or me_url('/') }}">Sign in</a>
 </div>
-<main>
-  {% if note %}<div class="event {{ 'on' if ok }}" role="status">{{ note }}</div>{% endif %}
+<main class="hunt-page">
+  {% if r %}{{ hunt.result(r) }}{% endif %}
   {% for k in cards %}
-  <h2 class="section">{{ k.title }}</h2>
-  <div class="card reward {{ 'ready' if k.claim }}">
-    <div>
-      {% if k.claim and not k.claimed %}
-        <p class="tab-msg good">Finished! Show this at the stall:</p>
-        <div class="points"><div class="v" style="letter-spacing:.12em">{{ k.claim }}</div>
-          <div class="sub">Your claim code. Staff type it in to give you {{ k.prize|lower }}.</div></div>
-      {% elif k.claimed %}<p class="tab-msg good">Prize claimed. Nice one!</p>
-      {% else %}<div class="what">{{ k.text }} Prize: {{ k.prize }}.</div>
-        <div class="bar"><i style="width:{{ (100 * k.progress.done / k.progress.total)|round|int }}%"></i></div>
-        <div class="what">{{ k.progress.done }} of {{ k.progress.total }} found</div>{% endif %}
-      <ul class="feed">{% for st in k.steps %}<li><span class="when">{{ '✓' if st.done else '○' }}</span><span class="what">{{ st.label }}{% if st.detail and not st.done %} <span class="muted">· {{ st.detail }}</span>{% endif %}</span></li>{% endfor %}</ul>
-    </div>
+  <h2 class="section">{{ k.title }} <small>Prize: {{ k.prize }}</small></h2>
+  <div class="card hunt {{ 'ready' if k.claim }}">
+    {% if k.claimed %}
+      <p class="tab-msg good">Prize claimed. Nice one!</p>
+      <p class="tab-sub">You found all {{ k.progress.total }} and the stall has given you {{ k.prize|lower }}.</p>
+    {% elif k.claim %}
+      <p class="hunt-done">Finished! Show this at the stall:</p>
+      <div class="ticket">
+        <div class="t-k">Your claim code</div>
+        <div class="t-code" aria-label="{{ k.claim|list|join(' ') }}">{{ k.claim }}</div>
+        <div class="t-sub">Staff type it in to give you {{ k.prize|lower }}.</div>
+      </div>
+      <a class="go" href="{{ signin or me_url('/') }}">Sign in to put it on your account</a>
+      <p class="tab-sub center">No passcode yet? Just show the code - it works without one.</p>
+    {% else %}
+      <p class="what">{{ k.text }}</p>
+      {{ hunt.progress(k.progress.done, k.progress.total) }}
+    {% endif %}
+    {% if k.claim %}
+      <details class="more"><summary><span class="c">See all {{ k.steps|length }} stops</span><span class="o">Hide the stops</span></summary>{{ hunt.stops(k.steps) }}</details>
+    {% else %}
+      {{ hunt.stops(k.steps, r.label if r) }}
+      {{ hunt.next_poster() }}
+    {% endif %}
   </div>
   {% else %}
-  <div class="card"><p class="empty">Scan a hunt code with your phone's camera to start.</p></div>
+  <div class="card hunt-empty">
+    <span class="np-ico">{{ hunt.icon('camera') }}</span>
+    <p><b>Find a hunt poster to start.</b>
+      Open your phone's camera and point it at the code on a hunt poster.</p>
+  </div>
   {% endfor %}
-  <p class="note">This is kept on this phone, so use the same phone for every code. Have My CCC? Sign in and it moves to your account.</p>
+  <p class="note">This is kept in this browser, so scan every code with the same phone. <a href="{{ signin or me_url('/') }}">Sign in here</a> and what you've found moves to your account.</p>
 </main>
 {% endblock %}
