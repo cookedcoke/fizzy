@@ -43,8 +43,9 @@ LOCKED = [r"^/settings/(pin|permissions|maintenance|update|ask)$", r"^/settings/
 
 # (id, label, [(method, path)], default level). First match wins, so specific ones go first.
 ACTIONS = [
-    ("claim", "Claim Square sales, and say whose sale it was",
-     [("POST", r"^/customers/\d+/claim$"), ("POST", r"^/square/payments/[^/]+/assign$")], "open"),
+    ("claim", "Claim Square sales, say whose sale it was, or mark it No account",
+     [("POST", r"^/customers/\d+/claim$"), ("POST", r"^/customers/\d+/claim/next$"), ("POST", r"^/claim-waits/\d+/cancel$"),
+      ("POST", r"^/square/payments/[^/]+/assign$"), ("POST", r"^/square/no-account(/undo)?$")], "open"),
     ("sync", "Sync with Square, refresh the catalogue",
      [("POST", r"^/square/sync$"), ("POST", r"^/tools/sync_now$"), ("POST", r"^/profit/refresh$")], "open"),
     ("warnings", "Dismiss warnings, back up now", [("POST", r"^/breach/"), ("POST", r"^/settings/backup$")], "open"),
@@ -52,22 +53,22 @@ ACTIONS = [
     ("redeem", "Redeem rewards, and undo them", [("POST", r"^/customers/\d+/redeem/"), ("POST", r"^/redemptions/")], "pin"),
     ("rewards", "Set up and end rewards", [("POST", r"^/rewards")], "pin"),
     ("events", "Double points days", [("POST", r"^/events")], "pin"),
-    ("tab_decisions", "Approve, reject or revoke someone's tab", [("POST", r"^/customers/\d+/tab$")], "pin"),
+    ("tab_decisions", "Change someone's tab limit (tab score adjustment), or turn their tab off", [("POST", r"^/customers/\d+/tab$")], "pin"),
     ("tab_money", "Tab money by hand: repayments, charges, write-offs, more time",
      [("POST", r"^/customers/\d+/repay$"), ("POST", r"^/tools/(manual_charge|write_off|extend_due)$")], "pin"),
     ("customers", "Add and edit customers", [("POST", r"^/customers/\d+/edit$"), ("POST", r"^/tools/add_customer$")], "pin"),
-    ("ask", "Ask: questions about the stall, and suggestions", [("POST", r"^/ask(/clear|/stream|/dismiss/\d+)?$")], "pin"),
-    ("ask_apply", "Ask: do a suggestion (new badges and events, double points, rewards)", [("POST", r"^/ask/apply/\d+$")], "owner"),
+    ("ask", "Fizz: questions about the stall, and suggestions", [("POST", r"^/ask(/clear|/stream|/dismiss/\d+)?$")], "pin"),
+    ("ask_apply", "Fizz: do a suggestion (new badges and events, double points, rewards)", [("POST", r"^/ask/apply/\d+$")], "owner"),
     ("rules", "Pause, restart or delete custom badges and events", [("POST", r"^/rules/\d+/")], "owner"),
     ("qr_login", "Show a one-time sign-in code on the customer display", [("POST", r"^/customers/\d+/qr-login$")], "open"),
     ("passcodes", "Set or read back student passcodes", [("POST", r"^/customers/\d+/passcode")], "pin"),
-    ("money", "Add restocks and payouts", [("POST", r"^/money/(restock|payout)$")], "pin"),
+    ("money", "Add restocks and payouts", [("POST", r"^/money/(restock|payout)$"), ("POST", r"^/money/restock/\d+$")], "pin"),
     ("money_delete", "Delete restocks and payouts", [("POST", r"^/money/(restock|payout)/\d+/delete$")], "owner"),
     ("costs", "Item costs", [("POST", r"^/profit$")], "pin"),
     ("square_kind", "Change how a Square payment is counted", [("POST", r"^/square/payments/[^/]+/kind$")], "pin"),
-    ("school_tools", "Whole-school tools: reset points, revoke all, approve all, pause tabs, bonus for a period, "
+    ("school_tools", "Whole-school tools: reset points, turn off all tabs, pause tabs, bonus for a period, "
                      "archive/restore many, merge, re-sync, sign everyone out",
-     [("POST", r"^/tools/(reset_points|revoke_all|approve_eligible|pause_tabs|bonus_points|bulk_archive|restore|merge"
+     [("POST", r"^/tools/(reset_points|revoke_all|pause_tabs|bonus_points|bulk_archive|restore|merge"
                r"|resync|history|sign_out_all|delete_test_accounts)$")], "owner"),
     ("downloads", "Download exports and backups",
      [("GET", r"^/tools/(export/|backup\.db)"), ("GET", r"^/export/"), ("POST", r"^/tools/download_backup$")], "owner"),
@@ -80,12 +81,14 @@ ACTIONS = [
 ]
 OTHER = "pin"  # anything not listed (new pages) until it's given its own row
 # A points or money change by hand bigger than these needs the "big" level, whatever its row says.
-BIG_PATHS = r"^/(customers/\d+/(points|repay)|tools/|money/(restock|payout)$)"
+BIG_PATHS = r"^/(customers/\d+/(points|repay)|tools/|money/(restock|payout)$|money/restock/\d+$)"
 DEFAULTS = {"big_points": 500, "big_dollars": 50, "big": "owner"}
 
 
 class PinRequired(Exception):
-    pass
+    def __init__(self, need=PIN):
+        super().__init__(need)
+        self.need = need  # PIN or OWNER: what has to be entered
 
 
 # ---- the passcodes ---------------------------------------------------------------------------
@@ -213,7 +216,7 @@ def required(conn, method, path, form=None, staff=None):
             # old unclaimed sales would pad someone's tab score, so those need the PIN too.
             # Moving a sale that already belongs to someone isn't claiming: it takes from them.
             level = max(level, LEVELS[perms["square_kind"]])
-    if form is not None and not re.search(r"^/customers/\d+/claim$", path):
+    if form is not None and not re.search(r"^/customers/\d+/claim(/next)?$", path):
         kinds, complete = _targets(conn, path, form)
         if "admin" in kinds:
             level = max(level, LEVELS[perms["admin_accounts"]])
@@ -359,11 +362,13 @@ async def guard(request: Request):
     def check():  # in a worker thread: the database can wait on a write, and that mustn't stall every request
         conn = db.connect()
         try:
-            return required(conn, request.method, path, form, request.session.get("staff")) > unlocked(request, conn)
+            need = required(conn, request.method, path, form, request.session.get("staff"))
+            return need if need > unlocked(request, conn) else None
         finally:
             conn.close()
-    if await run_in_threadpool(check):
-        raise PinRequired()
+    need = await run_in_threadpool(check)
+    if need is not None:
+        raise PinRequired(need)
 
 
 # ---- pages -----------------------------------------------------------------------------------
@@ -452,9 +457,9 @@ async def save_permissions(request: Request, who=Depends(staff), conn=Depends(ge
         try:
             n = int(float(str(form.get(k, "")).replace(",", "").replace("$", "")))
         except ValueError:
-            return back(request, "/settings#permissions", "The limits must be whole numbers.")
+            return back(request, "/settings#permissions", "The limits must be whole numbers.", "bad")
         if not 0 <= n <= top:
-            return back(request, "/settings#permissions", f"Keep that limit between 0 and {top:,}.")
+            return back(request, "/settings#permissions", f"Keep that limit between 0 and {top:,}.", "bad")
         perms[k] = n
     db.set_setting(conn, "permissions", json.dumps(perms))
     db.audit(conn, who, "permissions", None, json.dumps(perms))

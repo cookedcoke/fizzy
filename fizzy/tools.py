@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from . import config, customers, db, logic, square
-from .web import back, cents, get_conn, local, money, render, staff
+from .web import back, cents, get_conn, local, money, render, safe_back, staff
 
 router = APIRouter(prefix="/tools")
 
@@ -30,9 +30,8 @@ TOOLS = [
         ("reset_points", "Reset all points", "Set everyone's points to 0. Spending and tabs aren't touched."),
     ]),
     ("Tabs", [
-        ("pause_tabs", "Pause all tabs", "Stop anyone using a tab for now. Turn it back on and everyone's approval is still there."),
-        ("approve_eligible", "Approve all eligible", "Approve everyone who's spent enough and hasn't been approved or rejected yet."),
-        ("revoke_all", "Revoke all tabs", "Take tabs off everyone, like at the end of the year."),
+        ("pause_tabs", "Pause all tabs", "Stop anyone using a tab for now. Turn it back on and nothing else has changed."),
+        ("revoke_all", "Turn off all tabs", "Turn everyone's tab off, like at the end of the year. Turn them back on one at a time."),
         ("manual_charge", "Add tab charge by hand", "Put something on someone's tab that didn't go through Square."),
         ("write_off", "Write off a debt", "Wipe some or all of what someone owes. No points for it."),
         ("extend_due", "Give more time to pay", "Give someone more days to pay what they owe."),
@@ -57,7 +56,7 @@ TOOLS = [
     ("Square", [
         ("sync_now", "Sync now", "Get the latest from Square now instead of waiting."),
         ("resync", "Re-sync from a date", "Go back over Square from a date, e.g. after Fizzy was down. Nothing gets counted twice."),
-        ("history", "Import sales history", "Bring in Square sales from before Fizzy started, for reports and Ask only. Nobody gets points, tabs or badges for them."),
+        ("history", "Import sales history", "Bring in Square sales from before Fizzy started, for reports and Fizz only. Nobody gets points, tabs or badges for them."),
         ("find_payment", "Find a Square payment", "Paste a Square payment ID to see what Fizzy did with it."),
     ]),
     ("Data", [
@@ -71,12 +70,17 @@ TOOLS = [
     ]),
 ]
 
+# Tools that answer with a page (a report, the raffle draw, the raw Square payment) rather than a redirect
+# back to /tools. Their forms load the classic way (data-turbo="false"): Turbo only draws a form's answer
+# when it's a redirect, so these would look like nothing happened (and a second click draws the raffle again).
+PAGE_TOOLS = {"takings", "chase", "balances", "leaderboard", "raffle", "integrity", "find_payment"}
+
 EXPORTS = {
     "customers": "SELECT id, name, email, square_customer_id, tab_decision, tab_decision_note, created_at, archived_at FROM customers",
     "points": "SELECT p.*, c.name FROM points_ledger p JOIN customers c ON c.id = p.customer_id",
     "tab_charges": "SELECT t.*, c.name FROM tab_charges t JOIN customers c ON c.id = t.customer_id",
     "repayments": "SELECT r.*, c.name FROM tab_repayments r JOIN customers c ON c.id = r.customer_id",
-    "square_payments": "SELECT square_payment_id, square_order_id, square_customer_id, customer_id, kind, amount_cents, tender, items, created_at FROM square_payments",
+    "square_payments": "SELECT square_payment_id, square_order_id, square_customer_id, customer_id, kind, amount_cents, tender, items, created_at, no_account, no_account_by FROM square_payments",
     "tab_decisions": "SELECT d.*, c.name FROM tab_decisions d JOIN customers c ON c.id = d.customer_id",
     "audit_log": "SELECT * FROM audit_log",
 }
@@ -171,7 +175,9 @@ def report(request, title, headers, rows, note=None, copy=None):
     # Columns that are all numbers or money line up on the right, like every other table.
     numeric = [bool(rows) and all(isinstance(r[i], (int, float)) or (isinstance(r[i], str) and (NUMBER.match(r[i].strip()) or not r[i].strip()))
                                   for r in rows) for i in range(len(headers))]
-    return render(request, "tool_result.html", title=title, headers=headers, rows=rows, note=note, copy=copy, numeric=numeric)
+    home = _back(request) or "/tools"
+    crumb = (home, PAGE_NAMES.get(home.split("?")[0]) or ("Customer" if home.startswith("/customers/") else "Back"))
+    return render(request, "tool_result.html", title=title, headers=headers, rows=rows, note=note, copy=copy, numeric=numeric, crumb=crumb)
 
 
 def _nice_day(iso):
@@ -181,26 +187,154 @@ def _nice_day(iso):
         return iso
 
 
-def done(request, tool, msg):
-    return back(request, f"/tools#{tool}", msg)
+def _back(request):
+    """The page a tool was run from, when it wasn't Tools (the form's hidden "back")."""
+    return getattr(getattr(request, "state", None), "tool_back", None)
+
+
+def done(request, tool, msg, kind="ok"):
+    """Back to where the tool was run (its own page, or Tools), opened at the tool with the message."""
+    return back(request, f"{_back(request) or '/tools'}#{tool}", msg, kind)
 
 
 def tool_names():
     return {t[0]: t[1] for _, items in TOOLS for t in items}
 
 
+# ---- where everything lives ---------------------------------------------------------------------
+# Every action lives on the page of the thing it changes (README, "Where things live"). Tools keeps a
+# copy of every tool form too, and an index of every action, each linking to its home.
+
+PAGE_NAMES = {"/": "Dashboard", "/customers": "Customers", "/transactions": "Sales", "/square": "Square", "/tabs": "Tabs",
+              "/rewards": "Rewards", "/money": "Money", "/profit": "Profit", "/settings": "Settings", "/audit": "Log",
+              "/tools": "Tools", "/display/settings": "Customer display"}
+CUSTOMER_PAGE = "A customer's page"
+
+# Tool id -> (link to its home, where that is).
+HOMES = {
+    "bulk_points": ("/customers#bulk_points", "Customers"),
+    "bonus_points": ("/rewards#bonus_points", "Rewards"),
+    "transfer_points": ("/customers", CUSTOMER_PAGE),
+    "reset_points": ("/rewards#reset_points", "Rewards"),
+    "pause_tabs": ("/tabs#pause_tabs", "Tabs"),
+    "revoke_all": ("/tabs#revoke_all", "Tabs"),
+    "manual_charge": ("/customers", CUSTOMER_PAGE),
+    "write_off": ("/customers", CUSTOMER_PAGE),
+    "extend_due": ("/customers", CUSTOMER_PAGE),
+    "add_customer": ("/customers#add_customer", "Customers"),
+    "merge": ("/customers#merge", "Customers"),
+    "bulk_archive": ("/customers#bulk_archive", "Customers"),
+    "restore": ("/customers#restore", "Customers"),
+    "test_accounts": ("/customers#test_accounts", "Customers"),
+    "delete_test_accounts": ("/customers#delete_test_accounts", "Customers"),
+    "takings": ("/transactions#takings", "Sales"),
+    "chase": ("/tabs#chase", "Tabs"),
+    "balances": ("/tabs#balances", "Tabs"),
+    "leaderboard": ("/rewards#leaderboard", "Rewards"),
+    "raffle": ("/rewards#raffle", "Rewards"),
+    "sync_now": ("/square", "Sales, Square"),
+    "resync": ("/square#resync", "Sales, Square"),
+    "history": ("/square#history", "Sales, Square"),
+    "find_payment": ("/square#find_payment", "Sales, Square"),
+    "export": ("/tools#exports", "Tools, and each page's own"),
+    "download_backup": ("/settings#backups", "Settings"),
+    "integrity": ("/settings#integrity", "Settings"),
+    "notice": ("/#notice", "Dashboard"),
+    "sign_out_all": ("/settings#sign_out_all", "Settings"),
+}
+
+# Each export, on the page its table belongs to.
+EXPORT_HOMES = {"customers": ("/customers#exports", "Customers"), "points": ("/rewards#points-export", "Rewards"),
+                "tab_charges": ("/tabs#tab-exports", "Tabs"), "repayments": ("/tabs#tab-exports", "Tabs"),
+                "tab_decisions": ("/tabs#tab-exports", "Tabs"), "square_payments": ("/square#square-export", "Sales, Square"),
+                "audit_log": ("/audit", "Log")}
+EXPORT_LABELS = {"customers": "customers", "points": "points history", "tab_charges": "tab charges", "repayments": "tab repayments",
+                 "tab_decisions": "tab decisions", "square_payments": "Square payments", "audit_log": "activity log"}
+
+# Actions that were never tools: (label, what it's for, link, where).
+PAGE_ACTIONS = [
+    ("Find a customer", "Search by name or student number. A card scan works on any page.", "/customers", "Customers"),
+    ("Claim sale", "Ring the sale up in Square first, then press Claim sale: it links the sale from the 30 seconds before.", "/customers", CUSTOMER_PAGE),
+    ("Pick a sale", "Choose from the latest Square sales with nobody on them.", "/customers", CUSTOMER_PAGE),
+    ("Record a repayment", "Money for a tab that didn't go through Square.", "/customers", CUSTOMER_PAGE),
+    ("Tab limit, or turn a tab off", "Pick a limit, adjust their tab score, or turn their tab off or back on.", "/customers", CUSTOMER_PAGE),
+    ("Adjust points", "Give or take points from one person.", "/customers", CUSTOMER_PAGE),
+    ("Redeem a reward", "Shows on their page once they have the points.", "/customers", CUSTOMER_PAGE),
+    ("Sign-in code", "A one-time QR code on the customer display for the student site.", "/customers", CUSTOMER_PAGE),
+    ("Student site passcode", "Set, show or remove someone's passcode.", "/customers", CUSTOMER_PAGE),
+    ("Edit a customer", "Name, Square ID, archive, account type, sign out their phones.", "/customers", CUSTOMER_PAGE),
+    ("Import the school list", "Upload the school CSV: preview, then confirm.", "/customers#import", "Customers"),
+    ("Export for Square", "A file to add people to Square (Square Dashboard, Customers, Import).", "/customers#exports", "Customers"),
+    ("Every sale", "Every Square checkout with who it was, by date.", "/transactions", "Sales"),
+    ("Assign a sale", "Say whose sale it was, for a sale with nobody on it.", "/square?show=unlinked", "Sales, Square"),
+    ("No account", "A teacher's sale, or anyone's without an account: it counts, nobody gets it.", "/square", "Sales, Square"),
+    ("Change how a payment counts", "Sale, tab charge, tab repayment, or not a real sale.", "/square", "Sales, Square"),
+    ("Who owes", "Everyone owing, overdue and due soon.", "/tabs", "Tabs"),
+    ("Tab rules", "Highest tab limit, days to pay, minimum tab score.", "/tabs#rules", "Tabs"),
+    ("Start a reward", "Something to spend points on, like a free Coke.", "/rewards#new-reward", "Rewards"),
+    ("Double points day", "Extra points on one day, a few days, or every week.", "/rewards#new-event", "Rewards"),
+    ("Custom badges and events", "Pause, restart or delete them. Make new ones with Fizz.", "/rewards#rules", "Rewards"),
+    ("Fizz (Ask)", "Questions about the stall, and suggestions you can do with one press.", "/#ask", "Dashboard"),
+    ("Restocks", "What we spent on stock, with the receipt.", "/money#restock", "Money"),
+    ("Pay the partners", "Record a payout.", "/money#payout", "Money"),
+    ("Item costs", "What one of each item costs us, for profit.", "/profit", "Money, Profit"),
+    ("Customer display message", "The message between customers, what's on the shelf, and showing what they owe.", "/display/settings", "Display menu"),
+    ("Who can do what", "Which actions need the PIN or the owner password.", "/settings#permissions", "Settings"),
+    ("Updates", "Update Fizzy.", "/settings#updates", "Settings"),
+    ("Gemini key for Fizz", "Turn Fizz on or off.", "/settings#ask", "Settings"),
+    ("Term dates", "For badges and events that work by term.", "/settings#terms", "Settings"),
+    ("Closed days", "cookedcoke.co shows Closed, and the dashboard a recap.", "/settings#closed", "Settings"),
+    ("PIN", "Set, change or remove the staff PIN.", "/settings#pin", "Settings"),
+    ("Maintenance mode", "A Back soon page for everyone.", "/settings#maintenance", "Settings"),
+    ("Back up now", "A copy in the backup folder.", "/settings#backups", "Settings"),
+    ("Security keys", "Sign in with a key or passkey.", "/settings#passkeys", "Settings"),
+    ("Devices", "Register a counter device.", "/settings#devices", "Settings"),
+    ("Activity log", "Everything everyone did, newest first.", "/audit", "Log"),
+]
+
+
+def index():
+    """Every action, for the search on Tools: {label, tip, href, where, section}."""
+    out = []
+    for section, items in TOOLS:
+        for tid, label, tip in items:
+            if tid == "export":
+                continue
+            href, where = HOMES[tid]
+            out.append({"id": tid, "label": label, "tip": tip, "href": href, "where": where, "section": section})
+    for name in EXPORTS:
+        href, where = EXPORT_HOMES[name]
+        out.append({"id": f"export_{name}", "label": f"Export {EXPORT_LABELS[name]}", "tip": "Download it as a spreadsheet (CSV).",
+                    "href": href, "where": where, "section": "Data"})
+    for label, tip, href, where in PAGE_ACTIONS:
+        out.append({"id": "", "label": label, "tip": tip, "href": href, "where": where, "section": "Pages"})
+    return out
+
+
+DANGER = ["reset_points", "revoke_all", "write_off", "merge", "sign_out_all", "bulk_archive", "delete_test_accounts"]
+
+
+def form_ctx(conn):
+    """What a page needs to draw tool forms (_tools.html). Every page with tools on it gets this as tool_ctx."""
+    people = conn.execute("SELECT name, email, archived_at FROM customers ORDER BY name").fetchall()
+    today = datetime.now(config.TZ).date()
+    hb = db.get_setting(conn, "history_before", "")
+    return {"people": [p for p in people if not p["archived_at"]], "archived": [p for p in people if p["archived_at"]],
+            "cfg": logic.settings(conn), "notice": db.get_setting(conn, "notice", ""), "exports": list(EXPORTS),
+            "export_labels": EXPORT_LABELS, "page_tools": PAGE_TOOLS, "today": today.isoformat(),
+            "week_ago": (today - timedelta(days=7)).isoformat(), "square_on": bool(config.SQUARE_TOKEN),
+            "history_before": local(hb, "%Y-%m-%d") if hb else "", "danger": DANGER,
+            "info": {t[0]: {"label": t[1], "tip": t[2], "section": s} for s, items in TOOLS for t in items}}
+
+
 # ---- page -------------------------------------------------------------------------------------
 
 @router.get("", response_class=HTMLResponse)
 def tools_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
-    people = conn.execute("SELECT name, email, archived_at FROM customers ORDER BY name").fetchall()
-    archived = [p for p in people if p["archived_at"]]
-    today = datetime.now(config.TZ).date().isoformat()
-    week_ago = (datetime.now(config.TZ).date() - timedelta(days=7)).isoformat()
-    return render(request, "tools.html", tools=TOOLS, people=[p for p in people if not p["archived_at"]],
-                  archived=archived, cfg=logic.settings(conn), notice=db.get_setting(conn, "notice", ""),
-                  exports=list(EXPORTS), today=today, week_ago=week_ago, square_on=bool(config.SQUARE_TOKEN),
-                  history_before=local(db.get_setting(conn, "history_before", ""), "%Y-%m-%d") if db.get_setting(conn, "history_before", "") else "")
+    t = form_ctx(conn)
+    return render(request, "tools.html", tools=TOOLS, people=t["people"], archived=t["archived"], cfg=t["cfg"], notice=t["notice"],
+                  exports=t["exports"], page_tools=PAGE_TOOLS, today=t["today"], week_ago=t["week_ago"], square_on=t["square_on"],
+                  history_before=t["history_before"], index=index(), tool_ctx=t)
 
 
 @router.post("/{tool}")
@@ -209,6 +343,10 @@ async def run_tool(tool: str, request: Request, who=Depends(staff), conn=Depends
     if handler is None:
         raise HTTPException(404, "Unknown tool")
     form = {k: v for k, v in (await request.form()).items() if isinstance(v, str)}
+    # Run from its own page (a hidden "back"): answer there, not on Tools. Only ever a path on this site.
+    request.state.tool_back = safe_back(form.get("back"))
+    if request.state.tool_back and request.state.tool_back.split("?")[0] == "/tools":
+        request.state.tool_back = None
     try:
         # In a worker thread: some tools wait on Square (Sync now waits for a running sync), and
         # that mustn't freeze the whole app for everyone else.
@@ -221,7 +359,7 @@ async def run_tool(tool: str, request: Request, who=Depends(staff), conn=Depends
         return result
     except (ToolError, ValueError) as e:  # ValueError: rule checks in logic.py (e.g. a 0-point change)
         conn.rollback()
-        return done(request, tool, f"{tool_names()[tool]}: {e}")
+        return done(request, tool, f"{tool_names()[tool]}: {e}", "bad")
 
 
 @router.get("/export/{name}.csv")
@@ -348,26 +486,13 @@ def h_pause_tabs(request, conn, who, form):
     return done(request, "pause_tabs", "All tabs paused." if paused else "Tabs back on.")
 
 
-def h_approve_eligible(request, conn, who, form):
-    cfg = logic.settings(conn)
-    rows = conn.execute(
-        "SELECT c.id FROM customers c JOIN points_ledger p ON p.customer_id = c.id WHERE c.tab_decision IS NULL "
-        "AND c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id HAVING SUM(p.spend_cents) >= ?", (cfg["unlock_spend_cents"],)
-    ).fetchall()
-    rows = [r for r in rows if logic.tab_score(conn, r["id"], cfg=cfg)["ready"]]  # spent enough and a good enough score
-    note = form.get("note", "").strip() or "Bulk approved"
-    for r in rows:
-        logic.set_tab_decision(conn, r["id"], "approved", note, who)
-    return done(request, "approve_eligible", f"Approved {len(rows)} customer(s).")
-
-
 def h_revoke_all(request, conn, who, form):
     _confirm(form, "REVOKE")
-    note = form.get("note", "").strip() or "Bulk revoked"
-    rows = conn.execute("SELECT id FROM customers WHERE tab_decision = 'approved'").fetchall()
+    note = form.get("note", "").strip() or "Turned off all tabs"
+    rows = conn.execute("SELECT id FROM customers WHERE tab_decision IS NULL AND archived_at IS NULL").fetchall()
     for r in rows:
         logic.set_tab_decision(conn, r["id"], "revoked", note, who)
-    return done(request, "revoke_all", f"Revoked {len(rows)} tab(s).")
+    return done(request, "revoke_all", f"Turned off {len(rows)} tab(s).")
 
 
 def h_manual_charge(request, conn, who, form):
@@ -490,6 +615,8 @@ def h_merge(request, conn, who, form):
     if keep["passcode_enc"] is None and dup["passcode_enc"] is not None:
         conn.execute("UPDATE customers SET passcode_enc = ?, passcode_set_at = ? WHERE id = ?",
                      (dup["passcode_enc"], dup["passcode_set_at"], keep["id"]))
+    if not keep["score_adjust"] and dup["score_adjust"]:
+        conn.execute("UPDATE customers SET score_adjust = ? WHERE id = ?", (dup["score_adjust"], keep["id"]))
     conn.execute("UPDATE customers SET square_customer_id = NULL, archived_at = ?, merged_into = ?, tab_decision = NULL, "
                  "passcode_enc = NULL, passcode_set_at = NULL WHERE id = ?", (db.now_iso(), keep["id"], dup["id"]))
     # Their tab money and charges now sit together: the points have to match the combined tab.
@@ -575,7 +702,7 @@ def h_chase(request, conn, who, form):
     rows.sort(key=lambda b: b[2] or "")
     from .web import local
     table = [[cust_link(c), c["email"], money(led["owing_cents"]),
-              money(led["overdue_cents"]) if led["overdue_cents"] else "", local(due, "%a %d %b")]
+              money(led["overdue_cents"]) if led["overdue_cents"] else "", local(due, "%a %-d %b")]
              for c, led, due in rows]
     overdue_emails = ", ".join(c["email"] for c, led, _ in rows if led["has_overdue"])
     all_emails = ", ".join(c["email"] for c, _, _ in rows)
@@ -646,7 +773,7 @@ def h_raffle(request, conn, who, form):
 def h_sync_now(request, conn, who, form):
     if not config.SQUARE_TOKEN:
         raise ToolError("Square isn't configured (SQUARE_ACCESS_TOKEN).")
-    return _background(request, "sync_now", "Syncing with Square", lambda c: square.describe_sync(square.sync(c, wait=True, catalog=True)), who)
+    return _background(request, "sync_now", "Syncing with Square", lambda c: square.sync_job(square.sync(c, wait=True, catalog=True)), who)
 
 
 def h_resync(request, conn, who, form):
@@ -656,7 +783,7 @@ def h_resync(request, conn, who, form):
     db.audit(conn, who, "square_resync", None, f"from {form.get('start')}")
     conn.commit()
     return _background(request, "resync", f"Re-syncing from {form['start']}",
-                       lambda c: f"Re-sync from {form['start']}: " + square.describe_sync(square.sync(c, wait=True)), who)
+                       lambda c: square.sync_job(square.sync(c, wait=True), f"Re-sync from {form['start']}: "), who)
 
 
 def _background(request, tool, name, fn, who):
@@ -678,7 +805,7 @@ def h_history(request, conn, who, form):
     db.audit(conn, who, "square_history", None, f"from {form.get('start')}, launch {form.get('launch')}")
     conn.commit()
     return _background(request, "history", f"Importing sales history from {form['start']}",
-                       lambda c: f"History imported (sales before {form['launch']} earn nothing): " + square.describe_sync(square.sync(c, wait=600)), who)
+                       lambda c: square.sync_job(square.sync(c, wait=600), f"History imported (sales before {form['launch']} earn nothing): "), who)
 
 
 def h_find_payment(request, conn, who, form):
@@ -698,7 +825,8 @@ def h_integrity(request, conn, who, form):
         n = conn.execute(sql).fetchone()[0]
         checks.append([label, n, "ok" if n == 0 else fix])
 
-    count("Square payments with no customer", "SELECT COUNT(*) FROM square_payments WHERE customer_id IS NULL AND kind != 'void'",
+    count("Square payments with no customer", "SELECT COUNT(*) FROM square_payments WHERE customer_id IS NULL AND kind != 'void' "
+          "AND no_account IS NULL",
           link("Attach customers in Square, or link their Square IDs", "/square?show=unlinked"))
     count("Customers with negative points",
           "SELECT COUNT(*) FROM (SELECT customer_id FROM points_ledger GROUP BY customer_id HAVING SUM(delta) < 0)",
@@ -708,9 +836,6 @@ def h_integrity(request, conn, who, form):
     count("Active customers not linked to Square",
           "SELECT COUNT(*) FROM customers WHERE square_customer_id IS NULL AND archived_at IS NULL AND kind IS NOT 'test'",
           link("Import this CSV into Square, then sync", "/export/square-customers.csv"))
-    count("Approved tabs on archived customers",
-          "SELECT COUNT(*) FROM customers WHERE archived_at IS NOT NULL AND tab_decision = 'approved'",
-          "Revoke them from the customer page")
     err = db.get_setting(conn, "square_last_error")
     checks.append(["Last Square sync error", err or "none", "ok" if not err else "Check the Square page"])
     return report(request, "Health check", ["Check", "Result", "Status"], [[a, b, c] for a, b, c in checks])
@@ -718,15 +843,19 @@ def h_integrity(request, conn, who, form):
 
 def h_notice(request, conn, who, form):
     text = form.get("notice", "").strip()
-    db.set_setting(conn, "notice", f"{text}\n— {who}, {datetime.now(config.TZ):%a %d %b %H:%M}" if text else "")
+    db.set_setting(conn, "notice", f"{text}\n— {who}, {datetime.now(config.TZ):%a %-d %b %H:%M}" if text else "")
     db.audit(conn, who, "notice", None, text or "(cleared)")
-    return done(request, "notice", "Noticeboard updated." if text else "Noticeboard cleared.")
+    msg = "Noticeboard updated." if text else "Noticeboard cleared."
+    if _back(request) == "/":  # from the dashboard: the note itself is at the top, no need to open the form again
+        return back(request, "/", msg)
+    return done(request, "notice", msg)
 
 
 def h_sign_out_all(request, conn, who, form):
     _confirm(form, "SIGN OUT")
     db.set_setting(conn, "session_gen", secrets.token_hex(4))
     db.audit(conn, who, "sign_out_all")
+    request.session.clear()  # this device too, now: the sign-in page shouldn't still show who was on
     return RedirectResponse("/login", status_code=303)
 
 

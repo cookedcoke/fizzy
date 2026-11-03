@@ -1,5 +1,7 @@
 {% extends "base.html" %}{% block title %}Transactions{% endblock %}
+{% import "_subtabs.html" as sub with context %}{% import "_tools.html" as tl with context %}
 {% block body %}
+{{ sub.sales() }}
 {% macro url() %}{% set a = dict(start=start, end=end, show=show, q=q) %}{% set _ = a.update(kwargs) %}/transactions?{% for k, v in a.items() if v %}{{ k }}={{ v|string|urlencode }}{{ '&' if not loop.last }}{% endfor %}{% endmacro %}
 <div class="pagehead"><div><h1>Transactions</h1>
   <div class="meta">{% if start == end %}{{ start.strftime('%A %-d %B') }}{% else %}{{ start.strftime('%-d %b' if start.year == end.year else '%-d %b %Y') }} to {{ end.strftime('%-d %b %Y') }}{% endif %} · every Square sale, with who it was</div></div>
@@ -31,6 +33,7 @@
     {% for r in rows %}<tr>
       <td class="when">{{ r.at|local('%a %-d %b') }}<br><span class="muted small">{{ r.at|local('%H:%M') }}</span></td>
       <td>{% if r.customer_id %}<a href="/customers/{{ r.customer_id }}">{{ r.customer }}</a>
+        {% elif r.no_account %}<span class="tag" title="A real sale nobody gets. Undo it on the Square page.">No account</span>
         {% elif r.payment_ids %}<form class="assign" method="post" action="/square/payments/{{ r.payment_ids[0] }}/assign">
           <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required title="Type who it was, then Enter"></form>{% endif %}
         <div class="small muted show-sm">{% for i in r['items'] %}{{ i.qty }}× {{ i.name }}{{ ', ' if not loop.last }}{% endfor %}</div></td>
@@ -49,4 +52,8 @@
   {% else %}<p class="empty">{% if q or show %}Nothing matches. <a href="{{ url(show='', q='') }}">Show everything</a>{% else %}No sales in these dates.{% endif %}</p>{% endif %}
 </div>
 <datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>
+<section class="panel tools-here" id="more"><h2>More</h2>
+  {{ tl.tool('takings', back='/transactions', label='Takings report') }}
+  <p class="hint">Syncing, re-syncing and finding a payment: on <a href="/square#more">Square</a>.</p>
+</section>
 {% endblock %}

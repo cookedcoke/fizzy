@@ -22,6 +22,10 @@
   <p>Can't reach Cooked Coke Co. right now. Check your internet and try again.</p>
   <button onclick="location.reload()">Try again</button>
 </main>
-<script>addEventListener("online", function () { location.reload(); });</script>
+<script>
+  addEventListener("online", function () { location.reload(); });
+  // Back or Forward to a page the last page added (Turbo does that) stays inside this page: load it for real.
+  addEventListener("popstate", function () { location.reload(); });
+</script>
 </body>
 </html>

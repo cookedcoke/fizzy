@@ -1,5 +1,7 @@
 {% extends "base.html" %}{% block title %}Profit{% endblock %}
+{% import "_subtabs.html" as sub with context %}
 {% block body %}
+{{ sub.money() }}
 <div class="pagehead"><div><h1>Profit</h1>
   <div class="meta">Type in what one of each thing costs us and Fizzy works out the rest.</div></div>
   <div class="actions" style="margin:0">{% for k, (l, _) in ranges.items() %}<a class="btn {{ 'primary' if k == range }}" href="/profit?range={{ k }}">{{ l }}</a>{% endfor %}</div>
@@ -13,21 +15,21 @@
     <div class="sub">{{ pr.uncosted_revenue|money }} of sales not counted</div></div>
 </div>
 {% set need = pr['items']|selectattr('cost_each', 'none')|list + idle|selectattr('cost_each', 'none')|list %}
-{% if need %}<div class="todo" style="margin-bottom:var(--s4)"><b>{{ need|length }} item{{ '' if need|length == 1 else 's' }} need{{ 's' if need|length == 1 }} a cost.</b>
+{% if need %}<div class="todo"><b>{{ need|length }} item{{ '' if need|length == 1 else 's' }} need{{ 's' if need|length == 1 }} a cost.</b>
   <span>They're highlighted below{% if pr.uncosted_revenue %} - {{ pr.uncosted_revenue|money }} of sales isn't in the profit yet{% endif %}.</span></div>{% endif %}
 {% if catalog_error %}<div class="err">Square's item list: {{ catalog_error }} Until then, items show up here once they've sold.</div>{% endif %}
 <form class="panel" method="post" action="/profit"><h2>Items <span class="count">{{ pr['items']|length + idle|length }}</span></h2>
   {% if pr['items'] or idle %}<div class="scroll"><table>
     <tr><th>Item</th><th class="n">Sold</th><th class="n hide-sm">Revenue</th><th class="n" style="width:130px">Cost each ($)</th><th class="n">Profit</th><th class="n">Margin</th></tr>
     {% for r in pr['items'] %}{% if r.custom %}<tr><td>{{ r.name }} <span class="muted small">· no item, not in profit</span></td><td class="n">{{ r.qty }}</td><td class="n hide-sm">{{ r.revenue|money }}</td><td></td><td></td><td></td></tr>{% else %}<tr>
-      <td>{{ r.name }}<input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="base" value="{{ r.base }}"></td><td class="n">{{ r.qty }}</td><td class="n hide-sm">{{ r.revenue|money }}</td>
+      <td>{{ r.name }}{% if r.variants %}<div class="muted small">{{ r.variants|join(', ') }}</div>{% endif %}<input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="base" value="{{ r.base }}"></td><td class="n">{{ r.qty }}</td><td class="n hide-sm">{{ r.revenue|money }}</td>
       <td class="n"><input class="cost {{ 'missing' if r.cost_each is none }}" type="text" name="cost" inputmode="decimal" placeholder="e.g. 1.20"
         value="{{ '%.2f'|format(r.cost_each / 100) if r.cost_each is not none else '' }}" aria-label="Cost of one {{ r.name }}"></td>
       <td class="n">{{ r.profit|money if r.profit is not none else '' }}</td>
       <td class="n">{% if r.margin is not none %}<span class="{{ 'red' if r.margin < 20 }}">{{ r.margin }}%</span>{% endif %}</td></tr>{% endif %}{% endfor %}
     {% if idle %}<tr><th colspan="6">Not sold {{ label|lower }}{% if catalog_count %} · from Square's item list{% endif %}</th></tr>{% endif %}
     {% for r in idle %}<tr class="idle">
-      <td>{{ r.name }}{% if r.price %} <span class="muted small">· sells for {{ r.price|money }}</span>{% endif %}
+      <td>{{ r.name }}{% if r.price %} <span class="muted small">· sells for {{ r.price|money }}{% if r.price_to %}–{{ r.price_to|money }}{% endif %}</span>{% endif %}{% if r.variants %}<div class="muted small">{{ r.variants|join(', ') }}</div>{% endif %}
         <input type="hidden" name="name" value="{{ r.name }}"><input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="base" value="{{ r.base }}"></td>
       <td class="n muted">0</td><td></td>
       <td class="n"><input class="cost {{ 'missing' if r.cost_each is none }}" type="text" name="cost" inputmode="decimal" placeholder="e.g. 1.20"
@@ -35,7 +37,7 @@
       <td class="n muted small">{% if r.price and r.cost_each is not none %}{{ (r.price - r.cost_each)|money }} each{% endif %}</td>
       <td class="n">{% if r.margin is not none %}<span class="{{ 'red' if r.margin < 20 }}">{{ r.margin }}%</span>{% endif %}</td></tr>{% endfor %}
   </table></div>
-  <div class="actions" style="margin-top:var(--s3)"><button class="primary">Save costs <kbd>Ctrl</kbd> <kbd>Enter</kbd></button>
+  <div class="actions" style="margin-top:var(--s3)"><button class="primary">Save costs</button>
 </div>
   {% else %}<p class="empty">No items sold {{ label|lower }} yet{% if square_on %} - press <b>Get items from Square</b> below to list everything you sell{% endif %}.</p>{% endif %}
 </form>

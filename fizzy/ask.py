@@ -9,16 +9,18 @@ passcode rules as doing it by hand and is logged "via Ask". New badges and event
 import json
 import re
 import sqlite3
+import threading
 import time
+import uuid
 from datetime import date, timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from markupsafe import Markup, escape
 
 from . import config, db, events, rewards, rules, stats
-from .web import back, get_conn, money, render, staff
+from .web import back, get_conn, money, render, safe_back, staff
 
 router = APIRouter()
 
@@ -82,14 +84,14 @@ def system_prompt(conn, who):
     today = stats.today()
     items = [r[0] for r in conn.execute("SELECT DISTINCT item_name FROM catalog_items WHERE deleted = 0 ORDER BY item_name")]
     terms = rules.terms(conn)
-    cfg = {k: db.get_setting(conn, k) for k in ("tab_limit_cents", "tab_due_days", "unlock_spend_cents", "tab_score_needed")}
+    cfg = {k: db.get_setting(conn, k) for k in ("tab_limit_cents", "tab_due_days", "tab_min_score")}
     return f"""You are the assistant inside Fizzy, the staff app for Cooked Coke Co., a student-run tuck shop (drinks and
 noodles) at Reddam House North Shore, Sydney. You're talking to {who}, one of the student owners. Use Australian
 English, be brief and plain, no emojis. Money is AUD. Today is {today:%A %-d %B %Y}, Sydney time.
 
 How the stall works: students earn 1 point per cent spent (tab purchases earn theirs when paid off), swap points for
-rewards, can have a tab once they've spent ${int(cfg['unlock_spend_cents'] or 3000) / 100:.0f} and their tab score is
-{cfg['tab_score_needed']}+ (pay within {cfg['tab_due_days']} days). Double points days multiply points. Built-in badges pay
+rewards, and have a tab while their tab score (0-100, from their history; staff can add an adjustment) is
+{cfg['tab_min_score'] or 20}+ and nothing's overdue: the score sets the limit (pay within {cfg['tab_due_days']} days). Double points days multiply points. Built-in badges pay
 points once. Open at recess (11:00-11:15) and lunch (13:10-13:45) on school days, no lunch on Tuesdays.
 
 You can look anything up with the tools. Start with `sales_summary` for totals by weekday, hour, day, week, month or item
@@ -114,7 +116,7 @@ imported as history only, with no points or tabs, so use them for sales trends b
 
 Menu items in Square: {', '.join(items) if items else '(none synced yet)'}
 Term dates: {'; '.join(f'{n}: {a} to {b}' for a, b, n in terms) if terms else 'none set (Settings, Term dates)'}
-Existing custom rules: use `list_rules`.
+Badges: there are always the built-in ones (fixed, can't be changed here) plus any custom ones; `list_rules` lists both.
 
 Database tables:
 {_schema(conn)}
@@ -132,7 +134,7 @@ TOOLS = [{"functionDeclarations": [
                     "required": ["start", "end", "group_by"]}},
     {"name": "sql", "description": f"Run one read-only SQLite SELECT. Returns up to {ROW_CAP} rows as JSON.",
      "parameters": {"type": "OBJECT", "properties": {"query": {"type": "STRING"}}, "required": ["query"]}},
-    {"name": "list_rules", "description": "The custom badges and events that exist, with their JSON and how many students got them."},
+    {"name": "list_rules", "description": "Every badge and event: the built-in badges (fixed) and the custom badges and events, with their JSON, points and how many students got them."},
     {"name": "preview_rule", "description": "Check a RULE (JSON string) and see who would qualify right now / what an event would pay. Returns an error to fix if it's not valid.",
      "parameters": {"type": "OBJECT", "properties": {"rule_json": {"type": "STRING"}}, "required": ["rule_json"]}},
     {"name": "propose", "description": "Suggest a change; the owner confirms it with a button. Actions and payload_json: "
@@ -289,7 +291,9 @@ def run_tool(conn, who, name, args):
         if name == "sql":
             return _sql(args.get("query", ""))
         if name == "list_rules":
-            return {"rules": [{k: r[k] for k in ("id", "kind", "name", "summary", "paused", "students", "points", "spec")} for r in rules.listing(conn)]}
+            from . import badges
+            return {"built_in_badges": badges.built_in(conn),   # always on, can't be changed from here
+                    "custom_rules": [{k: r[k] for k in ("id", "kind", "name", "summary", "paused", "students", "points", "spec")} for r in rules.listing(conn)]}
         if name == "preview_rule":
             return _preview(conn, args.get("rule_json", ""))
         if name == "propose":
@@ -311,7 +315,7 @@ def _call(contents, system, tools=True):
     except httpx.HTTPError as e:
         raise AskError(f"Couldn't reach Gemini ({e.__class__.__name__}). Try again.")
     if r.status_code in (400, 401, 403) and "key" in r.text.lower():
-        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Ask. (Google said: {r.text[:200]})")
+        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Fizz. (Google said: {r.text[:200]})")
     if r.status_code == 429:
         raise AskError("Gemini says too many requests right now. Wait a minute and try again.")
     if r.status_code >= 400:
@@ -368,7 +372,7 @@ def _stream(contents, system, tools=True):
 
 def _raise_for(status, text):
     if status in (400, 401, 403) and "key" in text.lower():
-        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Ask. (Google said: {text[:200]})")
+        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Fizz. (Google said: {text[:200]})")
     if status == 429:
         raise AskError("Gemini says too many requests right now. Wait a minute and try again.")
     raise AskError(f"Gemini returned an error ({status}): {text[:300]}")
@@ -406,12 +410,12 @@ STATUS = {"sales_summary": lambda a: f"Adding up sales by {a.get('group_by', '..
           "propose": lambda a: "Writing up a suggestion"}
 
 
-def steps(conn, who, text, stream=True):
+def steps(conn, who, text, stream=True, stop=lambda: False):
     """Answer a question, yielding what's happening: ("status", "Adding up sales by weekday"),
     ("delta", next bit of the answer), ("reset", None) when a draft turns into lookups, and
     finally ("done", whole answer). Everything is saved as it goes."""
     if not enabled():
-        raise AskError("Ask isn't set up: add a Gemini API key in Settings, Ask.")
+        raise AskError("Fizz isn't set up: add a Gemini API key in Settings, Fizz.")
     text = text.strip()[:4000]
     if not text:
         raise AskError("Type a question first.")
@@ -420,6 +424,8 @@ def steps(conn, who, text, stream=True):
     contents = _history(conn, who)
 
     for _ in range(MAX_STEPS):
+        if stop():  # given up on: write nothing more into the conversation
+            return
         if stream:  # pass the words through as they arrive
             content = None
             for kind, value in _stream(contents, system):
@@ -443,12 +449,16 @@ def steps(conn, who, text, stream=True):
         for c in calls:
             yield "status", STATUS.get(c["name"], lambda a: "Looking things up")(c.get("args") or {})
             answers.append({"functionResponse": {"name": c["name"], "response": run_tool(conn, who, c["name"], c.get("args") or {})}})
+        if stop():
+            return
         _save(conn, who, "tool", answers)
         contents.append({"role": "user", "parts": answers})
     # Out of steps: have it answer from what it found rather than give up.
     contents.append({"role": "user", "parts": [{"text": "(Fizzy: no more lookups. Answer now from what you've found, and say if it's incomplete.)"}]})
     yield "status", "Putting it together"
     content = _call(contents, system, tools=False)
+    if stop():
+        return
     said = "".join(p.get("text", "") for p in content["parts"] if "text" in p and not p.get("thought")).strip() \
         or "I couldn't get to an answer. Try asking a narrower question."
     _save(conn, who, "model", [{"text": said}], said)
@@ -487,7 +497,7 @@ def apply(conn, pid, who):
                        payload.get("limit"), who)
     elif a == "display_message":
         db.set_setting(conn, "display_message", " ".join(payload["text"].split())[:120])
-        db.audit(conn, who, "settings", None, f"display message (via Ask): {payload['text'][:120]}")
+        db.audit(conn, who, "settings", None, f"display message (via Fizz): {payload['text'][:120]}")
     conn.execute("UPDATE ask_proposals SET status = 'done', done_at = ? WHERE id = ?", (db.now_iso(), pid))
     if a in ("create_rule", "update_rule", "resume_rule"):
         _pay_everyone(conn)
@@ -530,55 +540,188 @@ def md(text):
     return Markup(html)
 
 
-@router.get("/ask", response_class=HTMLResponse)
-def page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+EXAMPLES = ["How did each item sell this month compared to last month?",
+            "Which day of the week is slowest, and what sells then?",
+            "Make a badge for buying 20 Chi Forest and 10 milk teas in a term, worth 500 points",
+            "Every 5th noodles a student buys gets 100 bonus points",
+            "Who hasn't bought anything in two weeks but used to come every week?"]
+
+
+def chat(conn, who, limit=80):
+    """This person's conversation, for the chat box (the dashboard's, or the full-screen /ask)."""
+    pend = pending(who)   # before the messages: an answer finishing in between is then in the timeline, and joining it finds it done
     msgs = conn.execute("SELECT * FROM ask_messages WHERE staff = ? AND shown IS NOT NULL ORDER BY id DESC LIMIT 60", (who,)).fetchall()
     props = conn.execute("SELECT * FROM ask_proposals WHERE staff = ? ORDER BY id DESC LIMIT 30", (who,)).fetchall()
     timeline = [{"at": m["created_at"], "n": (0, m["id"]), "kind": "msg", "role": m["role"],
                  "html": md(m["shown"]) if m["role"] == "model" else None, "text": m["shown"]} for m in msgs]
     timeline += [{"at": p["created_at"], "n": (1, p["id"]), "kind": "proposal", "p": p} for p in props]
     timeline.sort(key=lambda t: (t["at"], t["n"]))  # oldest first; a card after the words on the same second
-    return render(request, "ask.html", timeline=timeline[-80:], enabled=enabled(), model=model(),
-                  examples=["How did each item sell this month compared to last month?",
-                            "Which day of the week is slowest, and what sells then?",
-                            "Make a badge for buying 20 Chi Forest and 10 milk teas in a term, worth 500 points",
-                            "Every 5th noodles a student buys gets 100 bonus points",
-                            "Who hasn't bought anything in two weeks but used to come every week?"])
+    return {"timeline": timeline[-limit:], "enabled": enabled(), "model": model(), "pending": pend, "examples": EXAMPLES}
+
+
+def _done(request, back_to, msg=None, kind="ok"):
+    """Back to the chat it was sent from: the dashboard's box (a normal Turbo page, so #ask is kept as
+    data-jump) or the full-screen /ask (always a full load: the browser keeps #end itself)."""
+    to = safe_back(back_to)
+    if to and to != "/ask":
+        return back(request, f"{to}#ask", msg, kind)
+    return back(request, "/ask#end", msg, kind, jump=False)
+
+
+@router.get("/ask", response_class=HTMLResponse)
+def page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+    """Full screen. The everyday way in is the chat box on the dashboard."""
+    return render(request, "ask.html", **chat(conn, who))
 
 
 @router.post("/ask")
-def send(request: Request, text: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+def send(request: Request, text: str = Form(""), back_to: str = Form("", alias="back"), who=Depends(staff), conn=Depends(get_conn)):
+    """The plain form (no script): waits for the whole answer."""
+    if pending(who):
+        return _done(request, back_to, "Still answering your last question. Wait for it, then ask again.", "bad")
     try:
         ask(conn, who, text)
     except AskError as e:
-        return back(request, "/ask#end", str(e), "bad")
-    return RedirectResponse("/ask#end", status_code=303)
+        return _done(request, back_to, str(e), "bad")
+    return _done(request, back_to)
+
+
+# ---- answering in the background ------------------------------------------------------------------------
+#
+# A question is answered in its own thread, not inside the request that asked it, so leaving the page or
+# losing the connection (a phone in the shop) doesn't lose the answer. The stream request only follows
+# along; it can be joined again (GET) and the page says what's still being answered (`pending`).
+
+STUCK_AFTER = 15 * 60        # seconds before an answer that never finished is given up on
+
+
+class _Job:
+    def __init__(self, who, text, client=""):
+        self.who, self.text, self.started = who, text, db.now_iso()
+        self.id, self.t0 = uuid.uuid4().hex[:12], time.time()
+        # Every event so far, so a client joining late gets the whole answer. The first says which
+        # question this is (and the asking client's own tag), so a client can tell it from an older one.
+        self.events = [{"t": "start", "id": self.id, "text": text, "client": client}]
+        self.answer, self.status, self.done = "", None, False
+        self.abandoned = False      # given up on: its thread stops writing into the conversation
+        self.cond = threading.Condition()
+
+    def push(self, ev):
+        with self.cond:
+            t = ev["t"]
+            if t == "delta":
+                self.answer += ev["text"]
+                self.status = None
+            elif t == "status":
+                self.status = ev["text"]
+            elif t == "reset":
+                self.answer = ""
+            self.events.append(ev)
+            if t in ("done", "error"):
+                self.done = True
+            self.cond.notify_all()
+
+    def follow(self):
+        """The events so far, then each new one as it happens, until the answer is done. A comment line
+        every 15 quiet seconds keeps the connection open through Cloudflare."""
+        n = 0
+        while True:
+            with self.cond:
+                if n >= len(self.events) and not self.done:
+                    self.cond.wait(15)
+                batch, done = self.events[n:], self.done
+            n += len(batch)
+            for ev in batch:
+                yield _sse(ev)
+            if done:
+                return
+            if not batch:
+                yield ": ping\n\n"
+
+
+_jobs = {}                   # staff name -> their latest _Job
+_jobs_lock = threading.Lock()
+
+
+def pending(who):
+    """What's still being answered for this person, for the page: None when nothing is."""
+    j = _jobs.get(who)
+    if j is None or j.done:
+        return None
+    return {"id": j.id, "text": j.text, "answer": j.answer, "status": j.status, "at": j.started}
+
+
+def start(who, text, client=""):
+    """Start answering in the background. One question at a time per person. `client` is the asker's
+    own tag for the question, echoed in the stream's first event."""
+    text = text.strip()[:4000]   # as steps() saves it
+    with _jobs_lock:
+        j = _jobs.get(who)
+        if j is not None and not j.done:
+            if time.time() - j.t0 < STUCK_AFTER:
+                raise AskError("Still answering your last question. Wait for it, then ask again.")
+            j.abandoned = True
+            j.push({"t": "error", "text": "That took too long and was given up on. Ask again."})
+        j = _jobs[who] = _Job(who, text, client)
+
+    def run():
+        conn = None
+        try:
+            conn = db.connect()
+            for kind, value in steps(conn, who, text, stop=lambda: j.abandoned):
+                if j.abandoned:
+                    break
+                if kind == "delta":  # raw text: the page reveals it smoothly and formats it as it goes
+                    j.push({"t": "delta", "text": value})
+                elif kind == "status":
+                    j.push({"t": "status", "text": value + "..."})
+                elif kind == "reset":
+                    j.push({"t": "reset"})
+                else:
+                    j.push({"t": "done"})
+        except AskError as e:
+            j.push({"t": "error", "text": str(e)})
+        except Exception as e:  # never leave the page hanging
+            j.push({"t": "error", "text": f"Something went wrong ({e.__class__.__name__}). Try again."})
+        finally:
+            if conn is not None:
+                conn.close()
+            if not j.done:
+                j.push({"t": "done"})
+    try:
+        threading.Thread(target=run, daemon=True, name=f"ask:{who}").start()
+    except Exception:
+        j.push({"t": "error", "text": "Couldn't start answering. Try again."})
+        raise AskError("Couldn't start answering. Try again.")
+    return j
+
+
+def _events(gen):
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(gen, media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.post("/ask/stream")
-def send_stream(request: Request, text: str = Form(""), who=Depends(staff)):
+def send_stream(request: Request, text: str = Form(""), client: str = Form(""), who=Depends(staff)):
     """The answer as it's written, as server-sent events (one JSON object per event)."""
-    def events():
-        conn = db.connect()
-        try:
-            for kind, value in steps(conn, who, text):
-                if kind == "delta":  # raw text: the page reveals it smoothly and formats it as it goes
-                    yield _sse({"t": "delta", "text": value})
-                elif kind == "status":
-                    yield _sse({"t": "status", "text": value + "..."})
-                elif kind == "reset":
-                    yield _sse({"t": "reset"})
-                else:
-                    yield _sse({"t": "done"})
-        except AskError as e:
-            yield _sse({"t": "error", "text": str(e)})
-        except Exception as e:  # never leave the page hanging
-            yield _sse({"t": "error", "text": f"Something went wrong ({e.__class__.__name__}). Try again."})
-        finally:
-            conn.close()
-    from fastapi.responses import StreamingResponse
-    return StreamingResponse(events(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    try:
+        job = start(who, text, client[:64])
+    except AskError as e:
+        return _events(iter([_sse({"t": "error", "text": str(e)})]))
+    return _events(job.follow())
+
+
+@router.get("/ask/stream")
+def join_stream(who=Depends(staff)):
+    """Join the latest answer, from the start: after leaving the page, or when the connection dropped. A
+    finished one is replayed too (the connection may have dropped right at the end); its "start" event
+    tells the client whether it's the one it wants. {"t": "none"} when nothing has been asked since the
+    server started."""
+    j = _jobs.get(who)
+    if j is None:
+        return _events(iter([_sse({"t": "none"})]))
+    return _events(j.follow())
 
 
 def _sse(obj):
@@ -586,29 +729,35 @@ def _sse(obj):
 
 
 @router.post("/ask/clear")
-def clear(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+def clear(request: Request, back_to: str = Form("", alias="back"), who=Depends(staff), conn=Depends(get_conn)):
+    """A clean slate: the words and the suggestion cards both go. What a card did (a rule, a reward, a
+    double points day) stays, and the activity log still says who pressed Do it."""
+    to = safe_back(back_to)
+    to = f"{to}#ask" if to and to != "/ask" else "/ask"
+    if pending(who):   # the answer would land in the new conversation
+        return back(request, to, "Still answering your last question. Wait for it, then start a new chat.", "bad")
     conn.execute("DELETE FROM ask_messages WHERE staff = ?", (who,))
-    conn.execute("UPDATE ask_proposals SET status = 'dismissed' WHERE staff = ? AND status = 'pending'", (who,))
+    conn.execute("DELETE FROM ask_proposals WHERE staff = ?", (who,))
     conn.commit()
-    return back(request, "/ask", "Started a new conversation.")
+    return back(request, to, "Started a new conversation.")
 
 
 @router.post("/ask/apply/{pid:int}")
-def do_it(request: Request, pid: int, who=Depends(staff), conn=Depends(get_conn)):
+def do_it(request: Request, pid: int, back_to: str = Form("", alias="back"), who=Depends(staff), conn=Depends(get_conn)):
     try:
         summary = apply(conn, pid, who)
     except (AskError, rules.RuleError, KeyError, ValueError) as e:
         conn.rollback()
-        return back(request, "/ask#end", f"Couldn't do that: {e}", "bad")
+        return _done(request, back_to, f"Couldn't do that: {e}", "bad")
     conn.commit()
-    return back(request, "/ask#end", f"Done: {summary}")
+    return _done(request, back_to, f"Done: {summary}")
 
 
 @router.post("/ask/dismiss/{pid:int}")
-def dismiss(request: Request, pid: int, who=Depends(staff), conn=Depends(get_conn)):
+def dismiss(request: Request, pid: int, back_to: str = Form("", alias="back"), who=Depends(staff), conn=Depends(get_conn)):
     conn.execute("UPDATE ask_proposals SET status = 'dismissed' WHERE id = ? AND status = 'pending'", (pid,))
     conn.commit()
-    return RedirectResponse("/ask#end", status_code=303)
+    return _done(request, back_to)
 
 
 # ---- the key, from Settings ---------------------------------------------------------------------------------
@@ -621,7 +770,7 @@ def save_key(request: Request, key: str = Form(""), model_name: str = Form(""), 
         db.set_setting(conn, "gemini_key_enc", "")
         db.audit(conn, who, "settings", None, "Gemini key removed")
         conn.commit()
-        return back(request, "/settings#ask", "Key removed. Ask is off.")
+        return back(request, "/settings#ask", "Key removed. Fizz is off.")
     if key:
         if not re.fullmatch(r"[A-Za-z0-9_.\-]{20,300}", key):  # "AIza..." keys, and Google's newer "AQ." style
             return back(request, "/settings#ask", "That doesn't look like a Gemini API key. Copy it again from aistudio.google.com.", "bad")
@@ -633,7 +782,7 @@ def save_key(request: Request, key: str = Form(""), model_name: str = Form(""), 
     db.set_setting(conn, "gemini_model", m)
     db.audit(conn, who, "settings", None, "Gemini key saved" if key else f"Gemini model: {m or 'default'}")
     conn.commit()
-    return back(request, "/settings#ask", "Saved. Ask is on." if key else "Saved.")
+    return back(request, "/settings#ask", "Saved. Fizz is on." if key else "Saved.")
 
 
 # ---- managing rules by hand (Rewards page) ----------------------------------------------------------------

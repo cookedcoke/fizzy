@@ -1,129 +1,29 @@
 {% extends "base.html" %}{% block title %}Tools{% endblock %}
-{% set DANGER = ['reset_points', 'revoke_all', 'write_off', 'merge', 'sign_out_all', 'bulk_archive', 'delete_test_accounts'] %}
-
-{% macro who(name='customer', label='Customer', list='people') -%}
-<label>{{ label }}<input type="text" name="{{ name }}" list="{{ list }}" placeholder="Type a name…" autocomplete="off" required></label>
-{%- endmacro %}
-{% macro dates(start=week_ago, end=today) -%}
-<div class="row"><div><label>From<input type="date" name="start" value="{{ start }}" required></label></div>
-<div><label>To<input type="date" name="end" value="{{ end }}" required></label></div></div>
-{%- endmacro %}
-{% macro note(label='Note (optional)', required=False) -%}
-<label>{{ label }}<input type="text" name="note" {{ 'required' if required }}></label>
-{%- endmacro %}
-{% macro confirm(word) -%}
-<label>Type <b>{{ word }}</b> to confirm<input type="text" name="confirm" autocomplete="off" required></label>
-{%- endmacro %}
-
-{% macro form(id) %}
-{% if id == 'export' %}
-  <p class="row">{% for e in exports %}<a class="btn sm" href="/tools/export/{{ e }}.csv">{{ e.replace('_', ' ') }}</a>{% endfor %}</p>
-{% elif id == 'download_backup' %}
-  <p><a class="btn sm" href="/tools/backup.db">Download fizzy.db</a></p>
-{% else %}
-<form method="post" action="/tools/{{ id }}">
-{% if id == 'bulk_points' %}
-  <div class="row"><div><label>Points (+ add / − take)<input type="number" name="delta" required></label></div></div>
-  {{ note('Reason (required)', True) }}
-  <label>People - one per line (names, emails or student numbers)<textarea name="people" rows="4"></textarea></label>
-  <label class="check"><input type="checkbox" name="everyone" value="1"> Everyone (all active customers) instead</label>
-{% elif id == 'bonus_points' %}
-  <div class="row"><div><label>Multiplier<input type="number" name="multiplier" value="2" min="1.1" step="0.1" required></label></div></div>
-  {{ dates(today, today) }}{{ note() }}
-{% elif id == 'transfer_points' %}
-  {{ who('from', 'From') }}{{ who('to', 'To') }}
-  <label>Points<input type="number" name="points" min="1" required></label>{{ note() }}
-{% elif id == 'reset_points' %}
-  {{ note('Reason', False) }}{{ confirm('RESET') }}
-{% elif id == 'pause_tabs' %}
-  <p>Tabs are currently <b class="{{ 'red' if cfg.tabs_paused }}">{{ 'PAUSED' if cfg.tabs_paused else 'on' }}</b>.</p>
-  <input type="hidden" name="paused" value="{{ '0' if cfg.tabs_paused else '1' }}">{{ note() }}
-  <p><button class="{{ 'primary' if cfg.tabs_paused else 'danger' }} sm">{{ 'Turn tabs back on' if cfg.tabs_paused else 'Pause all tabs' }}</button></p>
-{% elif id == 'approve_eligible' %}
-  {{ note() }}
-{% elif id == 'revoke_all' %}
-  {{ note('Reason') }}{{ confirm('REVOKE') }}
-{% elif id == 'manual_charge' %}
-  {{ who() }}<label>Amount ($)<input type="text" name="amount" inputmode="decimal" required></label>
-  <label>Items<input type="text" name="items"></label>
-{% elif id == 'write_off' %}
-  {{ who() }}<label>Amount ($) - leave blank for everything owed<input type="text" name="amount" inputmode="decimal"></label>
-  {{ note('Reason (required)', True) }}
-{% elif id == 'extend_due' %}
-  {{ who() }}<label>Extra days<input type="number" name="days" value="7" min="1" required></label>{{ note() }}
-{% elif id == 'add_customer' %}
-  <label>Name<input type="text" name="name" required></label>
-  <label>Email<input type="text" name="email" inputmode="email" required></label>
-{% elif id == 'test_accounts' %}
-  <label>How many<input type="number" name="n" min="1" max="20" value="1" required></label>
-{% elif id == 'delete_test_accounts' %}
-  {{ confirm('DELETE') }}
-{% elif id == 'merge' %}
-  {{ who('keep', 'Keep this one') }}{{ who('dup', 'Merge this duplicate into it') }}
-{% elif id == 'bulk_archive' %}
-  <label>People - one per line<textarea name="people" rows="4" required></textarea></label>{{ note() }}
-{% elif id == 'restore' %}
-  <label>People - one per line ({{ archived|length }} archived)<textarea name="people" rows="3"></textarea></label>
-  <label class="check"><input type="checkbox" name="all" value="1"> Restore everyone archived</label>
-{% elif id == 'takings' %}
-  {{ dates(today, today) }}
-{% elif id == 'chase' or id == 'balances' or id == 'integrity' %}
-{% elif id == 'leaderboard' %}
-  <label>How many<input type="number" name="n" value="10" min="1"></label>
-{% elif id == 'raffle' %}
-  <label>Who's in the draw<select name="pool"><option value="bought">Bought something between these dates</option>
-    <option value="points">Anyone with points</option><option value="all">Every active customer</option></select></label>
-  {{ dates() }}
-  <div class="row"><div><label>Winners<input type="number" name="n" value="1" min="1"></label></div></div>
-  <label class="check"><input type="checkbox" name="weighted" value="1"> Weight by points</label>
-{% elif id == 'sync_now' %}
-  {% if not square_on %}<p class="red small">Square isn't configured.</p>{% endif %}
-{% elif id == 'resync' %}
-  <label>From<input type="date" name="start" value="{{ week_ago }}" required></label>
-{% elif id == 'history' %}
-  <label>Fizzy's launch date <span class="muted">(sales before this earn nothing)</span><input type="date" name="launch" value="{{ history_before or today }}" required></label>
-  <label>Import from<input type="date" name="start" value="2024-01-01" required></label>
-{% elif id == 'find_payment' %}
-  <label>Square payment ID<input type="text" name="payment_id" required></label>
-{% elif id == 'notice' %}
-  <label>Message (empty to clear)<textarea name="notice" rows="3">{{ notice.split('\n— ')[0] if notice }}</textarea></label>
-{% elif id == 'sign_out_all' %}
-  {{ confirm('SIGN OUT') }}
-{% endif %}
-{% if id != 'pause_tabs' %}<div class="actions"><button class="{{ 'danger' if id in DANGER else 'primary' }}">Run</button></div>{% endif %}
-</form>
-{% endif %}
-{% endmacro %}
+{% import "_tools.html" as tl with context %}
 
 {% block body %}
-<div class="pagehead"><div><h1>Tools</h1></div></div>
-<datalist id="people">{% for p in people %}<option value="{{ p.name }} <{{ p.email }}>">{% endfor %}</datalist>
+<div class="pagehead"><div><h1>Tools</h1><div class="meta">Everything Fizzy does, and where it lives</div></div></div>
+{{ tl.datalist() }}
+<section class="panel" id="index">
+  <input type="search" class="find" data-filter="#actions" placeholder="What do you want to do?" aria-label="Find an action" autocomplete="off">
+  <ul class="actions-index" id="actions">
+    {% for a in index %}<li data-filter-item><a href="{{ a.href }}"><b>{{ a.label }}</b><span class="where">{{ a.where }}</span></a><span class="small muted">{{ a.tip }}</span></li>
+    {% endfor %}
+  </ul>
+  <p class="empty" data-filter-none hidden>Nothing matches. Try another word.</p>
+</section>
+
+<h2 class="section-h">Run them here</h2>
 <div class="toolgrid">
 {# Fixed columns so tall and short sections pack neatly; stacks in reading order on a phone. #}
 {% for col in [[0, 2, 4], [1, 3], [5, 6, 7]] %}<div class="toolcol">
 {% for i in col %}{% set section, items = tools[i] %}
-  <section class="panel" data-n="{{ i + 1 }}">
-    <h2>{{ section }} <kbd>{{ i + 1 }}</kbd></h2>
-    {% for id, label, tip in items %}
-    <details class="tool{{ ' danger' if id in DANGER }}" id="{{ id }}">
-      <summary><span>{{ label }}</span>
-        <span class="tip" tabindex="0" data-tip="{{ tip }}" aria-label="{{ tip }}" onclick="event.preventDefault()">i</span></summary>
-      <div class="tool-body">{{ form(id) }}</div>
-    </details>
-    {% endfor %}
+  <section class="panel"{% if section == 'Data' %} id="exports"{% endif %}>
+    <h2>{{ section }}</h2>
+    {% for id, label, tip in items %}{{ tl.tool(id) }}{% endfor %}
   </section>
 {% endfor %}
 </div>{% endfor %}
 </div>
 {% endblock %}
-{% block scripts %}<script>
-// Number keys 1-8 jump to a section's first tool.
-document.addEventListener("keydown", function (e) {
-  var a = document.activeElement;
-  if (e.ctrlKey || e.metaKey || e.altKey || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;
-  var sec = document.querySelector('.toolgrid section[data-n="' + e.key + '"]');
-  if (sec) { var s = sec.querySelector("summary"); s.focus(); s.scrollIntoView({block: "nearest"}); }
-});
-// Re-open the tool you just used (redirects land on /tools#id).
-if (location.hash) { var d = document.querySelector(location.hash); if (d && d.tagName === "DETAILS") d.open = true; }
-</script>{% endblock %}
+{# The tool you just used opens again by itself: redirects land on /tools#id (app.js, jumpTo). #}

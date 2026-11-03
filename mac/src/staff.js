@@ -92,9 +92,15 @@ function create() {
     return { action: 'deny' };
   });
 
-  contents.on('did-finish-load', () => {
+  // A page has loaded. Fizzy swaps most pages in place (Turbo) rather than loading them, which
+  // only changes the address (an in-page navigation), so that counts as a new page too.
+  const pageLoaded = () => {
     if (contents.getURL().startsWith('http')) lastFailedURL = null;
     for (const fn of onPageLoaded) fn();
+  };
+  contents.on('did-finish-load', pageLoaded);
+  contents.on('did-navigate-in-page', (event, url, isMainFrame) => {
+    if (isMainFrame) pageLoaded();
   });
   contents.on('did-fail-load', (event, code, description, url, isMainFrame) => {
     // -3 is a load that was stopped on purpose (a new page started, or a link sent to the browser).

@@ -1,12 +1,14 @@
 {% extends "base.html" %}{% block title %}Customers{% endblock %}
+{% import "_tools.html" as tl with context %}
 {% block body %}
 <div class="pagehead"><div><h1>Customers</h1><div class="meta">{{ '{:,}'.format(count) }} active</div></div>
   <div class="actions" style="margin:0">
-    <a class="btn" href="/export/square-customers.csv?only=new" title="A file to add the people Square doesn't have yet (Square Dashboard → Customers → Import)">Export new people for Square ({{ not_in_square }})</a>
-    <a class="btn" href="/export/square-customers.csv" title="Everyone. Only for the first import - doing it again makes duplicates in Square"
-      data-confirm="This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them. Download everyone anyway?">Export everyone</a></div></div>
+    <button type="button" class="primary" data-open="add_customer" title="Someone who isn't in the school list, like a teacher">+ Add customer</button>
+    <a class="btn" href="#more" data-open="more" title="Import the school list, exports, merge, archive, points for many">More</a></div></div>
 {% include "_search.html" %}
-{% if q and not results %}<p class="empty">No one matches “{{ q }}”.</p>{% endif %}
+{% if q and not results %}<div class="empty-add"><p class="empty">No one matches “{{ q }}”.</p>
+  <button type="button" data-open="add_customer">Add “{{ q }}”</button></div>{% endif %}
+<div class="panel tools-here" id="add-box">{{ tl.tool('add_customer', back='/customers', prefill=new_person, open=add != '') }}</div>
 {% if results %}
 <div class="panel"><h2>{{ 'Results' if q else 'Recently in' }} <span class="count">{{ results|length }}</span></h2><div class="scroll"><table>
   <tr><th>Name</th><th class="hide-sm">Student no.</th><th>Tab</th><th class="n">Owing</th><th class="n">Points</th></tr>
@@ -17,4 +19,26 @@
     <td class="n">{{ s.ledger.owing_cents|money }}</td><td class="n">{{ '{:,}'.format(s.points) }}</td></tr>{% endfor %}
 </table></div></div>
 {% endif %}
+
+{# Everything for customers as a whole: rarer, and the ones that change a lot at once, at the bottom. #}
+{{ tl.datalist() }}
+<section class="panel tools-here" id="more"><h2>More</h2>
+  <details class="tool" id="import"><summary><span>Import the school list</span>
+      <span class="tip" tabindex="0" data-tip="The school's CSV. Adds new students and fixes names; never deletes anyone." aria-label="The school's CSV. Adds new students and fixes names; never deletes anyone." onclick="event.preventDefault()">i</span></summary>
+    <div class="tool-body">
+      <form method="post" action="/import" data-turbo="false" enctype="multipart/form-data">
+        <p class="small" style="margin:0">CSV with <code>Name</code> and <code>Email</code>. You'll see what changes before anything does.</p>
+        <label>File<input type="file" name="file" accept=".csv,text/csv" required></label>
+        <div class="actions"><button class="primary">Preview</button></div>
+      </form>
+    </div></details>
+  <details class="tool" id="exports"><summary><span>Export</span>
+      <span class="tip" tabindex="0" data-tip="Files for Square's customer import, or every customer as a spreadsheet." aria-label="Files for Square's customer import, or every customer as a spreadsheet." onclick="event.preventDefault()">i</span></summary>
+    <div class="tool-body"><p class="row">
+      <a class="btn sm" href="/export/square-customers.csv?only=new" data-turbo="false" title="A file to add the people Square doesn't have yet (Square Dashboard → Customers → Import)">Export new people for Square ({{ not_in_square }})</a>
+      <a class="btn sm" href="/export/square-customers.csv" data-turbo="false" title="Everyone. Only for the first import - doing it again makes duplicates in Square"
+        data-confirm="This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them. Download everyone anyway?">Export everyone</a>
+      <a class="btn sm" href="/tools/export/customers.csv" data-turbo="false">Customers spreadsheet</a></p></div></details>
+  {% for id in ['bulk_points', 'merge', 'bulk_archive', 'restore', 'test_accounts', 'delete_test_accounts'] %}{{ tl.tool(id, back='/customers') }}{% endfor %}
+</section>
 {% endblock %}

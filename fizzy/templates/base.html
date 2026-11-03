@@ -14,43 +14,87 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Fizzy">
-<link rel="stylesheet" href="/static/style.css?v={{ V }}">
-<script>try { if (sessionStorage.getItem("fizzy-autorefresh-y")) { document.documentElement.classList.add("quiet");  /* the dashboard's own refresh: no animations */
-} } catch (e) {}</script>
+<link rel="stylesheet" href="/static/style.css?v={{ V }}" data-turbo-track="reload">
+{# No ?v here: style.css asks for the font by its plain URL (as the student site does), and a preload only helps if the URLs match. #}
+<link rel="preload" href="/static/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin>
+{# Turbo Drive: links and forms swap the page in place instead of loading it from scratch. These run once
+   per tab, not on every page (data-turbo-eval="false"), and any change to them (an update) means one
+   full reload (data-turbo-track="reload"). Page code goes in app.js init(); see README, "Writing page scripts". #}
+<script src="/static/turbo.js?v={{ V }}" defer data-turbo-track="reload" data-turbo-eval="false"></script>
+<script src="/static/fuzzy.js?v={{ V }}" defer data-turbo-track="reload" data-turbo-eval="false"></script>
+<script src="/static/app.js?v={{ V }}" defer data-turbo-track="reload" data-turbo-eval="false"></script>
+<script src="/static/passkey.js?v={{ V }}" defer data-turbo-track="reload" data-turbo-eval="false"></script>
+{# No fetching on hover: some links do things (a Square sync, a backup) or sit behind the passcode. #}
+<meta name="turbo-prefetch" content="false">
+{# No page cache either: Back and Forward ask Fizzy again, as without Turbo. Every page shows points,
+   tabs or who's on the counter, and any of them can have changed on another screen since. #}
+<meta name="turbo-cache-control" content="no-cache">
+<meta name="view-transition" content="same-origin">
+<script>if ("serviceWorker" in navigator) addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });</script>
+{% block head %}{% endblock %}
 </head>
-<body{% if lock_rules %} data-unlocked="{{ unlocked }}" data-unlocked-until="{{ unlocked_until }}"{% endif %}>
+<body{% if lock_rules %} data-unlocked="{{ unlocked }}" data-unlocked-until="{{ unlocked_until }}"{% endif %}{% if jump %} data-jump="{{ jump }}"{% endif %}{% block body_attrs %}{% endblock %}>
 {% if lock_rules %}<script type="application/json" id="lock-rules">{{ lock_rules|tojson }}</script>{% endif %}
 {% if staff %}
 <header>
   <a class="brand" href="/">{% include "_logo.html" %}<span>Fizzy</span><small>Cooked Coke Co.</small></a>
   {% set p = request.url.path %}
+  {# Six tabs, then More (Settings, Log, Tools). Sales is Transactions and Square; Money is Money and Profit. #}
+  {% set tabs = [('/', 'Dashboard', ('/ask',)), ('/customers', 'Customers', ('/import', '/scan')), ('/transactions', 'Sales', ('/sales', '/square')),
+                 ('/tabs', 'Tabs', ()), ('/rewards', 'Rewards', ()), ('/money', 'Money', ('/profit',))] %}
+  {% set more_tabs = [('/settings', 'Settings', ('/display/settings',)), ('/audit', 'Log', ()), ('/tools', 'Tools', ())] %}
+  {% macro tab(p, href, label, also, i, fixed) %}{% set on = (p == '/' or p.startswith('/ask')) if href == '/' else (p.startswith(href) or p.startswith(also)) %}<a href="{{ href }}" data-i="{{ i }}"{% if fixed %} data-fixed{% endif %} class="{{ 'on' if on }}">{{ label }}</a>{% endmacro %}
   <nav>
-    {% for href, label, key in [('/', 'Dashboard', 'D'), ('/customers', 'Customers', 'C'), ('/transactions', 'Transactions', 'X'), ('/square', 'Square', 'S'), ('/rewards', 'Rewards', 'R'), ('/profit', 'Profit', 'P'), ('/money', 'Money', 'M'), ('/tools', 'Tools', 'T'), ('/ask', 'Ask', 'A'), ('/import', 'Import', 'I'), ('/settings', 'Settings', ','), ('/audit', 'Log', 'L')] %}
-    <a href="{{ href }}" class="{{ 'on' if (p == '/' if href == '/' else p.startswith(href)) }}" title="{{ label }} - press G then {{ key }}">{{ label }}</a>
+    {% for href, label, also in tabs %}{{ tab(p, href, label, also, loop.index0, False) }}
     {% endfor %}
   </nav>
-  <details class="nav-more" hidden><summary>More</summary><div class="nav-menu"></div></details>
-  <script>/* Runs before first paint. Wider than a phone: tabs that don't fit go into a "More" menu at the end
-     (never the current page's). Phone: the row scrolls, kept on the current tab, edges faded. */
+  {% set more_on = namespace(v=False) %}{% for href, _, also in more_tabs %}{% if p.startswith(href) or p.startswith(also) %}{% set more_on.v = True %}{% endif %}{% endfor %}
+  <details class="nav-more{{ ' on' if more_on.v }}"><summary>More</summary><div class="nav-menu">
+    {% for href, label, also in more_tabs %}{{ tab(p, href, label, also, tabs|length + loop.index0, True) }}{% endfor %}
+  </div></details>
+  <script>/* Runs before first paint. Settings, Log and Tools always sit in the More menu (data-fixed). Wider than a
+     phone: tabs that still don't fit go into that menu too, above them (never the current page's). Before any
+     tab moves, the extras give way one at a time, in the order a narrower window drops them (style.css, 1600px
+     and below), so a wider window never shows less: the Display menu's word, then the tagline, labels and date
+     ("tight"), the header search down to a magnifier ("fold"), the clock, and last the Display menu down to its
+     icon. Phone: no menu; every tab is in the row, which scrolls, kept on the current tab, edges faded. */
   (function (more) {
-    var n = more.previousElementSibling, menu = more.querySelector(".nav-menu"), links = Array.prototype.slice.call(n.querySelectorAll("a"));
+    // From the menu too, in their first order, in case some are there already.
+    var n = more.previousElementSibling, menu = more.querySelector(".nav-menu"),
+        links = Array.prototype.slice.call(more.parentNode.querySelectorAll("nav a, .nav-menu a")).sort(function (a, b) { return a.dataset.i - b.dataset.i; });
+    function fits() { return n.scrollWidth <= n.clientWidth + 1; }
     function fit() {
-      var clock = document.querySelector("header .clock");
-      links.forEach(function (a) { n.appendChild(a); });
-      more.hidden = true; more.open = false;
+      var h = more.parentNode, clock = h.querySelector(".clock"), dm = h.querySelector(".dmode");  // this page's header, not the last one's
+      var phone = innerWidth <= 720;
+      links.forEach(function (a) { (phone || !a.hasAttribute("data-fixed") ? n : menu).appendChild(a); });
+      more.hidden = phone; more.open = false;
+      h.classList.remove("tight", "fold");
       if (clock) clock.classList.remove("squeezed");
-      if (innerWidth <= 720 || n.scrollWidth <= n.clientWidth + 1) return;
-      if (clock) clock.classList.add("squeezed");  // the clock gives way before any tab does
-      if (n.scrollWidth <= n.clientWidth + 1) return;
-      more.hidden = false;
-      for (var i = links.length - 1; i >= 0 && n.scrollWidth > n.clientWidth + 1; i--) {
-        if (!links[i].classList.contains("on")) menu.insertBefore(links[i], menu.firstChild);
+      if (dm) dm.classList.remove("tight", "squeezed");
+      if (!phone && !fits()) {
+        var steps = [[dm, "tight"], [h, "tight"], [h, "fold"], [clock, "squeezed"], [dm, "squeezed"]];
+        for (var s = 0; s < steps.length && !fits(); s++) {
+          if (steps[s][0]) steps[s][0].classList.add(steps[s][1]);
+        }
+        var first = menu.firstChild;
+        for (var i = links.length - 1; i >= 0 && !fits(); i--) {
+          if (!links[i].classList.contains("on") && !links[i].hasAttribute("data-fixed")) first = menu.insertBefore(links[i], first);
+        }
       }
       more.classList.toggle("on", !!menu.querySelector("a.on"));
     }
+    function close(e) { if (more.open && !more.contains(e.target)) more.open = false; }
+    // Turbo runs this again on every page in the same tab: the last page's listeners go first.
+    if (window.fizzyNavOff) fizzyNavOff();
+    window.fizzyNavOff = function () {
+      removeEventListener("resize", fit); document.removeEventListener("DOMContentLoaded", fit); removeEventListener("load", fit);
+      document.removeEventListener("turbo:render", fit); document.removeEventListener("click", close);
+    };
     fit(); addEventListener("resize", fit); document.addEventListener("DOMContentLoaded", fit); addEventListener("load", fit);
+    // Again once app.js has drawn the page (the clock's time goes in then), as DOMContentLoaded does on a full load.
+    document.addEventListener("turbo:render", fit);
     if (document.fonts) document.fonts.ready.then(fit);
-    document.addEventListener("click", function (e) { if (more.open && !more.contains(e.target)) more.open = false; });
+    document.addEventListener("click", close);
   })(document.currentScript.previousElementSibling);
   </script>
   <script>
@@ -61,51 +105,54 @@
       n.classList.toggle("more-l", n.scrollLeft > 2);
       n.classList.toggle("more-r", n.scrollLeft + n.clientWidth < n.scrollWidth - 2);
     }
+    if (window.fizzyEdgesOff) fizzyEdgesOff();  // as above: one resize listener, not one per page visited
+    window.fizzyEdgesOff = function () { removeEventListener("resize", edges); };
     edges(); n.addEventListener("scroll", edges, { passive: true }); addEventListener("resize", edges);
   })(document.currentScript.previousElementSibling.previousElementSibling.previousElementSibling);
   </script>
   {% if p not in ('/', '/customers') %}
-  <div class="hsearch"><input type="search" data-search placeholder="Search  /" title="Search customers - press / or S" autocomplete="off" aria-label="Find a customer"><div class="results"></div></div>
+  <div class="hsearch"><input type="search" data-search placeholder="Search" title="Find a customer by name or student number" autocomplete="off" aria-label="Find a customer"><div class="results"></div></div>
   {% endif %}
   <a class="msearch" href="/customers" title="Find a customer" aria-label="Find a customer"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8.5" cy="8.5" r="6"/><path d="m13 13 5 5"/></svg></a>
   <div class="who">
     <time class="clock" data-clock data-tz="{{ TZ }}" aria-label="Current time"></time>
-    <button type="button" id="keys-btn" class="keys-btn" title="Keyboard shortcuts (?)">?</button>
+    {# What the customer display shows. Chosen per device, so app.js sets it from this browser's storage
+       (nothing is marked selected here: it would be wrong on a device that chose something else). #}
+    <label class="dmode" title="What the customer display shows">
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="3" width="16" height="11" rx="1.5"/><path d="M7 17.5h6M10 14v3.5"/></svg>
+      <span class="label">Display</span>
+      <select data-display-mode aria-label="Customer display shows" autocomplete="off">
+        <option value="auto">Auto</option>
+        <optgroup label="Hold one screen">
+          <option value="hello">Welcome</option>
+          <option value="menu">On the shelf</option>
+          <option value="popular">Popular today</option>
+          <option value="leaders">Top this month</option>
+          <option value="soon">Coming up</option>
+        </optgroup>
+        <option value="rotate">Rotate all</option>
+        <option value="hide">Hidden</option>
+        <option value="edit">Edit message…</option>
+      </select>
+    </label>
     <form class="inline" method="post" action="/switch">
       <span class="label">On counter</span>
-      <select name="who" onchange="this.form.submit()" aria-label="Staff on counter" data-key="w" data-key-label="Switch who's on the counter">
+      {# autocomplete="off": Back to a page that was loaded in full shouldn't bring back who was on the counter then. #}
+      <select name="who" onchange="this.form.submit()" aria-label="Staff on counter" autocomplete="off">
         {% for n in staff_names %}<option {{ 'selected' if n == staff }}>{{ n }}</option>{% endfor %}
       </select>
     </form>
-    <form class="inline" method="post" action="/logout"><button type="submit" title="Sign this device out (no shortcut, on purpose)">Lock</button></form>
+    <form class="inline" method="post" action="/logout" data-turbo="false"><button type="submit" title="Sign this device out (no shortcut, on purpose)">Lock</button></form>
   </div>
 </header>
 {% endif %}
 <main>
 {% if flash %}<div class="flash {{ flash_kind }}" role="status">{{ flash }}</div>{% endif %}
 {% if staff %}<div class="jobbar" id="jobbar" hidden role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span class="t"></span><button type="button" class="sm" hidden>OK</button></div>{% endif %}
+{% if staff and claim_waits is defined %}{% include "_claimbar.html" %}{% endif %}
 {% block body %}{% endblock %}
 </main>
-<dialog id="keys" onclick="if(event.target===this)this.close()">
-  <div class="pagehead"><h1>Keyboard shortcuts</h1><button class="sm" onclick="this.closest('dialog').close()">Close <kbd>Esc</kbd></button></div>
-  <div class="grid" style="margin:0">
-    <div><h2>Everywhere</h2><table>
-      <tr><td><kbd>/</kbd> <kbd>S</kbd></td><td>Search customers</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Pick a search result</td></tr>
-      <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>Open that search result. Use <kbd>Alt</kbd>+number when searching by student number</td></tr>
-      <tr><td><kbd>Esc</kbd></td><td>Leave a field · then back to dashboard</td></tr>
-      <tr><td><kbd>Ctrl</kbd> <kbd>Enter</kbd></td><td>Submit the form you're in</td></tr>
-      <tr><td><kbd>G</kbd> then <kbd>D</kbd> <kbd>C</kbd> <kbd>X</kbd> <kbd>S</kbd> <kbd>R</kbd> <kbd>T</kbd> <kbd>I</kbd> <kbd>L</kbd> <kbd>,</kbd> <kbd>P</kbd> <kbd>M</kbd></td><td>Go to Dashboard, Customers, Transactions, Square, Rewards, Tools, Import, Log, Settings, Profit, Money</td></tr>
-      <tr><td><kbd>?</kbd></td><td>This list</td></tr>
-    </table></div>
-    <div><h2>This page</h2><table id="keys-page"></table></div>
-  </div>
-</dialog>
-<script src="/static/fuzzy.js?v={{ V }}" defer></script>
 {% if display_msg %}<script type="application/json" id="display-msg">{{ display_msg|tojson }}</script>{% endif %}
-<script src="/static/app.js?v={{ V }}" defer></script>
-<script src="/static/passkey.js?v={{ V }}" defer></script>
-<script>if ("serviceWorker" in navigator) addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

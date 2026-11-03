@@ -1,18 +1,20 @@
 {% extends "base.html" %}{% block title %}Square{% endblock %}
+{% import "_subtabs.html" as sub with context %}{% import "_tools.html" as tl with context %}
 {% block body %}
+{{ sub.sales() }}
 <datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>
 <div class="pagehead"><div><h1>Square</h1><div class="meta">Last sync {{ last_sync|local or 'never' }}</div></div>
-  <form method="post" action="/square/sync"><button class="primary" {{ 'disabled' if not square_on }} data-key="u" data-key-label="Sync now">Sync now <kbd>U</kbd></button></form></div>
-{% if unclaimed and show != 'unlinked' %}<div class="todo" style="margin-bottom:var(--s4)"><b>{{ unclaimed }} sale{{ '' if unclaimed == 1 else 's' }} this week with nobody on {{ 'it' if unclaimed == 1 else 'them' }}.</b>
-  <span>No points or tab until someone's assigned - <a href="/square?show=unlinked">see them</a>.</span></div>{% endif %}
+  <form method="post" action="/square/sync"><button class="primary" {{ 'disabled' if not square_on }}>Sync now</button></form></div>
+{% if unclaimed and show != 'unlinked' %}<div class="todo"><b>{{ unclaimed }} sale{{ '' if unclaimed == 1 else 's' }} this week with nobody on {{ 'it' if unclaimed == 1 else 'them' }}.</b>
+  <span>No points or tab until someone's assigned - <a href="/square?show=unlinked">see them</a>. A teacher's, or someone without an account? Mark it No account.</span></div>{% endif %}
 {% if sync_error %}<div class="err">Last sync error: {{ sync_error }}</div>{% endif %}
 <div class="stats">
   <div class="stat"><div class="k">Connection</div><div class="v sm">{{ 'Connected' if square_on else 'Not set up' }}</div>{% if square_on %}<div class="sub">{{ 'Webhooks + polling' if webhook_on else 'Polling every 5 min' }}</div>{% endif %}</div>
   <div class="stat"><div class="k">Synced up to</div><div class="v sm">{{ cursor|local or 'Never' }}</div></div>
-  <div class="stat {{ 'alert' if unlinked_customers }}"><div class="k">Not in Square</div><div class="v">{{ unlinked_customers }}</div><div class="sub"><a href="/export/square-customers.csv">Download import CSV</a></div></div>
+  <div class="stat {{ 'alert' if unlinked_customers }}"><div class="k">Not in Square</div><div class="v">{{ unlinked_customers }}</div><div class="sub"><a href="/export/square-customers.csv" data-turbo="false">Download import CSV</a></div></div>
 </div>
 {% if conflicts %}
-<div class="panel" style="border-color:var(--warn-line)"><h2>Square profiles not linked <span class="count">{{ conflicts|length }}</span></h2>
+<div class="panel attn warn"><h2>Square profiles not linked <span class="count">{{ conflicts|length }}</span></h2>
   <div class="scroll"><table><tr><th>Square profile</th><th>Email</th><th>Already in Fizzy as</th></tr>
     {% for c in conflicts %}<tr><td>{{ c.name }}</td><td class="mono small">{{ c.email }}</td><td>{{ c.existing }}</td></tr>{% endfor %}
   </table></div>
@@ -31,16 +33,20 @@
 </div>
 <div class="panel">
   <h2>{{ 'Payments with no customer' if show == 'unlinked' else 'Recent payments' }}
-    <a class="small" style="float:right;text-transform:none;letter-spacing:0;font-weight:500" href="{{ '/square' if show == 'unlinked' else '/square?show=unlinked' }}">{{ 'Show all' if show == 'unlinked' else 'Only unlinked' }}</a></h2>
+    <a class="aside" href="{{ '/square' if show == 'unlinked' else '/square?show=unlinked' }}">{{ 'Show all' if show == 'unlinked' else 'Only unlinked' }}</a></h2>
   <div class="scroll"><table data-clip="25">
     <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th class="hide-md">Tender</th><th class="hide-sm">Items</th><th title="Change this if Fizzy got it wrong">Counted as</th><th></th></tr>
     {% for p in rows %}<tr>
-      <td style="white-space:nowrap">{{ p.created_at|local('%a %-d %b %H:%M') }}</td>
-      <td>{% if p.customer_id %}<a href="/customers/{{ p.customer_id }}">{{ p.name }}</a>{% else %}
-        <form class="assign" method="post" action="/square/payments/{{ p.square_payment_id }}/assign">
+      <td class="when">{{ p.created_at|local('%a %-d %b %H:%M') }}</td>
+      <td>{% if p.customer_id %}<a href="/customers/{{ p.customer_id }}">{{ p.name }}</a>{% elif p.no_account %}
+        <span class="noacct"><span class="tag" title="Marked by {{ p.no_account_by }}, {{ p.no_account|local }}. Counts in takings; nobody gets it.">No account</span>
+        <form class="inline" method="post" action="/square/no-account/undo"><input type="hidden" name="key" value="{{ p.key }}">
+          <button class="sm" title="Make it a sale with nobody on it again">Undo</button></form></span>{% else %}
+        <span class="noacct"><form class="assign" method="post" action="/square/payments/{{ p.square_payment_id }}/assign">
           <input type="text" name="customer" list="people" placeholder="Assign to…" autocomplete="off" required
                  title="Type who it was, then Enter">
-        </form>{% endif %}</td>
+        </form>{% if p.kind == 'sale' %}<form class="inline" method="post" action="/square/no-account"><input type="hidden" name="key" value="{{ p.key }}">
+          <button class="sm" title="A teacher, or someone without an account: it still counts, but nobody gets it">No account</button></form>{% endif %}</span>{% endif %}</td>
       <td class="n">{{ p.amount_cents|money }}</td><td class="small hide-md">{{ p.tender }}</td><td class="small hide-sm items">{{ p['items'] }}</td>
       <td><form class="inline" method="post" action="/square/payments/{{ p.square_payment_id }}/kind">
         <select name="kind" style="height:28px;width:auto" data-was="{{ p.kind }}" onchange="var s=this,v=s.value;s.value=s.dataset.was;fizzyAsk('Change how this payment is counted?',function(){s.value=v;s.form.requestSubmit()})">
@@ -50,4 +56,10 @@
     {% else %}<tr><td colspan="7" class="empty">No payments yet.</td></tr>{% endfor %}
   </table></div>
 </div>
+<section class="panel tools-here" id="more"><h2>More</h2>
+  {% for id in ['resync', 'history', 'find_payment'] %}{{ tl.tool(id, back='/square') }}{% endfor %}
+  <details class="tool" id="square-export"><summary><span>Export Square payments</span>
+      <span class="tip" tabindex="0" data-tip="Every Square payment Fizzy has, as a spreadsheet." aria-label="Every Square payment Fizzy has, as a spreadsheet." onclick="event.preventDefault()">i</span></summary>
+    <div class="tool-body">{{ tl.exports(['square_payments']) }}</div></details>
+</section>
 {% endblock %}

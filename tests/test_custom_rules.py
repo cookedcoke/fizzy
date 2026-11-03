@@ -184,7 +184,7 @@ def test_key_from_settings(client, owner, monkeypatch):
     login(client)
     assert "Enter the passcode" in client.post("/settings/ask", data={"key": "AIza" + "x" * 35}).text   # owner only
     _unlock(client, "owner-pw", 2)
-    assert "Ask is on" in client.post("/settings/ask", data={"key": "AIza" + "x" * 31 + "WXYZ"}).text
+    assert "Fizz is on" in client.post("/settings/ask", data={"key": "AIza" + "x" * 31 + "WXYZ"}).text
     assert ask.api_key().endswith("WXYZ") and ask.enabled()
     page = client.get("/settings").text
     assert "ends <code>WXYZ</code>" in page and "AIzaxxxx" not in page                                 # never shown back
@@ -192,7 +192,7 @@ def test_key_from_settings(client, owner, monkeypatch):
     assert "AIza" not in conn.execute("SELECT value FROM settings WHERE key = 'gemini_key_enc'").fetchone()[0]  # encrypted
     conn.close()
     assert "doesn" in client.post("/settings/ask", data={"key": "hello"}).text
-    assert "Ask is on" in client.post("/settings/ask", data={"key": "AQ.Ab8RN6" + "x" * 40}).text   # Google's newer style
+    assert "Fizz is on" in client.post("/settings/ask", data={"key": "AQ.Ab8RN6" + "x" * 40}).text   # Google's newer style
     client.post("/settings/ask", data={"remove": "1"})
     assert not ask.enabled()
 
@@ -255,9 +255,99 @@ def test_ask_streams_steps_then_the_answer(client, monkeypatch):
     body = client.post("/ask/stream", data={"text": "slowest day?"}).text
     events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
     kinds = [e["t"] for e in events]
-    assert kinds == ["status", "delta", "delta", "done"]
-    assert events[0]["text"] == "Adding up sales by weekday..." and events[1]["text"] + events[2]["text"] == "Mondays are **slowest**."
+    assert kinds == ["start", "status", "delta", "delta", "done"]
+    assert events[0]["text"] == "slowest day?" and len(events[0]["id"]) == 12   # which question this is
+    assert events[1]["text"] == "Adding up sales by weekday..." and events[2]["text"] + events[3]["text"] == "Mondays are **slowest**."
     assert "<strong>slowest</strong>" in client.get("/ask").text            # saved, and rendered properly after
     monkeypatch.setattr(ask, "_stream", lambda *a, **k: (_ for _ in ()).throw(ask.AskError("Gemini says too many requests")))
     body = client.post("/ask/stream", data={"text": "again"}).text
     assert '"t": "error"' in body and "too many requests" in body             # errors arrive as an event, never a hang
+
+
+def test_ask_sees_the_built_in_badges(conn):
+    from fizzy import ask, badges
+    out = ask.run_tool(conn, "Will", "list_rules", {})
+    names = [b["name"] for b in out["built_in_badges"]]
+    assert names == list(badges.BUILT_IN) and len(names) == 10
+    assert out["built_in_badges"][0]["how"] == "Buy something at the stall" and "custom_rules" in out
+
+
+def test_ask_answers_in_the_background(client, monkeypatch):
+    """Leaving the page or losing the connection doesn't lose the answer: it's written in the background,
+    the page says what's still pending, and the stream can be joined again from the start."""
+    import threading
+    import time as _time
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    ask._jobs.clear()
+    gate = threading.Event()
+
+    def slow(contents, system, tools=True):
+        yield "delta", "Mondays "
+        gate.wait(5)
+        yield "delta", "are slow."
+        yield "content", {"role": "model", "parts": [{"text": "Mondays are slow."}]}
+    monkeypatch.setattr(ask, "_stream", slow)
+    login(client)
+    job = ask.start("Mike", "slowest day?")                      # what POST /ask/stream does, with nobody listening
+    for _ in range(100):
+        if job.answer:
+            break
+        _time.sleep(0.05)
+    page = client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()
+    assert page["pending"] == {"id": job.id, "text": "slowest day?", "answer": "Mondays ", "status": None, "at": job.started}
+    body = client.post("/ask/stream", data={"text": "another"}).text   # one at a time
+    assert '"t": "error"' in body and "Still answering" in body
+    r = client.post("/ask/clear", follow_redirects=False)                # and no clean slate under a running answer
+    assert r.status_code == 303 and "Still answering" in client.get("/ask").text
+    assert client.post("/ask", data={"text": "plain form"}, follow_redirects=False).status_code == 303
+    gate.set()
+    body = client.get("/ask/stream").text                          # joining replays from the start, then follows
+    events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
+    assert [e["t"] for e in events] == ["start", "delta", "delta", "done"] and events[0]["id"] == job.id
+    assert "".join(e.get("text", "") for e in events[1:]) == "Mondays are slow."
+    page = client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()
+    assert page["pending"] is None
+    assert [m["text"] for m in page["timeline"] if m["kind"] == "msg"] == ["slowest day?", "Mondays are slow."]
+    body = client.get("/ask/stream").text                          # a finished answer is still there to replay
+    assert '"t": "done"' in body
+
+
+def test_ask_join_with_nothing_pending(client):
+    ask._jobs.clear()
+    login(client)
+    body = client.get("/ask/stream").text
+    assert [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")] == [{"t": "none"}]
+
+
+def test_new_chat_clears_the_cards_too(client):
+    login(client)
+    conn = db.connect()
+    conn.execute("INSERT INTO ask_messages(staff, role, content, shown, created_at) VALUES ('Mike', 'user', '[]', 'hi', ?)", (db.now_iso(),))
+    for status in ("done", "dismissed", "pending"):
+        conn.execute("INSERT INTO ask_proposals(staff, action, payload, summary, status, created_at) VALUES ('Mike', 'reward', '{}', 'A reward', ?, ?)",
+                     (status, db.now_iso()))
+    conn.commit()
+    conn.close()
+    assert len(client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()["timeline"]) == 4
+    client.post("/ask/clear")
+    page = client.get("/ask", headers={"X-Fizzy-Format": "json"}).json()
+    assert page["timeline"] == []          # no cards left lingering at the top of the new chat
+
+
+def test_ask_gives_up_on_a_stuck_answer(client, monkeypatch):
+    """A thread that never finishes (or died before its try/finally) mustn't lock the person out for ever."""
+    import threading
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test")
+    ask._jobs.clear()
+    stuck = ask._Job("Mike", "never answered")
+    ask._jobs["Mike"] = stuck
+    login(client)
+    body = client.post("/ask/stream", data={"text": "again"}).text
+    assert "Still answering" in body
+    stuck.t0 -= ask.STUCK_AFTER + 1
+    monkeypatch.setattr(ask, "_stream", lambda contents, system, tools=True: iter([("delta", "Fine."), ("content", {"role": "model", "parts": [{"text": "Fine."}]})]))
+    body = client.post("/ask/stream", data={"text": "again", "client": "phone-7"}).text
+    events = [json.loads(line[5:]) for line in body.split("\n") if line.startswith("data:")]
+    assert [e["t"] for e in events] == ["start", "delta", "done"] and events[0]["text"] == "again"
+    assert events[0]["client"] == "phone-7"                      # the asker's own tag, to know it from an older answer
+    assert stuck.done and stuck.abandoned and stuck.events[-1]["t"] == "error"   # followers of the old one are told; it writes no more

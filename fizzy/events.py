@@ -200,7 +200,7 @@ def events_create(request: Request, name: str = Form(""), multiplier: str = Form
             create(conn, name, multiplier, start, end, who)
         reconcile(conn)
     except EventError as e:
-        return back(request, "/rewards#events", str(e), "bad")
+        return back(request, "/rewards#new-event", str(e), "bad")
     conn.commit()
     if announce:
         discord.announce(*announcement(name, multiplier, start, end, weekly))

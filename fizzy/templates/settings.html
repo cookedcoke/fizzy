@@ -1,11 +1,12 @@
 {% extends "base.html" %}{% block title %}Settings{% endblock %}
+{% import "_tools.html" as tl with context %}
 {% block body %}
 <div class="pagehead"><div><h1>Settings</h1><div class="meta">Fizzy version <span class="mono">{{ update.version }}</span></div></div></div>
 <div class="cols forms-first settings-cols">
 <div class="col settings-main">
 <form class="panel" id="permissions" method="post" action="/settings/permissions"><h2>Who can do what</h2>
   <table class="perms">
-    {% set groups = {'claim': 'Everyday', 'points': 'Points and rewards', 'tab_decisions': 'Tabs', 'customers': 'Customers', 'ask': 'Ask (Gemini)', 'qr_login': 'Customers',
+    {% set groups = {'claim': 'Everyday', 'points': 'Points and rewards', 'tab_decisions': 'Tabs', 'customers': 'Customers', 'ask': 'Fizz (Gemini)', 'qr_login': 'Customers',
                      'money': 'Money', 'school_tools': 'Big stuff', 'admin_accounts': 'Special accounts'} %}
     {% for aid, label, _, _ in actions %}{% if aid in groups %}<tr class="group"><th colspan="2">{{ groups[aid] }}</th></tr>{% endif %}<tr><td>{{ label }}</td><td class="n"><select name="{{ aid }}" aria-label="{{ label }}">
       {% for lv, ll in level_labels.items() %}<option value="{{ lv }}" {{ 'selected' if perms[aid] == lv }}>{{ ll }}</option>{% endfor %}</select></td></tr>{% endfor %}
@@ -32,30 +33,18 @@
   {% elif update.requested %}<p class="hint">Update requested.</p>
   {% else %}<div class="actions"><button class="{{ 'primary' if update.behind else '' }}" data-confirm="Update now? Down for about a minute.">Update now</button></div>{% endif %}
 </form>
-<form class="panel" method="post" action="/settings"><h2>Tab rules</h2>
-  <label>Highest tab limit ($)<input type="text" name="tab_limit" inputmode="decimal" value="{{ '%.2f'|format(cfg.tab_limit_cents/100) }}"></label>
-  <label>Days to pay<input type="number" name="due_days" min="1" value="{{ cfg.tab_due_days }}"></label>
-  <label>Spend before eligible ($)<input type="text" name="unlock_spend" inputmode="decimal" value="{{ '%.2f'|format(cfg.unlock_spend_cents/100) }}"></label>
-  <label>Tab score needed (0 to 100)<input type="number" name="score_needed" min="0" max="100" step="1" value="{{ cfg.tab_score_needed }}"></label>
-  <div class="actions"><button class="primary">Save</button></div>
-</form>
-<form class="panel" id="display" method="post" action="/settings/display"><h2>Customer display</h2>
-  <label>Message<input type="text" name="message" maxlength="120" value="{{ display_message }}" placeholder="None"></label>
-  {% if display_menu %}<input type="hidden" name="menu" value="1">
-  <label style="margin-top:12px">On the shelf <span class="muted">(up to 12)</span></label>
-  <div class="menu-pick">{% for m in display_menu %}<label class="check"><input type="checkbox" name="show" value="{{ m.item_id }}" {{ '' if m.item_id in display_hidden else 'checked' }}> {{ m.item_name }} <span class="muted">{{ m.price|money }}</span></label>{% endfor %}</div>
-  {% endif %}
-  <label class="check" style="margin-top:12px"><input type="checkbox" name="owing" value="1" {{ 'checked' if display_owing }}> Show what they owe</label>
-  <div class="actions"><button class="primary">Save</button> <a class="btn" href="/display" target="_blank">Open</a></div>
-</form>
-<form class="panel" id="ask" method="post" action="/settings/ask" autocomplete="off"><h2>Ask (Gemini)</h2>
+<div class="panel" id="elsewhere"><h2>Now on their own pages</h2>
+  <p style="margin:0"><a href="/tabs#rules">Tab rules</a> are on Tabs. The <a href="/display/settings">customer display message</a>
+    is in the header's Display menu (Edit message).</p>
+</div>
+<form class="panel" id="ask" method="post" action="/settings/ask" autocomplete="off"><h2>Fizz (Gemini)</h2>
   {% if gemini.env %}<p class="small" style="margin:0">Key from <code>.env</code>.</p>
   {% else %}
   {% if gemini.hint %}<p class="small" style="margin-top:0">Saved, ends <code>{{ gemini.hint }}</code>.</p>{% endif %}
   <label>API key<input type="password" name="key" placeholder="{{ 'Keep saved key' if gemini.hint else 'Paid key from aistudio.google.com' }}" autocomplete="off" spellcheck="false"></label>
   {% endif %}
   <label>Model <input type="text" name="model_name" value="{{ gemini.model }}" placeholder="{{ gemini.default }}" spellcheck="false"></label>
-  <div class="actions"><button class="primary">Save</button>{% if gemini.hint and not gemini.env %}<button name="remove" value="1" class="danger" formnovalidate data-confirm="Remove the Gemini key? Ask stops working.">Remove key</button>{% endif %}</div>
+  <div class="actions"><button class="primary">Save</button>{% if gemini.hint and not gemini.env %}<button name="remove" value="1" class="danger" formnovalidate data-confirm="Remove the Gemini key? Fizz stops working.">Remove key</button>{% endif %}</div>
 </form>
 <form class="panel" id="terms" method="post" action="/settings/terms"><h2>Term dates</h2>
   <textarea name="terms" rows="4" placeholder="2026-10-13 to 2026-12-11 Term 4&#10;2027-02-02 to 2027-04-09 Term 1">{% for a, b, label in terms %}{{ a }} to {{ b }}{% if label %} {{ label }}{% endif %}
@@ -79,13 +68,16 @@
   <div class="actions"><button class="danger" data-confirm="Turn on maintenance mode for everyone?">Turn on</button></div>
   {% else %}<p class="notice small">Needs an owner password.</p>{% endif %}
 </form>
-<form class="panel" method="post" action="/settings/backup"><h2>Backups</h2>
+<form class="panel" id="backups" method="post" action="/settings/backup"><h2>Backups</h2>
   <table>
     <tr><td style="width:90px" class="muted">Folder</td><td class="mono">{{ backup_dir or 'Not set up yet' }}</td></tr>
     <tr><td class="muted">Last</td><td>{{ last_backup|local or 'Never' }}</td></tr>
   </table>
-  <div class="actions"><button>Back up now</button><a class="btn" href="/tools/backup.db">Download</a></div>
+  <div class="actions"><button>Back up now</button><a class="btn" href="/tools/backup.db" data-turbo="false">Download</a></div>
 </form>
+<section class="panel tools-here" id="more"><h2>Looking after Fizzy</h2>
+  {{ tl.tool('integrity', back='/settings') }}{{ tl.tool('sign_out_all', back='/settings') }}
+</section>
 <div class="panel" id="passkeys"><h2>Security keys</h2>
   {% if passkey_options %}
   <div class="notice" style="margin-top:12px" data-passkey-add>
@@ -106,7 +98,7 @@
     <tr><th>Key</th><th>Added</th><th>Last used</th><th></th></tr>
     {% for k in passkey_list %}<tr>
       <td>{{ k.name }} <span class="small muted">{{ k.rp_id }}</span></td>
-      <td class="small">{{ k.created_at|local('%d %b %Y') }} · {{ k.created_by }}</td>
+      <td class="small">{{ k.created_at|local('%-d %b %Y') }} · {{ k.created_by }}</td>
       <td class="small">{{ k.last_used_at|local if k.last_used_at else 'Never' }}</td>
       <td class="n"><form class="inline" method="post" action="/settings/passkeys/{{ k.id }}/remove">
         <button class="sm danger" data-confirm="Remove {{ k.name }}?">Remove</button></form></td>
@@ -131,7 +123,7 @@
     <tr><th>Device</th><th>Added</th><th>Last used</th><th></th></tr>
     {% for d in device_list %}<tr>
       <td>{{ d.name }}{% if d.revoked_at %} <span class="tag">Removed</span>{% endif %}</td>
-      <td class="small">{{ d.created_at|local('%d %b %Y') }} · {{ d.created_by }}</td>
+      <td class="small">{{ d.created_at|local('%-d %b %Y') }} · {{ d.created_by }}</td>
       <td class="small">{{ d.last_seen_at|local }}</td>
       <td class="n">{% if not d.revoked_at %}<form class="inline" method="post" action="/settings/devices/{{ d.id }}/revoke">
         <button class="sm danger" data-confirm="Remove {{ d.name }}?">Remove</button></form>{% endif %}</td>

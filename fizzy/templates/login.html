@@ -3,7 +3,7 @@
 <div class="login">
   <div class="mark">{% include "_logo.html" %}<div><b>Fizzy</b><span>Cooked Coke Co. · staff only</span></div></div>
   {% if error %}<div class="err">{{ error }}</div>{% endif %}
-  <form class="panel" method="post" action="/login">
+  <form class="panel" method="post" action="/login" data-turbo="false">
     <input type="hidden" name="next" value="{{ next }}">
     <label for="who">Who's on the counter</label>
     <select id="who" name="who">{% for n in staff_names %}<option>{{ n }}</option>{% endfor %}</select>
@@ -12,7 +12,7 @@
     <button class="primary" type="submit">Sign in</button>
     <button class="passkey-btn" type="button" data-passkey-login hidden>Use a security key</button>
   </form>
-  <form method="post" action="/login/passkey" id="passkey-form" hidden>
+  <form method="post" action="/login/passkey" id="passkey-form" data-turbo="false" hidden>
     <input type="hidden" name="next" value="{{ next }}"><input type="hidden" name="who"><input type="hidden" name="credential">
   </form>
 </div>

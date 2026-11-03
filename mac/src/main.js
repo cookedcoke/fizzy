@@ -109,6 +109,17 @@ ipcMain.on('fizzy-display', (event, json) => {
   display.send(clean);
 });
 
+// Display > Hide / Show: straight to the display (whatever page the staff window is on), and to the
+// staff page too, so its header's Display menu shows Hidden or Auto and its pages keep to it.
+function displayMode(mode, message) {
+  display.send(message);
+  const contents = staff.contents();
+  if (!contents || contents.isDestroyed()) return;
+  contents
+    .executeJavaScript(`void (window.fizzyDisplayMode && window.fizzyDisplayMode(${JSON.stringify(mode)}))`)
+    .catch((err) => log('bridge', `Staff page didn't take the display choice: ${err.message}`));
+}
+
 // MARK: Settings and Open Link windows
 
 let formWindow = null;
@@ -223,8 +234,8 @@ function buildMenu() {
     {
       label: 'Display',
       submenu: [
-        { label: 'Hide customer display', accelerator: 'Cmd+Shift+H', click: () => display.send('{"type":"hide"}') },
-        { label: 'Show customer display', click: () => display.send('{"type":"idle"}') },
+        { label: 'Hide customer display', accelerator: 'Cmd+Shift+H', click: () => displayMode('hide', '{"type":"hide"}') },
+        { label: 'Show customer display', click: () => displayMode('auto', '{"type":"idle"}') },
         { type: 'separator' },
         { label: 'Reload display', click: () => display.load() },
         { label: 'Move display to other screen', click: () => display.moveToNextScreen() },

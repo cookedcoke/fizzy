@@ -47,11 +47,13 @@ def test_search_index_matches_customer_page(client):
     login(client)
     csv = b"Cleaned Name,Email\nAdeline Yates,rns1@reddamnorthshore.nsw.edu.au\nAdam Fenn,rns2@reddamnorthshore.nsw.edu.au\n"
     client.post("/import", files={"file": ("d.csv", csv, "text/csv")}, data={"confirm": "1"})
-    client.post("/customers/1/tab", data={"decision": "approve"})
-    client.post("/tools/manual_charge", data={"customer": "Adeline Yates", "amount": "3"})
+    client.post("/customers/2/tab", data={"decision": "off"})
+    client.post("/tools/manual_charge", data={"customer": "Adeline Yates", "amount": "2"})
     rows = {r["name"]: r for r in client.get("/api/index").json()}
-    assert rows["Adeline Yates"]["status"] == "approved" and rows["Adeline Yates"]["owing"] == 300
-    assert rows["Adam Fenn"]["status"] == "locked" and rows["Adam Fenn"]["sid"] == "rns2"
+    assert rows["Adeline Yates"]["status"] == "approved" and rows["Adeline Yates"]["owing"] == 200
+    assert rows["Adeline Yates"]["label"] == "Tab $2.50"                     # the same words as the customer page
+    assert rows["Adam Fenn"]["status"] == "revoked" and rows["Adam Fenn"]["sid"] == "rns2"
+    assert '<span class="tag approved">Tab $2.50</span>' in client.get("/customers/1").text
     assert "app.js?v=" in client.get("/").text
 
 
@@ -155,7 +157,7 @@ def test_customer_page_shows_only_what_needs_doing(client):
     assert "No student site passcode yet." in page and "Not in Square yet." in page
     assert "Tab charges" not in page and "Square payments" not in page             # nothing there yet
     assert "Repayment without Square" in page and "(nothing owing)" in page        # tucked away
-    assert "Tab approval</h2>" not in page and "(not eligible yet)" in page
+    assert "Tab limit</h2>" in page and "Can use tab" in page                     # a new customer has a small tab
     client.post("/customers/1/passcode", data={"passcode": "kid-1234"})
     page = client.get("/customers/1").text
     assert "No student site passcode yet." not in page and 'id="passcode"' in page  # set: moves to the bottom
@@ -170,8 +172,8 @@ def test_customer_page_shows_only_what_needs_doing(client):
     finally:
         conn.close()
     page = client.get("/customers/1").text
-    assert "$4.00 overdue." in page and "Tab score is" in page and "Money overdue right now" in page
-    assert "Repayment <kbd>R</kbd></h2>" in page and "Tab charges" in page  # overdue: no approval prompt
+    assert "$4.00 overdue." in page and "Has an overdue charge" in page and "Money overdue right now" in page
+    assert "Repayment</h2>" in page and "Tab charges" in page  # overdue: no approval prompt
 
 
 def test_dashboard_on_a_closed_day_shows_a_recap_not_zeros(client):
@@ -189,3 +191,56 @@ def test_dashboard_on_a_closed_day_shows_a_recap_not_zeros(client):
     conn.commit()
     if stats.today().weekday() < 5:
         assert "Sold by hour" in client.get("/").text
+
+
+JSON = {"X-Fizzy-Format": "json"}
+
+
+def test_ios_api(client):
+    assert client.get("/api/staff-names").json() == ["Will", "Mike", "Frankie"]
+    assert client.get("/api/me", follow_redirects=False).status_code == 303
+    login(client)
+    assert client.get("/api/me").json()["staff"] == "Mike"
+    client.post("/import", files={"file": ("d.csv", b"Original Name,Cleaned Name,Email\nADELINE YATES,Adeline Yates,rns00000001@reddamnorthshore.nsw.edu.au\n",
+                                           "text/csv")}, data={"confirm": "1"})
+    cid = client.get("/api/search?q=adel").json()[0]["id"]
+    client.post(f"/customers/{cid}/points", data={"delta": "100", "note": "event"}, follow_redirects=False)
+    d = client.get(f"/customers/{cid}", headers=JSON).json()
+    assert d["c"]["name"] == "Adeline Yates" and d["s"]["points"] == 100 and d["flash"] == "Points +100."
+    assert d["points"][0]["delta"] == 100 and d["s"]["status"]["status"] == "approved"
+    assert "passcode_enc" not in d["c"]
+    assert client.get(f"/customers/{cid}", headers=JSON).json()["flash"] is None  # shown once
+    assert client.get(f"/customers/{cid}/claim", headers=JSON).json()["checkouts"] == []
+    assert client.get("/customers/999999", headers=JSON).status_code == 404
+
+
+def test_every_page_has_json(client):
+    login(client)
+    client.post("/import", files={"file": ("d.csv", b"Original Name,Cleaned Name,Email\nADELINE YATES,Adeline Yates,rns00000001@reddamnorthshore.nsw.edu.au\n",
+                                           "text/csv")}, data={"confirm": "1"})
+    for path in ["/", "/customers", "/customers?q=a", "/transactions", "/square", "/rewards", "/profit", "/money", "/tools",
+                 "/ask", "/import", "/settings", "/audit", "/customers/1"]:
+        r = client.get(path, headers=JSON)
+        assert r.status_code == 200 and r.json()["page"], path
+    # secrets never leave the server
+    text = client.get("/customers/1", headers=JSON).text + client.get("/settings", headers=JSON).text
+    assert "passcode_enc" not in text and "token_hash" not in text and "public_key" not in text
+    r = client.get("/settings", headers=JSON)
+    assert "X-Fizzy-Format" in r.headers["vary"] and "X-Fizzy-Format" in client.get("/settings").headers["vary"]
+
+
+def test_json_hides_anything_named_like_a_secret():
+    from fizzy.web import _plain
+    out = _plain({"gemini_api_key": "x", "secret": "x", "device_token": "x", "pin_hash": "x", "key_enc": "x",
+                  "key": "o:123", "hint": "abcd", "rows": [{"password": "x", "name": "Nora"}]})
+    assert out == {"key": "o:123", "hint": "abcd", "rows": [{"name": "Nora"}]}
+
+
+def test_passcode_needed_is_json_for_the_app(client):
+    from tests.test_errors import _customer
+    login(client)
+    cid = _customer()
+    client.post("/settings/pin", data={"new": "4821"})
+    client.post("/switch", data={"who": "Will"})  # someone new on the counter: locked again
+    r = client.post(f"/customers/{cid}/points", data={"delta": "5", "note": "x"}, headers=JSON)
+    assert r.status_code == 423 and r.json()["need"] == "pin"

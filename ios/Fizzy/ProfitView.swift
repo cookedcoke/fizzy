@@ -1,0 +1,123 @@
+import SwiftUI
+
+/// Type in what one of each thing costs us and Fizzy works out the rest.
+struct ProfitView: View {
+    @State private var page = Page("profit")
+    @State private var range = "7"
+    @State private var costs: [String: String] = [:]
+    @State private var original: [String: String] = [:]
+
+    var body: some View {
+        PageList(page: page, title: "Profit") { d in
+            Section {
+                Picker("Range", selection: $range) {
+                    ForEach(["today", "7", "30"], id: \.self) { Text(d.ranges[$0][0].string).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: range) { Task { page.query = ["range": range]; await page.load() } }
+                StatGrid(stats: [
+                    Stat(title: "Revenue", value: Fmt.money(d.pr.revenue.int), sub: "\(d.label.string.lowercased()), items with a cost"),
+                    Stat(title: "Cost of goods", value: Fmt.money(d.pr.cost.int)),
+                    Stat(title: "Profit", value: Fmt.money(d.pr.profit.int)),
+                    Stat(title: "Margin", value: d.pr.margin.isNull ? "-" : "\(d.pr.margin.int)%"),
+                    Stat(title: "No cost set", value: "\(d.pr.uncosted.int)", sub: "\(Fmt.money(d.pr.uncosted_revenue.int)) of sales not counted", alert: d.pr.uncosted.int > 0),
+                ])
+            }
+            if let e = d.catalog_error.optString {
+                Label("Square's item list: \(e) Until then, items show up here once they've sold.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+            }
+            Section("Items · \(d.pr["items"].count + d.idle.count)") {
+                ForEach(d.pr["items"].array, id: \.self) { r in
+                    if r.custom.bool {
+                        Line(left: r.name.string, sub: "no item, not in profit", right: Fmt.money(r.revenue.int), rightSub: "\(r.qty.int) sold")
+                    } else {
+                        costRow(r, sold: true)
+                    }
+                }
+                if !d.idle.array.isEmpty {
+                    Text("Not sold \(d.label.string.lowercased())" + (d.catalog_count.int > 0 ? " · from Square's item list" : "")).font(.footnote).foregroundStyle(.secondary)
+                    ForEach(d.idle.array, id: \.self) { costRow($0, sold: false) }
+                }
+                if d.pr["items"].array.isEmpty && d.idle.array.isEmpty {
+                    Text("No items sold \(d.label.string.lowercased()) yet" + (d.square_on.bool ? " - press Get items from Square below to list everything you sell." : "."))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if d.square_on.bool {
+                Section {
+                    Button { page.act("profit/refresh") } label: { Label("Get items from Square", systemImage: "arrow.triangle.2.circlepath") }
+                } footer: {
+                    Text(d.catalog_sync.optString.map { "\(d.catalog_count.int) items · \(Fmt.when($0))" } ?? "Not read from Square yet")
+                }
+            }
+        }
+        .toolbar {
+            if hasChanges {
+                ToolbarItem(placement: .confirmationAction) {
+                    if page.busy { ProgressView() } else { Button("Save") { Task { await save() } } }
+                }
+            }
+        }
+        .onChange(of: page.data) { fill(keepTyped: true) }   // every load, or a Square refresh re-keys the rows and Save would blank them
+    }
+
+    private var hasChanges: Bool { costs != original }
+
+    /// The server's costs; what's been typed and not yet saved stays.
+    private func fill(keepTyped: Bool) {
+        var m: [String: String] = [:]
+        for r in page.data.pr["items"].array + page.data.idle.array where !r.custom.bool {
+            m[r.key.string] = r.cost_each.isNull ? "" : dollars(r.cost_each.int)
+        }
+        var kept = m
+        if keepTyped {
+            for (key, typed) in costs where typed != original[key] && m[key] != nil { kept[key] = typed }
+        }
+        costs = kept
+        original = m
+        let serverRange = page.data.range.string
+        if !serverRange.isEmpty, serverRange != range { range = serverRange }
+    }
+
+    private func costRow(_ r: J, sold: Bool) -> some View {
+        let key = r.key.string
+        let missing = (costs[key] ?? "").isEmpty
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(r.name.string)
+                    Text(sold ? "\(r.qty.int) sold · \(Fmt.money(r.revenue.int))" + (r.profit.isNull ? "" : " · profit \(Fmt.money(r.profit.int))")
+                              : (r.price.isNull ? "" : "sells for \(Fmt.money(r.price.int))" + (r.price_to.isNull ? "" : "–\(Fmt.money(r.price_to.int))")))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if !r.variants.array.isEmpty {
+                        Text(r.variants.strings.joined(separator: ", ")).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                // "$" and the number in one box; orange when there's no cost yet
+                HStack(spacing: 1) {
+                    Text("$").foregroundStyle(.secondary)
+                    TextField("1.20", text: Binding(get: { costs[key] ?? "" }, set: { costs[key] = $0 }))
+                        .keyboardType(.decimalPad).fixedSize().frame(minWidth: 44, alignment: .leading)
+                }
+                .monospacedDigit()
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(missing ? Color.orange.opacity(0.18) : Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+            }
+            if !r.margin.isNull { Text("\(r.margin.int)% margin").font(.caption).foregroundStyle(r.margin.int < 20 ? .red : .secondary) }
+        }
+    }
+
+    /// Only the costs that were changed go: a row that wasn't touched keeps whatever the server has.
+    private func save() async {
+        var form: Params = []
+        for r in page.data.pr["items"].array + page.data.idle.array where !r.custom.bool {
+            let key = r.key.string
+            guard let typed = costs[key], typed != original[key] else { continue }
+            form += [("name", r.name.string), ("key", key), ("base", r.base.string), ("cost", Fmt.normalised(typed))]
+        }
+        guard !form.isEmpty else { return }
+        let o = await page.submit("profit", form)
+        if o.ok { fill(keepTyped: false) }   // refused: what was typed stays, with the server's reason on top
+    }
+}

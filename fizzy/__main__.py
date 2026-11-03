@@ -1,12 +1,13 @@
 """CLI: python -m fizzy import FILE.csv | backup DIR | sync | device-link NAME | clear-pin | maintenance on [MESSAGE] | maintenance off"""
 import sys
 
-from . import config, customers, db, devices, pin, square
+from . import config, customers, db, devices, logic, pin, square
 
 
 def main(argv):
     conn = db.connect()
     db.init(conn)
+    logic.retire_approvals(conn)
     if len(argv) == 2 and argv[0] == "import":
         with open(argv[1], encoding="utf-8-sig") as f:
             rows, errors = customers.parse_directory_csv(f.read())

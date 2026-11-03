@@ -9,6 +9,7 @@ import hmac
 import json
 import logging
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -20,6 +21,7 @@ log = logging.getLogger("fizzy.square")
 SQUARE_VERSION = "2026-09-16"
 _sync_lock = threading.Lock()
 _sync_pending = threading.Event()   # a sync was requested while one was running: run again after
+_sync_full = threading.Event()      # ...and that one wanted a full sync, not a light one
 
 
 def norm_ts(s):
@@ -355,9 +357,17 @@ def _insert_sp(conn, sp):
     if sp["amount_cents"] > MAX_SALE_CENTS:  # e.g. a $1,000,000 custom amount: kept, but counts for nothing
         sp = {**sp, "kind": "void"}
         audit(conn, "square", "reclassify", sp["customer_id"], f"{sp['square_payment_id']} -> void (over ${MAX_SALE_CENTS // 100})")
+    sp = {"no_account": None, "no_account_by": None, **sp}
+    mark = sp["square_order_id"] and conn.execute(
+        "SELECT no_account, no_account_by FROM square_payments WHERE square_order_id = ? AND no_account IS NOT NULL LIMIT 1",
+        (sp["square_order_id"],)).fetchone()
+    if mark:  # a late part of a checkout marked "No account": the same, whatever Square says about the customer
+        sp = {**sp, "customer_id": None, "no_account": mark[0], "no_account_by": mark[1]}
     conn.execute(
-        "INSERT INTO square_payments VALUES (:square_payment_id, :square_order_id, :square_customer_id, :customer_id, "
-        ":kind, :amount_cents, :tender, :items, :raw_json, :created_at, :processed_at)",
+        "INSERT INTO square_payments(square_payment_id, square_order_id, square_customer_id, customer_id, kind, amount_cents, "
+        "tender, items, raw_json, created_at, processed_at, no_account, no_account_by) VALUES (:square_payment_id, "
+        ":square_order_id, :square_customer_id, :customer_id, :kind, :amount_cents, :tender, :items, :raw_json, :created_at, "
+        ":processed_at, :no_account, :no_account_by)",
         sp,
     )
     apply_payment_effects(conn, sp)
@@ -375,6 +385,12 @@ def process_payment(conn, payment, order):
         return None
     sq_cust = payment.get("customer_id") or (order or {}).get("customer_id")
     customer = _customer_for(conn, sq_cust)
+    if customer is None and payment.get("order_id"):
+        # another part of the same checkout (a split tender, the tab part) is already someone's,
+        # e.g. claimed before this part synced: same person. A checkout is never split between people.
+        owner = conn.execute("SELECT customer_id FROM square_payments WHERE square_order_id = ? AND customer_id IS NOT NULL "
+                             "LIMIT 1", (payment["order_id"],)).fetchone()
+        customer = {"id": owner[0]} if owner else None
     kind = classify(payment, order)
     amount = int((payment.get("amount_money") or {}).get("amount", 0))
     base = {
@@ -404,6 +420,10 @@ def process_payment(conn, payment, order):
     if sale_part > 0:
         _insert_sp(conn, {**base, "square_payment_id": f"{pid}:sale", "kind": "sale", "amount_cents": sale_part,
                           "items": describe_items(order, skip_repayment=True), "raw_json": None})
+    if customer and payment.get("order_id"):  # and the other way round: earlier parts with nobody on them are theirs too
+        for (other,) in conn.execute("SELECT square_payment_id FROM square_payments WHERE square_order_id = ? AND customer_id IS NULL",
+                                     (payment["order_id"],)).fetchall():
+            _link(conn, other, customer["id"])
     return kind
 
 
@@ -542,6 +562,8 @@ def assign_customer(conn, square_payment_id, customer, staff):
     if order:  # the rest of the same checkout (e.g. the tab charge from the order) moves with it
         rows = conn.execute("SELECT * FROM square_payments WHERE square_payment_id IN (?, ?) OR square_order_id = ?",
                             (base, f"{base}:sale", order)).fetchall()
+    if any(r["no_account"] for r in rows):
+        raise ValueError(NO_ACCOUNT_TAKEN)
     for sp in rows:
         if sp["customer_id"] is not None:
             undo_payment_effects(conn, sp)
@@ -559,29 +581,56 @@ def assign_customer(conn, square_payment_id, customer, staff):
 # a ":sale" split), so they're grouped by order and claimed together.
 
 CLAIM_HOURS = 6
+PICK_SHOWN = 6  # sales on the Pick a sale page; older ones are on the Square page
 
 
 def _checkout_key(row):
     return f"o:{row['square_order_id']}" if row["square_order_id"] else f"p:{row['square_payment_id'].removesuffix(':sale')}"
 
 
-def unclaimed(conn, hours=CLAIM_HOURS, limit=6):
-    """Recent checkouts with nobody attached, newest first."""
-    since = max((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds"), live_from(conn))
+def _group(rows):
+    """square_payments rows -> one dict per checkout (key, at, first_at, came, items, sale/tab/repay cents, tenders)."""
     groups = {}
-    for r in conn.execute("SELECT * FROM square_payments WHERE customer_id IS NULL AND kind != 'void' AND created_at >= ? "
-                          "ORDER BY created_at DESC", (since,)):
-        g = groups.setdefault(_checkout_key(r), {"key": _checkout_key(r), "at": r["created_at"], "items": "",
+    for r in rows:
+        g = groups.setdefault(_checkout_key(r), {"key": _checkout_key(r), "at": r["created_at"], "first_at": r["created_at"],
+                                                 "came": r["processed_at"], "items": "",
                                                  "sale_cents": 0, "tab_cents": 0, "repay_cents": 0, "tenders": []})
         g[{"sale": "sale_cents", "tab_charge": "tab_cents", "tab_repayment": "repay_cents"}[r["kind"]]] += r["amount_cents"]
-        g["at"] = max(g["at"], r["created_at"])
+        g["at"] = max(g["at"], r["created_at"])                # its last part (what lists show and sort by)
+        g["first_at"] = min(g["first_at"], r["created_at"])    # its first part
+        g["came"] = max(g["came"], r["processed_at"])          # when its last part reached Fizzy
         if r["kind"] != "tab_repayment" and r["items"] and not g["items"]:
             g["items"] = r["items"]
         if r["tender"] and r["tender"] not in g["tenders"]:
             g["tenders"].append(r["tender"])
-    out = [g for g in groups.values() if g["sale_cents"] or g["tab_cents"] or g["repay_cents"]]
+    return [g for g in groups.values() if g["sale_cents"] or g["tab_cents"] or g["repay_cents"]]
+
+
+def unclaimed(conn, hours=CLAIM_HOURS, limit=6):
+    """Recent checkouts with nobody attached, newest first."""
+    since = max((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds"), live_from(conn))
+    # A checkout part of which is already someone's isn't anyone else's to claim (see process_payment).
+    out = _group(conn.execute("SELECT * FROM square_payments WHERE customer_id IS NULL AND kind != 'void' AND no_account IS NULL "
+                              "AND created_at >= ? "
+                              "AND (square_order_id IS NULL OR square_order_id NOT IN (SELECT square_order_id FROM square_payments "
+                              "WHERE customer_id IS NOT NULL AND square_order_id IS NOT NULL)) ORDER BY created_at DESC", (since,)))
     out.sort(key=lambda g: g["at"], reverse=True)
     return out[:limit]
+
+
+def _checkout_rows(conn, key):
+    kind, _, ident = (key or "").partition(":")
+    if kind == "o":
+        return conn.execute("SELECT * FROM square_payments WHERE square_order_id = ?", (ident,)).fetchall()
+    if kind == "p":
+        return conn.execute("SELECT * FROM square_payments WHERE square_payment_id IN (?, ?)", (ident, f"{ident}:sale")).fetchall()
+    return []
+
+
+def checkout(conn, key):
+    """One checkout by its key (as unclaimed() gives it), whoever it belongs to now. None if unknown."""
+    found = _group(r for r in _checkout_rows(conn, key) if r["kind"] != "void")
+    return found[0] if found else None
 
 
 def _write_lock(conn):
@@ -594,41 +643,318 @@ def claim(conn, key, customer, staff):
     """Attach one unclaimed checkout (see unclaimed) to a customer. Raises ValueError if it's gone,
     or if any part of it already belongs to someone (a checkout is never split between people)."""
     _write_lock(conn)
-    kind, _, ident = key.partition(":")
-    if kind == "o":
-        rows = conn.execute("SELECT * FROM square_payments WHERE square_order_id = ?", (ident,)).fetchall()
-    elif kind == "p":
-        rows = conn.execute("SELECT * FROM square_payments WHERE square_payment_id IN (?, ?)",
-                            (ident, f"{ident}:sale")).fetchall()
-    else:
-        rows = []
+    rows = _checkout_rows(conn, key)
     if not rows or any(r["customer_id"] is not None for r in rows):
         # someone (or a sync) got there first: never move a sale that's already somebody's
         raise ValueError("That sale has already been claimed.")
+    if any(r["no_account"] for r in rows):
+        raise ValueError(NO_ACCOUNT_TAKEN)
     bases = {r["square_payment_id"].removesuffix(":sale") for r in rows}
     for base in sorted(bases):
         assign_customer(conn, base, customer, staff)
     return len(bases)
 
 
+NO_ACCOUNT_TAKEN = "That sale is marked No account. Undo that on the Square page first."
+
+
+def mark_no_account(conn, key, staff):
+    """Staff say a checkout (a key as unclaimed() gives it) was a real sale with nobody to give it to:
+    a teacher, a student who'd rather not record it, anyone without an account. Every part of it is
+    marked, so it's never claimed, linked or matched to a Claim sale press, but its kind stays as it
+    is, so the money counts in takings and reports like any other sale. Returns the checkout, or
+    None if it was already marked. Raises ValueError if it's someone's, or any of it is tab money
+    (that always needs a person)."""
+    _write_lock(conn)
+    rows = _checkout_rows(conn, key)
+    if not rows:
+        raise ValueError("Fizzy hasn't seen that sale.")
+    if any(r["customer_id"] is not None for r in rows):
+        raise ValueError("That sale is already someone's, so it can't be No account. Move it on the Square page if it's wrong.")
+    if all(r["no_account"] for r in rows):
+        return None
+    if any(r["kind"] in ("tab_charge", "tab_repayment") for r in rows):
+        raise ValueError("Part of that sale is on a tab or pays one off, so it needs a customer.")
+    ids = [r["square_payment_id"] for r in rows]
+    conn.execute(f"UPDATE square_payments SET no_account = ?, no_account_by = ? WHERE no_account IS NULL "
+                 f"AND square_payment_id IN ({','.join('?' * len(ids))})", (now_iso(), staff, *ids))
+    k = checkout(conn, key)
+    audit(conn, staff, "no_account", None, f"{key}: {_describe(k, rows)}")
+    return k
+
+
+def undo_no_account(conn, key, staff):
+    """Undo mark_no_account: it's a normal sale with nobody on it again (it goes to a customer now if
+    Square had one on it that Fizzy knows). Returns the checkout; ValueError if it wasn't marked."""
+    _write_lock(conn)
+    rows = [r for r in _checkout_rows(conn, key) if r["no_account"]]
+    if not rows:
+        raise ValueError("That sale isn't marked No account.")
+    ids = [r["square_payment_id"] for r in rows]
+    conn.execute(f"UPDATE square_payments SET no_account = NULL, no_account_by = NULL "
+                 f"WHERE square_payment_id IN ({','.join('?' * len(ids))})", ids)
+    audit(conn, staff, "no_account_undo", None, f"{key}: {_describe(checkout(conn, key), rows)}")
+    for r in rows:
+        c = _customer_for(conn, r["square_customer_id"])
+        if c is not None:
+            _link(conn, r["square_payment_id"], c["id"])
+    return checkout(conn, key)
+
+
+def _describe(k, rows):
+    if not k:
+        return ", ".join(r["square_payment_id"] for r in rows)
+    cents = k["sale_cents"] + k["tab_cents"] + k["repay_cents"]
+    return f"{k['items'] or 'Sale'}, ${cents / 100:.2f}"
+
+
 def link_pending(conn):
-    """After customers are linked, apply payments that arrived before their customer was known."""
+    """After customers are linked, apply payments that arrived before their customer was known.
+    A sale marked No account stays nobody's (see _link)."""
     rows = conn.execute(
         "SELECT sp.square_payment_id, c.id AS cid FROM square_payments sp JOIN customers c "
         "ON c.square_customer_id = sp.square_customer_id WHERE sp.customer_id IS NULL ORDER BY sp.created_at"
     ).fetchall()
-    linked = 0
-    for r in rows:
-        # Only if nobody claimed it in the meantime (claims hold the write lock while they work).
-        if conn.execute("UPDATE square_payments SET customer_id = ? WHERE square_payment_id = ? AND customer_id IS NULL",
-                        (r["cid"], r["square_payment_id"])).rowcount == 0:
-            continue
-        linked += 1
-        sp = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (r["square_payment_id"],)).fetchone()
-        apply_payment_effects(conn, sp)
-        for rf in conn.execute("SELECT * FROM square_refunds WHERE square_payment_id = ?", (sp["square_payment_id"],)).fetchall():
-            apply_refund_effects(conn, sp, rf["amount_cents"], rf["created_at"])
-    return linked
+    return sum(_link(conn, r["square_payment_id"], r["cid"]) for r in rows)
+
+
+def _link(conn, square_payment_id, customer_id):
+    """Put a payment with nobody on it on a customer and apply it. False if it's someone's already
+    (claims hold the write lock while they work, so one made in the meantime wins), or it's marked
+    No account."""
+    if conn.execute("UPDATE square_payments SET customer_id = ? WHERE square_payment_id = ? AND customer_id IS NULL "
+                    "AND no_account IS NULL", (customer_id, square_payment_id)).rowcount == 0:
+        return False
+    sp = conn.execute("SELECT * FROM square_payments WHERE square_payment_id = ?", (square_payment_id,)).fetchone()
+    apply_payment_effects(conn, sp)
+    for rf in conn.execute("SELECT * FROM square_refunds WHERE square_payment_id = ?", (square_payment_id,)).fetchall():
+        apply_refund_effects(conn, sp, rf["amount_cents"], rf["created_at"])
+    return True
+
+
+# ---- the Claim sale button: the sale rung up in the 30 seconds before the press ------------------
+# The owner's rule: ring the sale up in Square first (no customer), then press Claim sale. A sale
+# rung up at t (its Square time; a checkout paid in several goes, its first payment's) belongs to the
+# first press, anyone's, in the 30 seconds after it (t <= pressed_at <= t + 30 s), and nothing else
+# ever gets it. A press takes the newest sale that belongs to it as soon as it's in Fizzy, at the
+# press or later (Square can be slow), waiting up to CLAIM_GRACE seconds. That doesn't depend on the
+# order or delay Square sends sales with. Presses are claim_waits rows that aren't cancelled (Undo):
+# an expired one, or one that got its sale, still owns its 30 seconds. A press still on its way in
+# (its request waiting on Square, see pressing) counts too, so the order requests finish in doesn't
+# matter either. Times are to the millisecond (Square's own, from the raw JSON). The one thing it can't tell
+# apart: a stray sale nobody pressed for, rung up in the same 30 seconds and in Fizzy before the
+# right one, is the newest in at that moment, so the press takes it.
+
+CLAIM_WINDOW = 30   # seconds before the press
+CLAIM_GRACE = 180   # seconds after the press to keep waiting for Square to send its sale
+CLAIM_SHOWN = 60    # seconds a finished press stays in the bar at the top of every page
+_WIN = timedelta(seconds=CLAIM_WINDOW)
+
+
+_in_flight = {}  # presses tapped but not in claim_waits yet: token -> tap time
+_in_flight_lock = threading.Lock()
+
+
+def _iso(dt):
+    return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds")
+
+
+@contextmanager
+def pressing(now):
+    """Around a Claim sale request, from the tap until its press is committed (app.py waits on Square
+    in between). Meanwhile other connections count it as a press that owns nothing yet, so a later tap
+    that gets written first can't take this one's sale. Pass the token to claim_next."""
+    token = object()
+    with _in_flight_lock:
+        _in_flight[token] = now
+    try:
+        yield token
+    finally:
+        with _in_flight_lock:
+            _in_flight.pop(token, None)
+
+
+def _rung_at(conn, k):
+    """When a checkout was rung up, to the millisecond (created_at is whole seconds): its first part's
+    Square time, from the raw JSON."""
+    times = []
+    for r in _checkout_rows(conn, k["key"]):
+        d = sp_raw(r)
+        o = d.get("order") or {}
+        s = (d.get("payment") or {}).get("created_at") or o.get("closed_at") or o.get("created_at")
+        if s:  # a ":sale" split has no raw JSON: its payment's row has it
+            times.append(logic.parse_ts(s))
+    return min(times) if times else logic.parse_ts(k["first_at"])
+
+
+def _theirs(conn, customer_id, lo, hi):
+    """Checkouts this customer got some other way than a Claim sale press (Pick a sale, the Square
+    page, their Square profile) with a part rung up between the datetimes lo and hi."""
+    lo, hi = (d.astimezone(timezone.utc).isoformat(timespec="seconds") for d in (lo, hi))
+    keys = {_checkout_key(r) for r in conn.execute("SELECT * FROM square_payments WHERE customer_id = ? AND kind != 'void' "
+                                                   "AND created_at BETWEEN ? AND ?", (customer_id, lo, hi))}
+    keys -= {r[0] for r in conn.execute("SELECT checkout_key FROM claim_waits WHERE customer_id = ? AND status = 'claimed'", (customer_id,))}
+    return [k for k in (checkout(conn, key) for key in keys) if k]
+
+
+def _nearest(got, when):
+    return min(got, key=lambda k: abs((logic.parse_ts(k["first_at"]) - when).total_seconds()))
+
+
+def _all_in(conn, key):
+    """False while Square has sent only some payments of a checkout paid in several goes: its order
+    lists a payment that isn't in, or the payments in (tips included, tab tenders too) come to less
+    than the order's total. Until then its first payment isn't known, so it isn't matched."""
+    raw = [json.loads(r["raw_json"]) for r in sorted(_checkout_rows(conn, key), key=lambda r: r["processed_at"]) if r["raw_json"]]
+    order = next((d["order"] for d in reversed(raw) if d.get("order")), None)
+    if not order:
+        return True
+    pays = {d["payment"]["id"]: d["payment"] for d in raw if d.get("payment")}
+    if any(t.get("payment_id") and t["payment_id"] not in pays for t in order.get("tenders") or []):
+        return False
+    due = _money(order, "total_money") if order.get("total_money") else sum(_money(li, "total_money") for li in order.get("line_items") or [])
+    # Square's order total includes the tip; a payment's amount_money doesn't (that's tip_money)
+    return sum(_money(p, "amount_money") + _money(p, "tip_money") for p in pays.values()) + 5 >= due  # 5c: cash rounding
+
+
+def _finish(conn, wait, status, ts, by=None, key=None, note=None):
+    """Close a waiting press. `by` is who cancelled it (a staff name, or "archived")."""
+    if conn.execute("UPDATE claim_waits SET status = ?, done_at = ?, done_by = ?, checkout_key = COALESCE(?, checkout_key) "
+                    "WHERE id = ? AND status = 'waiting'", (status, ts, by, key, wait["id"])).rowcount:
+        person = by if by not in (None, "archived") else wait["staff"] or "square"
+        audit(conn, person, "claim_wait", wait["customer_id"], note or status)
+
+
+def claim_waiting(conn, now=None, press=None):
+    """Give each waiting press the newest sale in Fizzy that belongs to it (see above). Presses past
+    their wait_until expire first. A press for someone since archived or merged is cancelled, and
+    one whose customer got a sale from its 30 seconds (or since) some other way finishes with that.
+    `press` is this connection's own token from pressing (its row is visible here). Returns how many
+    it claimed; the caller commits."""
+    if not any_waiting(conn):
+        return 0
+    now = now or datetime.now(timezone.utc)
+    ts, t = _iso(now), logic.parse_ts
+    _write_lock(conn)
+    since = now - timedelta(seconds=CLAIM_GRACE) - _WIN  # every press and sale a waiting press can depend on
+    with _in_flight_lock:  # presses on their way in own their sales, but take nothing until they're written
+        presses = [(at, 0) for tok, at in _in_flight.items() if tok is not press]
+    # A press finished here is stamped no earlier than any tap still on its way in, so that tap (the same
+    # customer pressing again) sees the press was still waiting when it was made.
+    ts = _iso(max([now] + [at for at, _ in presses]))
+    presses += [(t(p["pressed_at"]), p["id"]) for p in conn.execute(
+        "SELECT id, pressed_at FROM claim_waits WHERE status != 'cancelled' AND pressed_at >= ?", (_iso(since),))]
+    presses.sort()
+    sales = [{**k, "t": _rung_at(conn, k)} for k in unclaimed(conn, hours=(now - since).total_seconds() / 3600 + 0.1, limit=None)]
+    sales = [k for k in sales if k["t"] >= since]
+    owner = {k["key"]: next((pid for at, pid in presses if k["t"] <= at <= k["t"] + _WIN), None) for k in sales}
+    n = 0
+    for w in conn.execute("SELECT * FROM claim_waits WHERE status = 'waiting' ORDER BY id").fetchall():
+        c = conn.execute("SELECT * FROM customers WHERE id = ?", (w["customer_id"],)).fetchone()
+        if t(w["wait_until"]) < now:
+            _finish(conn, w, "expired", ts, note="expired: no sale came in")
+        elif c is None or c["archived_at"] or c["merged_into"]:
+            _finish(conn, w, "cancelled", ts, "archived", note="cancelled: archived or merged")
+        elif got := _theirs(conn, c["id"], t(w["pressed_at"]) - _WIN, now):
+            k = _nearest(got, t(w["pressed_at"]))
+            _finish(conn, w, "claimed", ts, key=k["key"], note=f"claimed {k['key']} (given to them another way)")
+        else:
+            mine = [k for k in sales if owner[k["key"]] == w["id"] and _all_in(conn, k["key"])]
+            for k in sorted(mine, key=lambda k: k["t"], reverse=True):  # the newest that's in
+                try:
+                    claim(conn, k["key"], c, w["staff"] or "square")
+                except ValueError:  # someone got there first, or part of it is someone's: try the next one
+                    continue
+                _finish(conn, w, "claimed", ts, key=k["key"], note=f"claimed {k['key']}")
+                n += 1
+                break
+    return n
+
+
+def claim_next(conn, customer, staff, now=None, press=None):
+    """The Claim sale button, pressed at `now` (when it was tapped). Returns ("claimed", checkout) when
+    a sale that belongs to this press is in (the newest), ("already", checkout) when the customer got
+    a sale rung up in the 30 seconds before some other way, ("still waiting", row) when their last
+    press is still waiting (nothing new is added; "claimed" if it got its sale since the tap), else
+    ("waiting", the new claim_waits row). A press after their last one finished is a new press like
+    any other. `press` is the token from pressing, when the request waited on Square first. The caller
+    commits."""
+    now = now or datetime.now(timezone.utc)
+    ts, cid = _iso(now), customer["id"]
+    _write_lock(conn)
+    claim_waiting(conn, now)
+    # their press still waiting at the tap: nothing new (it may have got its sale since, while Square was asked)
+    if w := conn.execute("SELECT * FROM claim_waits WHERE customer_id = ? AND (status = 'waiting' OR status = 'claimed' "
+                         "AND done_at >= ?)", (cid, ts)).fetchone():
+        return ("still waiting", w) if w["status"] == "waiting" else ("claimed", checkout(conn, w["checkout_key"]))
+    if got := _theirs(conn, cid, now - _WIN, now):
+        return "already", _nearest(got, now)
+    wid = conn.execute("INSERT INTO claim_waits(customer_id, staff, pressed_at, wait_until, status) VALUES (?, ?, ?, ?, 'waiting')",
+                       (cid, staff, ts, _iso(now + timedelta(seconds=CLAIM_GRACE)))).lastrowid
+    claim_waiting(conn, now, press)
+    w = conn.execute("SELECT * FROM claim_waits WHERE id = ?", (wid,)).fetchone()
+    if w["status"] == "claimed":
+        # Kept as a press (it owns its 30 seconds when later sales come in), but left out of the bar: the page says so.
+        conn.execute("UPDATE claim_waits SET done_by = 'at once' WHERE id = ?", (wid,))
+        return "claimed", checkout(conn, w["checkout_key"])
+    audit(conn, staff, "claim_wait", cid, "waiting for Square to send the sale")
+    return "waiting", w
+
+
+def cancel_wait(conn, wait_id, staff, now=None):
+    """Undo: stop a press that's still waiting. Returns the row, or raises ValueError if it already
+    finished (a sale it claimed stays claimed). An Undone press doesn't count for matching."""
+    _write_lock(conn)
+    w = conn.execute("SELECT * FROM claim_waits WHERE id = ?", (wait_id,)).fetchone()
+    if w is None or w["status"] != "waiting":
+        raise ValueError("That claim already finished.")
+    _finish(conn, w, "cancelled", _iso(now or datetime.now(timezone.utc)), staff, note=f"cancelled by {staff}")
+    return w
+
+
+def claim_waiting_safely(conn):
+    """claim_waiting after a sync or another way of giving out a sale: a problem there is logged,
+    never undoes what came before it."""
+    if not any_waiting(conn):
+        return 0
+    _write_lock(conn)
+    conn.execute("SAVEPOINT claimwait")
+    try:
+        n = claim_waiting(conn)
+    except Exception:
+        conn.execute("ROLLBACK TO claimwait")
+        log.exception("Claim sale: matching waiting presses failed")
+        n = 0
+    conn.execute("RELEASE claimwait")
+    return n
+
+
+def any_waiting(conn):
+    return conn.execute("SELECT 1 FROM claim_waits WHERE status = 'waiting' LIMIT 1").fetchone() is not None
+
+
+def recent_waits(conn, now=None):
+    """For the bar at the top of every page: presses still waiting, and ones claimed or given up on in
+    the last CLAIM_SHOWN seconds, oldest press first, one line per person (their latest press). A
+    waiting press past its wait_until shows as expired (claim_waiting marks it so on its next run)."""
+    now = now or datetime.now(timezone.utc)
+    latest = {}
+    for w in conn.execute("SELECT w.*, c.name FROM claim_waits w JOIN customers c ON c.id = w.customer_id "
+                          "WHERE w.status = 'waiting' OR (w.status IN ('claimed', 'expired') AND w.done_at >= ? "
+                          "AND COALESCE(w.done_by, '') != 'at once') ORDER BY w.pressed_at, w.id",
+                          (_iso(now - timedelta(seconds=CLAIM_SHOWN)),)).fetchall():
+        latest[w["customer_id"]] = w
+    out = []
+    for w in latest.values():
+        status = w["status"]
+        if status == "waiting" and logic.parse_ts(w["wait_until"]) < now:
+            status = "expired"
+            if logic.parse_ts(w["wait_until"]) < now - timedelta(seconds=CLAIM_SHOWN):
+                continue
+        out.append({"id": w["id"], "customer_id": w["customer_id"], "name": w["name"], "status": status,
+                    "pressed_at": w["pressed_at"], "wait_until": w["wait_until"], "done_at": w["done_at"],
+                    "sale": checkout(conn, w["checkout_key"]) if status == "claimed" else None})
+    return out
 
 
 def sync_customers(conn, sq_customers):
@@ -698,14 +1024,32 @@ def _ts(obj):
     return norm_ts(obj.get("updated_at") or obj.get("closed_at") or obj["created_at"])
 
 
-def _process(conn, client, typ, obj):
-    """Process one payment / order / refund. Returns a count key or None."""
+def _known(conn, square_customer_id):
+    return not square_customer_id or conn.execute(
+        "SELECT 1 FROM customers WHERE square_customer_id = ? UNION SELECT 1 FROM square_aliases WHERE square_customer_id = ?",
+        (square_customer_id, square_customer_id)).fetchone() is not None
+
+
+def _process(conn, client, typ, obj, need_customers=None):
+    """Process one payment / order / refund. Returns a count key or None.
+
+    Anything already recorded is skipped before asking Square for its order, so going over the
+    same hour again (every sync does) costs nothing per sale. need_customers (a light sync) is
+    called before recording a payment from a Square profile Fizzy doesn't know yet."""
     if typ == "payment":
-        if obj.get("status") != "COMPLETED":
+        if obj.get("status") != "COMPLETED" or conn.execute(
+                "SELECT 1 FROM square_payments WHERE square_payment_id = ?", (obj["id"],)).fetchone():
             return None
-        return process_payment(conn, obj, client.order(obj.get("order_id")))
+        order = client.order(obj.get("order_id"))
+        if need_customers and not _known(conn, obj.get("customer_id") or (order or {}).get("customer_id")):
+            need_customers()
+        return process_payment(conn, obj, order)
     if typ == "order":
         return "tab_orders" if process_order(conn, obj) else None
+    rid = obj["id"]
+    if conn.execute("SELECT 1 FROM square_refunds WHERE square_refund_id IN (?, ?, ?)",
+                    (rid, f"{rid}:sale", f"{rid}:rep")).fetchone():
+        return None
     if obj.get("payment_id") and not conn.execute(
             "SELECT 1 FROM square_payments WHERE square_payment_id = ?", (obj["payment_id"],)).fetchone():
         p = client.payment(obj["payment_id"])
@@ -776,17 +1120,26 @@ def sync_catalog(conn, client, force=False):
     return n
 
 
-def _sync_once(conn, client, catalog=False):
+def _sync_once(conn, client, catalog=False, light=False):
+    """One sync. light=True (the Claim sale watcher, every few seconds while a press waits) skips
+    Square's customer list and the item list unless a sale comes from a profile Fizzy doesn't know."""
     started = now_iso()
     retry = json.loads(get_setting(conn, "square_retry") or "{}")   # "type:id" -> last error
     failed = {}
-    result = sync_customers(conn, client.customers())
-    conn.commit()
-    try:
-        sync_catalog(conn, client, force=catalog)
-    except Exception:  # the item list is a nice-to-have: never let it stop sales syncing
-        conn.rollback()
-        log.exception("Square catalogue sync failed")
+    result = {}
+    need_customers = None
+    if light:
+        def need_customers():
+            if "linked" not in result:
+                result.update(sync_customers(conn, client.customers()))
+    else:
+        result = sync_customers(conn, client.customers())
+        conn.commit()
+        try:
+            sync_catalog(conn, client, force=catalog)
+        except Exception:  # the item list is a nice-to-have: never let it stop sales syncing
+            conn.rollback()
+            log.exception("Square catalogue sync failed")
     start = get_setting(conn, "square_cursor") or config_start()
     resync = get_setting(conn, "square_resync_from")
     if resync:
@@ -798,7 +1151,7 @@ def _sync_once(conn, client, catalog=False):
 
     def run(typ, obj):
         key = f"{typ}:{obj['id']}"
-        ok, kind = _safely(conn, failed, key, lambda: _process(conn, client, typ, obj))
+        ok, kind = _safely(conn, failed, key, lambda: _process(conn, client, typ, obj, need_customers))
         if ok:
             retry.pop(key, None)
             failed.pop(key, None)  # e.g. its re-fetch blipped, but it was in the window and went through
@@ -838,10 +1191,13 @@ def _sync_once(conn, client, catalog=False):
     retry.update(failed)
     result.update(counts)
     result["relinked"] = link_pending(conn)
+    result["claimed_waiting"] = claim_waiting_safely(conn)  # a Claim sale press waiting for one of these sales
     set_setting(conn, "square_cursor", newest)
     if resync:  # clear only the request we served; a newer one made meanwhile stays
         conn.execute("UPDATE settings SET value = '' WHERE key = 'square_resync_from' AND value = ?", (resync,))
     set_setting(conn, "square_last_sync", now_iso())
+    if not light:
+        set_setting(conn, "square_full_sync", now_iso())  # when the poller next needs a full one
     set_setting(conn, "square_last_error", "")
     set_setting(conn, "square_retry", json.dumps(retry))
     set_setting(conn, "square_item_errors", json.dumps([f"{k}: {v}" for k, v in list(retry.items())[:20]]))
@@ -855,8 +1211,9 @@ def _sync_once(conn, client, catalog=False):
     return result
 
 
-def sync(conn, client=None, wait=False, catalog=False):
-    """Full poll: customers, then payments, tab orders and refunds since the cursor.
+def sync(conn, client=None, wait=False, catalog=False, light=False):
+    """Full poll: customers, then payments, tab orders and refunds since the cursor (light=True:
+    no customer or item list, for the Claim sale watcher; see _sync_once).
 
     If a sync is already running, the request is queued and the running sync goes round once
     more when it finishes (wait=True blocks up to a minute instead, for staff-triggered syncs;
@@ -864,17 +1221,24 @@ def sync(conn, client=None, wait=False, catalog=False):
     now", so a renamed or new item shows up straight away instead of within 6 hours)."""
     got = _sync_lock.acquire(timeout=60 if wait is True else wait) if wait else _sync_lock.acquire(blocking=False)
     if not got:
+        if not light:
+            _sync_full.set()  # the round queued for us must be a full one
         _sync_pending.set()
         # The running sync may have finished between our failed acquire and setting the flag;
         # if so, nobody would see the flag - so try once more and run it ourselves.
         if not _sync_lock.acquire(blocking=False):
             return {"queued": "a sync is already running; this one will run straight after"}
-    result = {}
+    result, first = {}, True
     while True:
         try:
             _sync_pending.clear()
+            # This caller's own kind on the first pass; a round queued behind it is full only if one asked.
+            full = (first and not light) or _sync_full.is_set()
+            first = False
+            if full:
+                _sync_full.clear()
             try:
-                result = _sync_once(conn, client or SquareClient(), catalog)
+                result = _sync_once(conn, client or SquareClient(), catalog, light=not full)
             except Exception as e:  # keep the poller alive; show the error on the Square page
                 conn.rollback()
                 log.exception("Square sync failed")
@@ -887,6 +1251,11 @@ def sync(conn, client=None, wait=False, catalog=False):
         # Someone asked for a sync while this one ran: go again, unless another thread took over.
         if not _sync_pending.is_set() or not _sync_lock.acquire(blocking=False):
             return result
+
+
+def sync_job(result, prefix=""):
+    """A sync run as a background job (jobs.start): its line for staff, and whether it worked."""
+    return prefix + describe_sync(result), "error" not in result
 
 
 def describe_sync(result):

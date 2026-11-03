@@ -1,0 +1,6 @@
+[
+ {
+  "key": "permissions",
+  "value": "{\"claim\": \"open\", \"sync\": \"open\", \"warnings\": \"open\", \"points\": \"pin\", \"redeem\": \"pin\", \"rewards\": \"pin\", \"events\": \"pin\", \"tab_decisions\": \"pin\", \"tab_money\": \"pin\", \"customers\": \"pin\", \"ask\": \"pin\", \"ask_apply\": \"owner\", \"rules\": \"owner\", \"qr_login\": \"open\", \"passcodes\": \"pin\", \"money\": \"pin\", \"money_delete\": \"owner\", \"costs\": \"pin\", \"square_kind\": \"pin\", \"school_tools\": \"owner\", \"downloads\": \"owner\", \"other_tools\": \"pin\", \"import\": \"owner\", \"settings\": \"owner\", \"admin_accounts\": \"owner\", \"test_accounts\": \"open\", \"big_points\": 500, \"big_dollars\": 50, \"big\": \"owner\"}"
+ }
+]

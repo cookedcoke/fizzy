@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
-from . import square, stats
+from . import square, stats, tools
 from .money import MoneyError, _period
 from .web import get_conn, render, staff
 
@@ -55,9 +55,10 @@ def transactions(request: Request, start: str = "", end: str = "", show: str = "
                      "test": h["kind"] == "test"})
     live = square.live_from(conn)  # history-only sales were never expected to have anyone on them
     nobody = sum(1 for r in rows if r["source"] == "square" and not r["customer_id"] and (r["sold_cents"] or r["repay_cents"])
-                 and r["at"] >= live)
+                 and r["at"] >= live and not r["no_account"])
     keep = {"sales": lambda r: r["sale_cents"], "tab": lambda r: r["tab_cents"], "repaid": lambda r: r["repay_cents"],
-            "nobody": lambda r: r["source"] == "square" and not r["customer_id"] and r["at"] >= live}.get(show)
+            "nobody": lambda r: r["source"] == "square" and not r["customer_id"] and r["at"] >= live
+            and not r["no_account"]}.get(show)
     if keep:
         rows = [r for r in rows if keep(r)]
     needle = " ".join(q.lower().split())
@@ -76,4 +77,5 @@ def transactions(request: Request, start: str = "", end: str = "", show: str = "
     quick = {"Today": (t, t), "Yesterday": (t - timedelta(days=1), t - timedelta(days=1)),
              "Last 7 days": (t - timedelta(days=6), t), "This month": (t.replace(day=1), t)}
     return render(request, "transactions.html", rows=rows[:LIMIT], more=max(0, len(rows) - LIMIT), totals=totals,
-                  start=s, end=e, show=show, q=q, shows=SHOW, quick=quick, people=people)
+                  start=s, end=e, show=show, q=q, shows=SHOW, quick=quick, people=people,
+                  tool_ctx=tools.form_ctx(conn))

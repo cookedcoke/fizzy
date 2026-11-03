@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from . import badges, config, db, events, logic, portal, rewards, stats
-from .web import back, get_conn, local, money, staff, templates
+from .web import back, get_conn, local, money, render, staff, templates
 
 router = APIRouter()
 
@@ -42,6 +42,14 @@ def hidden_items(conn):
         return set()
 
 
+@router.get("/display/settings", response_class=HTMLResponse)
+def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+    """The display's message, what's on its shelf, and whether it shows what people owe (header, Display, Edit message)."""
+    return render(request, "display_settings.html", display_message=db.get_setting(conn, "display_message", "") or "",
+                  display_owing=db.get_setting(conn, "display_owing", "1") == "1",
+                  display_menu=menu_items(conn), display_hidden=hidden_items(conn))
+
+
 @router.post("/settings/display")
 async def save_message(request: Request, who=Depends(staff), conn=Depends(get_conn)):
     import json
@@ -55,21 +63,23 @@ async def save_message(request: Request, who=Depends(staff), conn=Depends(get_co
     db.set_setting(conn, "display_owing", "1" if owing else "0")
     db.audit(conn, who, "settings", None, f"display message: {text}")
     conn.commit()
-    return back(request, "/settings#display", "Saved.")
+    return back(request, "/display/settings", "Saved.")
 
 
 @router.get("/api/display/idle")
 def idle(who=Depends(staff), conn=Depends(get_conn)):
     """What's on: shown between customers."""
     start, end = stats.day_bounds(stats.today())
-    board, _ = portal.leaderboard(conn, since=portal.month_start(), limit=3)
+    board, _ = portal.leaderboard(conn, since=portal.month_start(), limit=3, ties=True)   # everyone tied for the top 3 places
+    more = max(0, len(board) - 12)
+    board = board[:12]
     hide = hidden_items(conn)
     menu = [m for m in menu_items(conn) if m["item_id"] not in hide][:12]  # the item, not "Coke (Mini)"
     return JSONResponse({
         "events": [{"name": e["name"], "multiplier": e["multiplier"]} for e in events.on(conn)],
         "soon": _soon(conn),
         "rewards": [{"name": r["name"], "points": r["points_cost"]} for r in rewards.active(conn)][:6],
-        "leaders": [{"rank": b["rank"], "name": b["name"], "points": b["points"]} for b in board],
+        "leaders": [{"rank": b["rank"], "name": b["name"], "points": b["points"]} for b in board], "leaders_more": more,
         "popular": [i["name"] for i in stats.top_items(stats.checkouts(conn, start, end), 3)],
         "menu": [{"name": m["item_name"], "price": money(m["price"])} for m in menu],
         "message": db.get_setting(conn, "display_message", "") or "",
@@ -95,8 +105,6 @@ def _tab_line(st):
         return "Nothing more on your tab until that's paid."
     if st["status"] in ("approved", "paused"):
         return "Your tab's paused. Ask at the counter."
-    if st["status"] == "eligible":
-        return "You can ask for a tab."
     return None
 
 

@@ -1,27 +1,32 @@
 {% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% import "_tools.html" as tl with context %}
 {% block body %}
 {% include "_search.html" %}
 {% if unlinked_tabs %}<datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>{% endif %}
 
-{% if notice %}<div class="notice">{{ notice }}<a class="small" href="/tools#notice">Edit</a></div>{% endif %}
-{% if tabs_paused %}<div class="err">All tabs are paused. <a href="/tools#pause_tabs">Turn back on</a></div>{% endif %}
+{% if notice %}<div class="notice">{{ notice }}<a class="small" href="#notice" data-open="notice">Edit</a></div>{% endif %}
+{# The noticeboard's form: opened by Add a note (or Edit). class "hold": the minute refresh waits while it's open. #}
+<details class="panel notebox hold" id="notice"><summary>Noticeboard <span class="muted small">· for the others, at the top of this page</span></summary>
+  {{ tl.form('notice', back='/', prefill={'button': 'Save note' if not notice else 'Save'}) }}</details>
+{% if tabs_paused %}<div class="err">All tabs are paused. <a href="/tabs#pause_tabs">Turn back on</a></div>{% endif %}
 {% if not square_on %}<div class="err">Square isn't connected yet, so points and tabs won't update by themselves. Ask the owner.</div>
 {% elif sync_error %}<div class="err">Last Square sync failed: {{ sync_error }}</div>{% endif %}
 {% if not backup[0] %}<div class="err">{{ backup[1] }}</div>{% endif %}
 
-{% if events_on or events_soon %}<div class="flash" style="border-left-color:var(--ok)">
+{% if events_on or events_soon %}<div class="flash ok">
   {% for e in events_on %}<b>{{ e.name }} (×{{ '%g'|format(e.multiplier) }}) is on today</b>{{ ' · ' if not loop.last }}{% endfor %}
   {% if events_on and events_soon %} · {% endif %}
   {% if events_soon %}Coming up: {% for e in events_soon %}{{ e.name }} {{ e.start_date|ymd('%a %-d %b') }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}
   · <a href="/rewards#events">Manage</a></div>{% endif %}
-{% if live_rewards %}<div class="flash" style="border-left-color:var(--ok)">Rewards on:
+{% if live_rewards %}<div class="flash ok">Rewards on:
   {% for r in live_rewards %}<b>{{ r.name }}</b> ({{ '{:,}'.format(r.points_cost) }} pts){{ ', ' if not loop.last }}{% endfor %}
   · <a href="/rewards">Manage</a></div>{% endif %}
 {% set t = sales.today %}<span hidden data-autorefresh="60"></span>
 <div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }}</div></div>
-  <div class="actions" style="margin:0"><a class="btn" href="/money" title="Restocks and payouts - G then M">Money</a>
-    <a class="btn" href="/profit" title="Profit and item costs - G then P">Profit</a>
-    <a class="btn" href="/tools#takings" title="What came in over any dates">Takings report</a></div></div>
+  <div class="actions" style="margin:0"><button type="button" data-open="notice" title="Leave a note at the top of this page for the others">{{ 'Edit note' if notice else 'Add a note' }}</button>
+    <a class="btn" href="/money" title="Restocks and payouts">Money</a>
+    <a class="btn" href="/profit" title="Profit and item costs">Profit</a>
+    <a class="btn" href="/transactions#takings" title="What came in over any dates">Takings report</a></div></div>
 {% if closed %}{% set l = closed.last %}
 <div class="panel closed-day"><h2>{{ closed.reason }}, so the stall's closed today</h2>
   <p class="big">Opens {{ 'tomorrow' if closed.next_in == 1 else closed.next.strftime('%A') if closed.next_in < 7 else closed.next.strftime('%A %-d %B') }}{% if closed.next_in > 1 %} <span class="muted">· in {{ closed.next_in }} days</span>{% endif %}</p>
@@ -67,14 +72,14 @@
   <div class="stat"><div class="k">Total owed</div><div class="v">{{ total_owed|money }}</div></div>
   <div class="stat {{ 'alert' if total_overdue }}"><div class="k">Overdue</div><div class="v">{{ total_overdue|money }}</div><div class="sub">{{ overdue|length }} charge{{ '' if overdue|length == 1 else 's' }}</div></div>
   <div class="stat"><div class="k">Due in 2 days</div><div class="v">{{ due_soon|length }}</div><div class="sub">charge{{ '' if due_soon|length == 1 else 's' }}</div></div>
-  <div class="stat"><div class="k">Awaiting approval</div><div class="v">{{ eligible|length }}</div><div class="sub">eligible for a tab</div></div>
+  <div class="stat"><div class="k">Tabs turned off</div><div class="v">{{ tabs_off }}</div><div class="sub">by staff</div></div>
   <div class="stat"><div class="k">Square sync</div><div class="v sm">{{ last_sync|local or 'Never' }}</div></div>
   <div class="stat {{ 'alert' if not backup[0] }}"><div class="k">Last backup</div><div class="v sm">{{ backup[1] if backup[0] else 'Problem' }}</div>
     {% if not backup[0] %}<div class="sub">see the warning at the top</div>{% endif %}</div>
 </div>
 
 {% if breaches or unlinked_tabs %}
-<div class="panel" style="border-color:var(--red-line)">
+<div class="panel attn bad">
   <h2 class="red">Needs attention <span class="count">{{ breaches|length + unlinked_tabs|length }}</span></h2>
   <div class="scroll"><table class="attn">
     <tr><th>When</th><th>Customer</th><th class="n">Amount</th><th>Problem</th><th></th></tr>
@@ -96,13 +101,13 @@
 
 <div class="cols">
 <div class="col" style="flex-grow:2">
-  {% if not overdue and not due_soon %}<div class="todo go" style="margin-bottom:var(--s4)"><b>No tabs overdue or due soon.</b>
+  {% if not overdue and not due_soon %}<div class="todo go"><b>No tabs overdue or due soon.</b>
     <span>{{ total_owed|money }} owed in total.</span></div>{% endif %}
-  {% if overdue %}<div class="panel" style="box-shadow:inset 4px 0 0 var(--red)"><h2>Overdue <span class="count">{{ overdue|length }}</span></h2>
+  {% if overdue %}<div class="panel attn bad"><h2>Overdue <span class="count">{{ overdue|length }}</span></h2>
     {% if overdue %}<div class="scroll"><table>
       <tr><th>Customer</th><th class="n">Unpaid</th><th>Was due</th></tr>
       {% for r in overdue %}<tr><td><a href="/customers/{{ r.customer.id }}">{{ r.customer.name }}</a></td>
-        <td class="n red">{{ r.charge.unpaid_cents|money }}</td><td>{{ r.charge.due_at|local('%a %d %b') }}</td></tr>{% endfor %}
+        <td class="n red">{{ r.charge.unpaid_cents|money }}</td><td>{{ r.charge.due_at|local('%a %-d %b') }}</td></tr>{% endfor %}
     </table></div>{% endif %}
   </div>{% endif %}
   {% if due_soon %}<div class="panel"><h2>Due in the next 2 days <span class="count">{{ due_soon|length }}</span></h2>
@@ -113,26 +118,23 @@
     </table></div>{% endif %}
   </div>{% endif %}
 </div>
-{% if eligible %}<div class="col">
-  <div class="panel" style="box-shadow:inset 4px 0 0 var(--ok)"><h2>Eligible for a tab <span class="count">{{ eligible|length }}</span></h2>
-    {% if eligible %}<div class="scroll"><table>
-      {% for c in eligible[:8] %}<tr><td><a href="/customers/{{ c.id }}">{{ c.name }}</a><br><span class="muted small">{{ c.spent|money }} spent</span></td>
-        <td class="n" style="vertical-align:middle"><form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="approve"><button class="sm">Approve</button></form>
-            <form class="inline" method="post" action="/customers/{{ c.id }}/tab"><input type="hidden" name="decision" value="reject"><button class="sm danger">Reject</button></form></td></tr>{% endfor %}
-      {% if eligible|length > 8 %}<tr><td colspan="2" class="small">{{ eligible|length - 8 }} more · <a href="/tools#approve_eligible">Approve all eligible</a></td></tr>{% endif %}
-    </table></div>{% endif %}
-  </div>
-</div>{% endif %}
 </div>
   </div>
 </div>
 <div class="col">
+  {# Fizz (Ask): a small chat. The minute refresh leaves it alone while a question is being typed or answered (app.js). #}
+  <section class="panel askpanel" id="ask" data-ask-chat="box">
+    <h2>Fizz <a class="aside" href="/ask" data-turbo="false" title="The same chat, full screen">Full screen</a>
+      {% if chat.timeline and not chat.pending %}<form class="inline aside" method="post" action="/ask/clear"><input type="hidden" name="back" value="/">
+        <button class="sm" data-confirm="Clear this chat?">New chat</button></form>{% endif %}</h2>
+    {% set chat_back = "/" %}{% include "_chat.html" %}
+  </section>
   <div class="panel"><h2>Top items</h2>
     <div class="scroll"><table>
       <tr><th>Today</th><th class="n">Sold</th></tr>
-      {% for it in sales.top_today %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet today.</td></tr>{% endfor %}
+      {% for it in sales.top_today %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="empty">Nothing yet today.</td></tr>{% endfor %}
       <tr><th>Last 7 school days</th><th class="n">Sold</th></tr>
-      {% for it in sales.top_week %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="muted">Nothing yet.</td></tr>{% endfor %}
+      {% for it in sales.top_week %}<tr><td>{{ it.name }}</td><td class="n">{{ it.qty }}</td></tr>{% else %}<tr><td colspan="2" class="empty">Nothing yet.</td></tr>{% endfor %}
     </table></div>
   </div>
   <div class="panel"><h2>Latest sales</h2>

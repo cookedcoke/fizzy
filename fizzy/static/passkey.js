@@ -28,7 +28,11 @@
       : e && e.name === "InvalidStateError" ? "That key is already added." : "That didn't work. Try again.";
   }
 
-  var add = document.querySelector("[data-passkey-add]");
+  // Loaded once per tab; the buttons are bound on each page as it's drawn (Turbo swaps pages in place).
+  var bound = new WeakSet();
+  function fresh(el) { if (!el || bound.has(el)) return null; bound.add(el); return el; }
+  function bind() {
+  var add = fresh(document.querySelector("[data-passkey-add]"));
   if (add) {
     var o = JSON.parse(add.querySelector("script").textContent), form = add.querySelector("form"), msg = add.querySelector("[data-passkey-msg]");
     o.challenge = buf(o.challenge); o.user.id = buf(o.user.id); o.excludeCredentials = ids(o.excludeCredentials);
@@ -40,7 +44,7 @@
     });
   }
 
-  var go = document.querySelector("[data-passkey-login]");
+  var go = fresh(document.querySelector("[data-passkey-login]"));
   if (go) {
     var pf = document.getElementById("passkey-form"), err = function (t) {
       var box = document.querySelector(".login .err");
@@ -60,4 +64,7 @@
         }, function (e) { err(e && e.name === "Error" ? e.message : sorry(e)); });  // "Error" is ours, from the server
     });
   }
+  }
+  bind();
+  document.addEventListener("turbo:render", bind);
 })();

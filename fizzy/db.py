@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS customers (
     name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     square_customer_id TEXT UNIQUE,
-    -- Staff decision only: NULL (none yet), approved, rejected, revoked.
-    -- locked / eligible / blocked_overdue are derived, never stored.
+    -- Staff turning the tab off: NULL (tab on, sized by the tab score), rejected or revoked.
+    -- (approved was the old "on"; tab_rules_v2 cleared it.) low_score / blocked_overdue are derived.
     tab_decision TEXT,
     tab_decision_note TEXT,
     tab_decision_by TEXT,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS square_aliases (
     customer_id INTEGER NOT NULL REFERENCES customers(id)
 );
 
--- Permanent history of every tab decision (approve / reject / revoke / reset).
+-- Permanent history of every tab change: off (rejected / revoked), on, and staff score adjustments ("score +20").
 CREATE TABLE IF NOT EXISTS tab_decisions (
     id INTEGER PRIMARY KEY,
     customer_id INTEGER NOT NULL REFERENCES customers(id),
@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS square_payments (
     raw_json TEXT,
     created_at TEXT NOT NULL,
     processed_at TEXT NOT NULL
+    -- no_account, no_account_by: added by MIGRATIONS below
 );
 
 CREATE TABLE IF NOT EXISTS square_refunds (
@@ -249,6 +250,13 @@ CREATE TABLE IF NOT EXISTS restocks (
     created_at TEXT NOT NULL
 );
 
+-- Restocks deleted on purpose, by the id the phone gave them: the phone sends a restock again when it
+-- never heard back, and a deleted one mustn't come back that way.
+CREATE TABLE IF NOT EXISTS restock_tombstones (
+    client_id TEXT PRIMARY KEY,
+    deleted_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS restock_items (
     id INTEGER PRIMARY KEY,
     restock_id INTEGER NOT NULL REFERENCES restocks(id),
@@ -290,6 +298,22 @@ CREATE TABLE IF NOT EXISTS points_rules (
     stopped_at TEXT
 );
 
+-- Each "Claim sale" press (square.claim_next). It owns the sales rung up in the 30 seconds before
+-- pressed_at that no earlier press owns (by their Square time, not when they reached Fizzy). A waiting
+-- one gets its sale from square.claim_waiting; one claimed at once is kept too (done_by 'at once'), and
+-- an expired one still counts, so later presses don't take their sales. A cancelled one (Undo) doesn't.
+CREATE TABLE IF NOT EXISTS claim_waits (
+    id INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    staff TEXT,
+    pressed_at TEXT,
+    wait_until TEXT,                         -- after this it's given up on (Square sends sales late)
+    status TEXT NOT NULL DEFAULT 'waiting',  -- waiting | claimed | cancelled | expired
+    checkout_key TEXT,                       -- the sale it claimed (square._checkout_key)
+    done_at TEXT,
+    done_by TEXT                             -- who cancelled it, or 'at once'
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);
@@ -297,12 +321,12 @@ CREATE INDEX IF NOT EXISTS ix_repay_customer ON tab_repayments(customer_id);
 CREATE INDEX IF NOT EXISTS ix_points_customer ON points_ledger(customer_id);
 CREATE INDEX IF NOT EXISTS ix_sqpay_customer ON square_payments(customer_id);
 CREATE INDEX IF NOT EXISTS ix_audit_customer ON audit_log(customer_id);
+CREATE INDEX IF NOT EXISTS ix_claim_waits_status ON claim_waits(status, done_at);
 """
 
 DEFAULT_SETTINGS = {
     "tab_limit_cents": "1000",
     "tab_due_days": "7",
-    "unlock_spend_cents": "3000",
 }
 
 
@@ -334,7 +358,13 @@ MIGRATIONS = [
     ("points_events", "rule_id", "INTEGER"),
     ("customers", "kind", "TEXT"),  # NULL (a normal customer), admin (staff themselves) or test
     ("customers", "me_gen", "INTEGER"),
+    ("restocks", "client_id", "TEXT"),  # set by the iOS app, so a restock sent again after a lost answer isn't added twice
     ("points_ledger", "rule_key", "TEXT"),  # rules.py: one grant per key, paid once  # bumped by "Sign out their phones" on the customer page
+    ("customers", "score_adjust", "INTEGER"),  # staff adjustment to the tab score (logic.set_score_adjust), NULL = none
+    # "No account" (square.mark_no_account): a real sale (a teacher, someone not recording) that nobody gets.
+    # When it was marked, and by whom; NULL = not marked. Every row of the checkout is marked together.
+    ("square_payments", "no_account", "TEXT"),
+    ("square_payments", "no_account_by", "TEXT"),
 ]
 
 
@@ -344,6 +374,7 @@ def init(conn):
         cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_restocks_client_id ON restocks(client_id) WHERE client_id IS NOT NULL")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_points_rule_key ON points_ledger(customer_id, rule_key) WHERE rule_key IS NOT NULL")
     # Passcodes were briefly stored as one-way hashes (column passcode_hash), which can't be read
     # back: those students show as "not set" so staff know to set a new one.

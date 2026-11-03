@@ -25,7 +25,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
 from . import ask, badges, display, jobs, passkeys, pwa, rules, transactions, updater
-from .web import HERE, LoginRequired, back, cents, get_conn, local, money, render, session_gen, staff, templates
+from .web import (HERE, LoginRequired, back, cents, claim_bar, get_conn, is_phone, local, money, render, sale_amounts, sale_time,
+                  session_gen, staff, take, templates, wants_json)
 
 log = logging.getLogger("fizzy")
 
@@ -34,6 +35,20 @@ GATE_EXEMPT = ("/static/", "/healthz", "/square/webhook", "/enrol/", "/sw.js", "
 GATE_PAGE = ("<!doctype html><meta name=viewport content='width=device-width'><title>{title}</title>"
              "<body style='font:15px system-ui;max-width:520px;margin:15vh auto;padding:0 16px'>"
              "<h1 style='font-size:20px'>{title}</h1><p>{body}</p>")
+
+
+# Paths a phone browser may still open on the staff host: the student site (/me, when it has no
+# host of its own) and what the device gate never checks (static files, the Square webhook...).
+PHONE_EXEMPT = GATE_EXEMPT + ("/me",)
+
+
+def phone_page():
+    student = (f'<p>Checking your points or tab? Go to <a href="https://{config.PUBLIC_HOST}/">{config.PUBLIC_HOST}</a>.</p>'
+               if config.PUBLIC_HOST else "")
+    return GATE_PAGE.format(
+        title="Use the Fizzy app on your phone",
+        body="The staff site works on a computer or an iPad. On an iPhone, use the Fizzy app instead: "
+             "it does everything the site does, and it's built for a small screen.</p>" + student + "<p>")
 
 
 def set_device_cookie(response, token):
@@ -52,12 +67,23 @@ def _poller():
         try:
             # The last sync *or failed attempt*: a failing sync waits a full poll interval before
             # retrying instead of re-reading Square every minute.
-            last = max(db.get_setting(conn, "square_last_sync") or "", db.get_setting(conn, "square_last_attempt") or "")
+            # Light syncs (the Claim sale watcher) don't count: they skip the customer list.
+            last = max(db.get_setting(conn, "square_full_sync") or "", db.get_setting(conn, "square_last_attempt") or "")
             due = not last or datetime.now(timezone.utc) - logic.parse_ts(last) >= timedelta(seconds=config.SQUARE_POLL_SECONDS)
             if config.SQUARE_TOKEN and due:
                 square.sync(conn)
+            # Claim sale presses: expire old ones even with Square down, and watch any still waiting
+            # (e.g. after a restart, when no press has started the watcher).
+            square.claim_waiting(conn)
+            conn.commit()
+            if square.any_waiting(conn):
+                watch_claims()
             events.reconcile(conn)
             conn.commit()
+            swept = db.get_setting(conn, "badges_swept_at")
+            if not swept or datetime.now(timezone.utc) - logic.parse_ts(swept) >= timedelta(hours=1):
+                badges.sweep(conn)   # badges earned but not yet paid (e.g. a sale assigned later)
+                conn.commit()
             if config.BACKUP_DIR:
                 last_b = db.get_setting(conn, "last_backup")
                 tried = db.get_setting(conn, "backup_last_attempt")
@@ -85,12 +111,19 @@ def _poller():
 
 _sync_thread = None
 _sync_again = threading.Event()
+CLAIM_SYNC_WAIT = 3  # seconds the Claim sale button waits for Square before it settles for waiting
 
 
-def trigger_sync():
+_sync_full_again = threading.Event()
+
+
+def trigger_sync(light=False):
     """A webhook arrived: sync now. One thread at a time; a webhook during a sync means one more
-    pass straight after it, so nothing waits for the next poll."""
+    pass straight after it, so nothing waits for the next poll. light=True (Claim sale) only fetches
+    new sales (see square.sync), so it's quick."""
     global _sync_thread
+    if not light:
+        _sync_full_again.set()
     _sync_again.set()
     if _sync_thread is not None and _sync_thread.is_alive():
         return
@@ -99,17 +132,60 @@ def trigger_sync():
         try:
             while _sync_again.is_set():
                 _sync_again.clear()
-                square.sync(conn)
+                full = _sync_full_again.is_set()
+                _sync_full_again.clear()
+                square.sync(conn, light=not full)
         finally:
             conn.close()
     _sync_thread = threading.Thread(target=run, daemon=True)
     _sync_thread.start()
 
 
+CLAIM_WATCH_SECONDS = 5
+_watch_thread = None
+_watch_lock = threading.Lock()
+
+
+def watch_claims():
+    """While a Claim sale press is waiting, ask Square for new sales every few seconds (the webhook
+    may be slow or missing), and give each press its sale as soon as it's in. One thread; it stops
+    when nothing is waiting."""
+    global _watch_thread
+    with _watch_lock:
+        if _watch_thread is not None and _watch_thread.is_alive():
+            return
+        def run():
+            global _watch_thread
+            conn = db.connect()
+            try:
+                while not _stop.is_set():
+                    with _watch_lock:  # decided under the lock, so a press made right now is never missed
+                        if not square.any_waiting(conn):
+                            _watch_thread = None
+                            return
+                    try:
+                        if config.SQUARE_TOKEN:
+                            square.sync(conn, light=True)  # only new sales; matches presses itself; queued if one is running
+                        square.claim_waiting(conn)  # expiry, and in case the sync was queued or failed
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        log.exception("claim watcher failed")
+                    _stop.wait(CLAIM_WATCH_SECONDS)
+            finally:
+                conn.close()
+                with _watch_lock:
+                    if _watch_thread is threading.current_thread():
+                        _watch_thread = None
+        _watch_thread = threading.Thread(target=run, daemon=True, name="claim-watch")
+        _watch_thread.start()
+
+
 @asynccontextmanager
 async def lifespan(app):
     conn = db.connect()
     db.init(conn)
+    logic.retire_approvals(conn)  # once: tabs now come from the tab score, not approval
     badges.baseline(conn)  # once: badges people already had don't pay out when this is switched on
     square.void_huge(conn)  # payments over $100 are mistakes or tests, not sales
     conn.close()
@@ -131,6 +207,15 @@ def create_app(background=True):
         max_age=60 * 60 * 24 * 30, same_site="lax", https_only=config.SECURE_COOKIES,
     )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+    @app.middleware("http")
+    async def phone_gate(request, call_next):
+        """Phone browsers get a page pointing them at the iOS app (the app itself isn't a browser,
+        and the student site stays open to phones). Added first, so it runs after public_host."""
+        path = request.url.path
+        if getattr(request.state, "public", False) or path.startswith(PHONE_EXEMPT) or not is_phone(request):
+            return await call_next(request)
+        return HTMLResponse(phone_page(), status_code=403, headers={"Cache-Control": "no-store", "Vary": "User-Agent"})
 
     @app.middleware("http")
     async def device_gate(request, call_next):
@@ -384,7 +469,13 @@ def error_page(request, status, message=None):
         response = templates.TemplateResponse(request, "me_error.html", {"heading": heading, "message": message if status < 500 and message else default,
                                                                           "home": home}, status_code=status)
     else:
-        response = render(request, "error.html", heading=heading, message=message or default, home="/")
+        # A form Turbo sent draws its error at the form's own address with no new history entry, so
+        # "Go back" there means loading the form again, not leaving it.
+        # Also when the form's redirect is what failed: Turbo asks for turbo-stream answers only for forms,
+        # and the request that follows the redirect keeps that header.
+        again = bool(request.headers.get("x-turbo-request-id")) and (
+            request.method != "GET" or "text/vnd.turbo-stream.html" in request.headers.get("accept", ""))
+        response = render(request, "error.html", heading=heading, message=message or default, home="/", again=again)
         response.status_code = status
     return response
 
@@ -423,8 +514,12 @@ def register(app):
     @app.exception_handler(pin.PinRequired)
     async def _need_pin(request, exc):
         msg = "Enter the passcode first. Nothing was changed."
+        if wants_json(request):  # the iOS app asks for the passcode itself, then tries again
+            return JSONResponse({"error": msg, "need": "owner" if exc.need == pin.OWNER else "pin"}, status_code=423)
         if request.method == "GET":
             return back(request, "/tools", msg, "bad")
+        if request.headers.get("x-turbo-request-id"):  # a form Turbo sent: app.js asks at this level and sends it again
+            return JSONResponse({"error": msg, "need": exc.need}, status_code=423, headers={"X-Fizzy": "pin", "Cache-Control": "no-store"})
         return back(request, _same_site_referer(request) or "/", msg, "bad")
 
     @app.exception_handler(LoginRequired)
@@ -513,20 +608,22 @@ def register(app):
 
     # ---- dashboard -----------------------------------------------------------------------
 
-    @app.get("/", response_class=HTMLResponse)
-    def dashboard(request: Request, who=Depends(staff), conn=Depends(get_conn)):
-        cfg = logic.settings(conn)
-        now = datetime.now(timezone.utc)
+    def tab_overview(conn, now=None):
+        """Who owes: totals, every overdue charge and every one due in the next 2 days (dashboard and Tabs)."""
+        now = now or datetime.now(timezone.utc)
         soon = now + timedelta(days=2)
         with_tab = conn.execute(
             "SELECT DISTINCT c.* FROM customers c JOIN tab_charges t ON t.customer_id = c.id WHERE c.kind IS NOT 'test'"
         ).fetchall()
         total_owed = total_overdue = 0
-        overdue, due_soon = [], []
+        overdue, due_soon, owing = [], [], []
         for c in with_tab:
             led = logic.tab_ledger(conn, c["id"], now)
             total_owed += led["owing_cents"]
             total_overdue += led["overdue_cents"]
+            if led["owing_cents"] > 0:
+                owing.append({"customer": c, "owing_cents": led["owing_cents"], "overdue_cents": led["overdue_cents"],
+                              "due_at": min((ch["due_at"] for ch in led["charges"] if ch["unpaid_cents"] > 0), default=None)})
             for ch in led["charges"]:
                 if ch["unpaid_cents"] <= 0:
                     continue
@@ -537,13 +634,19 @@ def register(app):
                     due_soon.append(row)
         overdue.sort(key=lambda r: r["charge"]["due_at"])
         due_soon.sort(key=lambda r: r["charge"]["due_at"])
+        owing.sort(key=lambda r: (-r["overdue_cents"], r["due_at"] or ""))
+        tabs_off = conn.execute(
+            "SELECT COUNT(*) FROM customers WHERE tab_decision IN ('rejected', 'revoked') AND archived_at IS NULL AND kind IS NOT 'test'"
+        ).fetchone()[0]
+        return {"total_owed": total_owed, "total_overdue": total_overdue, "overdue": overdue, "due_soon": due_soon,
+                "owing": owing, "tabs_off": tabs_off}
 
-        eligible = conn.execute(
-            "SELECT c.*, SUM(p.spend_cents) AS spent FROM customers c JOIN points_ledger p ON p.customer_id = c.id "
-            "WHERE c.tab_decision IS NULL AND c.archived_at IS NULL AND c.kind IS NOT 'test' GROUP BY c.id HAVING spent >= ? ORDER BY spent DESC",
-            (cfg["unlock_spend_cents"],),
-        ).fetchall()
-        eligible = [c for c in eligible if logic.tab_score(conn, c["id"], spent=c["spent"], cfg=cfg)["ready"]]  # spend and score
+    @app.get("/", response_class=HTMLResponse)
+    def dashboard(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+        cfg = logic.settings(conn)
+        tv = tab_overview(conn)
+        total_owed, total_overdue, overdue, due_soon, tabs_off = (tv[k] for k in ("total_owed", "total_overdue", "overdue", "due_soon", "tabs_off"))
+
         top = conn.execute(
             "SELECT c.id, c.name, SUM(p.delta) AS points, SUM(p.spend_cents) AS spent FROM customers c "
             "JOIN points_ledger p ON p.customer_id = c.id WHERE c.archived_at IS NULL AND c.kind IS NOT 'test' "
@@ -558,7 +661,7 @@ def register(app):
             (square.live_from(conn),)).fetchall()
         return render(
             request, "dashboard.html", total_owed=total_owed, total_overdue=total_overdue, overdue=overdue,
-            due_soon=due_soon, eligible=eligible, top=top, breaches=breaches, unlinked_tabs=unlinked_tabs,
+            due_soon=due_soon, tabs_off=tabs_off, eligible=[], top=top, breaches=breaches, unlinked_tabs=unlinked_tabs,
             last_sync=db.get_setting(conn, "square_last_sync"), sync_error=db.get_setting(conn, "square_last_error"),
             square_on=bool(config.SQUARE_TOKEN), notice=db.get_setting(conn, "notice", ""),
             tabs_paused=cfg["tabs_paused"],
@@ -566,7 +669,26 @@ def register(app):
             if unlinked_tabs else [],
             live_rewards=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn, 7),
             sales=(sales := stats.dashboard(conn)), backup=backup_health(conn), closed=_closed_today(conn, sales),
+            chat=ask.chat(conn, who, limit=40), tool_ctx=tools.form_ctx(conn),
         )
+
+    # ---- tabs ----------------------------------------------------------------------------
+
+    @app.get("/tabs", response_class=HTMLResponse)
+    def tabs_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+        """Everything about tabs as a whole: who owes, the rules, and the tools for every tab at once."""
+        tv = tab_overview(conn)
+        waiting = conn.execute(
+            "SELECT COUNT(*) FROM customers WHERE tab_decision IS NULL AND archived_at IS NULL AND kind IS NOT 'test'").fetchone()[0]
+        return render(request, "tabs.html", **tv, cfg=logic.settings(conn), tabs_paused=logic.settings(conn)["tabs_paused"],
+                      tabs_on=waiting, tool_ctx=tools.form_ctx(conn))
+
+    # ---- sales: Transactions and Square, two sub-tabs of one page ------------------------
+
+    @app.get("/sales")
+    def sales_page(request: Request, who=Depends(staff)):
+        q = request.url.query
+        return RedirectResponse("/transactions" + (f"?{q}" if q else ""), status_code=303)
 
     def _closed_today(conn, sales):
         """When the stall isn't open today (a weekend or a day marked closed) and nothing's sold, the
@@ -622,19 +744,60 @@ def register(app):
         for i in idle:
             i["margin"] = (round(100 * (i["price"] - i["cost_each"]) / i["price"])
                            if i["price"] and i["cost_each"] is not None else None)
-        return render(request, "profit.html", pr=p, idle=idle, range=range if range in PROFIT_RANGES else "7",
+        rows, idle = _by_item(conn, p["items"], idle, cost_map)
+        return render(request, "profit.html", pr=dict(p, items=rows), idle=idle, range=range if range in PROFIT_RANGES else "7",
                       ranges=PROFIT_RANGES, label=label, square_on=bool(config.SQUARE_TOKEN),
                       catalog_sync=db.get_setting(conn, "catalog_last_ok"), catalog_error=db.get_setting(conn, "catalog_error"),
                       catalog_count=conn.execute("SELECT COUNT(*) FROM catalog_items WHERE deleted = 0").fetchone()[0])
 
+    def _by_item(conn, sold, idle, cost_map):
+        """Variations of one item (Coke Mini, Coke Can...) share one row and one cost: they cost
+        the same, so it's entered once against the item. Single-variation items are unchanged."""
+        names, count = {}, {}
+        for r in conn.execute("SELECT item_name FROM catalog_items WHERE deleted = 0"):
+            b = stats.item_key(r["item_name"])
+            names[b] = r["item_name"]; count[b] = count.get(b, 0) + 1
+        multi = {b for b, n in count.items() if n > 1}
+        groups, out_sold, out_idle = {}, [], []
+        for r in sold:
+            if r.get("custom") or r["base"] not in multi:
+                out_sold.append(r); continue
+            g = groups.get(r["base"])
+            if g is None:
+                g = groups[r["base"]] = {"key": r["base"], "base": r["base"], "name": names[r["base"]], "qty": 0, "revenue": 0,
+                                         "cost": 0, "custom": False, "variants": [], "_known": True}
+                out_sold.append(g)
+            g["qty"] += r["qty"]; g["revenue"] += r["revenue"]; g["variants"].append(r["name"])
+            g["cost"] = None if g["cost"] is None or r["cost"] is None else g["cost"] + r["cost"]
+        for r in idle:
+            b = r["base"]
+            if b in multi and b in groups:
+                groups[b]["variants"].append(r["name"]); groups[b].setdefault("prices", []).append(r["price"]); continue
+            if b in multi:
+                g = groups[b] = {"key": b, "base": b, "name": names[b], "variants": [r["name"]], "prices": [r["price"]], "idle": True}
+                out_idle.append(g); continue
+            out_idle.append(r)
+        for g in groups.values():
+            g["cost_each"] = cost_map.get(g["base"])
+            prices = sorted(p for p in g.get("prices", []) if p)
+            g["price"] = prices[0] if prices else None             # margin from the cheapest: the worst case
+            g["price_to"] = prices[-1] if prices and prices[-1] != prices[0] else None
+            if g.get("idle"):
+                g["margin"] = (round(100 * (g["price"] - g["cost_each"]) / g["price"])
+                               if g["price"] and g["cost_each"] is not None else None)
+            else:
+                g["profit"] = None if g["cost"] is None else g["revenue"] - g["cost"]
+                g["margin"] = round(100 * g["profit"] / g["revenue"]) if g["profit"] is not None and g["revenue"] else None
+        return out_sold, out_idle
+
     @app.post("/profit/refresh")
     def profit_refresh(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         if not config.SQUARE_TOKEN:
-            return back(request, "/profit", "Square isn't connected (SQUARE_ACCESS_TOKEN).")
+            return back(request, "/profit", "Square isn't connected (SQUARE_ACCESS_TOKEN).", "bad")
         try:
             n = square.sync_catalog(conn, square.SquareClient(), force=True)
         except Exception as e:  # network trouble: say so, don't crash
-            return back(request, "/profit", f"Couldn't reach Square: {e}")
+            return back(request, "/profit", f"Couldn't reach Square: {e}", "bad")
         if db.get_setting(conn, "catalog_error"):
             return back(request, "/profit")  # the page shows what went wrong
         return back(request, "/profit", f"Got {n} item{'' if n == 1 else 's'} from Square.")
@@ -652,6 +815,7 @@ def register(app):
                 key = keys[i] if i < len(keys) else stats.item_key(name)
                 base = bases[i] if i < len(bases) else key
                 value = value.strip().replace("$", "")
+                value = re.sub(r",(\d{1,2})$", r".\1", value).replace(",", "")  # "1,20" is $1.20, as everywhere else
                 cents_v = None
                 if value:
                     try:
@@ -659,9 +823,9 @@ def register(app):
                         if cents_v > 10_000_000:
                             raise OverflowError
                     except (ValueError, OverflowError):
-                        return back(request, request.headers.get("referer") or "/profit", f"'{value}' isn't a dollar amount ({name}).")
+                        return back(request, request.headers.get("referer") or "/profit", f"'{value}' isn't a dollar amount ({name}).", "bad")
                     if cents_v < 0:
-                        return back(request, request.headers.get("referer") or "/profit", f"A cost can't be negative ({name}).")
+                        return back(request, request.headers.get("referer") or "/profit", f"A cost can't be negative ({name}).", "bad")
                 if stats.cost_of(have, key, base) == cents_v:
                     continue
                 if cents_v is None and have.get(key) is None:
@@ -690,7 +854,7 @@ def register(app):
     # ---- customers ----------------------------------------------------------------------
 
     @app.get("/customers", response_class=HTMLResponse)
-    def customer_list(request: Request, q: str = "", who=Depends(staff), conn=Depends(get_conn)):
+    def customer_list(request: Request, q: str = "", add: str = "", who=Depends(staff), conn=Depends(get_conn)):
         cfg = logic.settings(conn)
         if q:
             rows = customers.search(conn, q, 50)
@@ -705,8 +869,15 @@ def register(app):
         count = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL").fetchone()[0]
         not_in_square = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL "
                                      "AND square_customer_id IS NULL AND kind IS NOT 'test'").fetchone()[0]
+        # Add customer, started from what was searched for (or a card scan with nobody on it): a student number
+        # fills in their school email, anything else the name.
+        start = " ".join((add or (q if q and not results else "")).split())[:120]
+        sid = start.lower() if re.fullmatch(r"(rns)?\d{8}", start.lower()) else ""
+        new_person = {"email": f"{sid if sid.startswith('rns') else 'rns' + sid}@{customers.SCHOOL_DOMAIN}"} if sid else (
+            {"name": start} if start else {})
         return render(request, "customers.html", q=q, results=results, count=count, not_in_square=not_in_square,
-                      can_reward=rewards.can_redeem_any(conn) if results else set())
+                      can_reward=rewards.can_redeem_any(conn) if results else set(), add=start, new_person=new_person,
+                      tool_ctx=tools.form_ctx(conn))
 
     @app.get("/api/index")
     def api_index(who=Depends(staff), conn=Depends(get_conn)):
@@ -723,7 +894,9 @@ def register(app):
         c = conn.execute("SELECT id FROM customers WHERE email LIKE ? ORDER BY archived_at IS NOT NULL LIMIT 1",
                          (sid.replace("%", "").replace("_", "") + "@%",)).fetchone() if re.fullmatch(r"rns\d{8}", sid) else None
         if c is None:
-            return back(request, "/", f"No one with student number {sid.upper()} yet. Add them on Tools, Add a customer.")
+            if not re.fullmatch(r"rns\d{8}", sid):
+                return back(request, "/", f"No one with student number {sid.upper()}.", "bad")
+            return back(request, f"/customers?add={sid}#add_customer", f"No one with student number {sid.upper()} yet. Add them here.", "bad")
         return RedirectResponse(f"/customers/{c['id']}", status_code=303)
 
     @app.get("/api/search")
@@ -764,16 +937,14 @@ def register(app):
         audit_rows = conn.execute(
             "SELECT * FROM audit_log WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100", (cid,)
         ).fetchall()
-        opened = datetime.now(timezone.utc)
-        watch_since = (opened - timedelta(seconds=90)).isoformat(timespec="seconds")
-        opened = opened.isoformat(timespec="seconds")
+        watch_since = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat(timespec="seconds")
         kind_levels = {lv: pin.customer_level(conn, c["kind"], lv) for lv in (pin.OPEN, pin.PIN, pin.OWNER)}
-        return render(request, "customer.html", kind_levels=kind_levels, s=s, c=c, points=points, payments=payments, watch_since=watch_since, opened=opened,
-                      decisions=decisions, audit_rows=audit_rows,
+        return render(request, "customer.html", kind_levels=kind_levels, s=s, c=c, points=points, payments=payments, watch_since=watch_since,
+                      decisions=decisions, audit_rows=audit_rows, bands=logic.bands(logic.settings(conn)),
                       offers=(offers := rewards.offers_for(conn, cid, s["points"])),
                       display_msg={"type": "show", "customer": display.payload(conn, c, s, offers)},
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
-                      passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None)
+                      passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None, tool_ctx=tools.form_ctx(conn))
 
     @app.get("/customers/{cid:int}/claim", response_class=HTMLResponse)
     def claim_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
@@ -784,26 +955,118 @@ def register(app):
             result = square.sync(conn, wait=8)  # fetch the sale that was just taken, if the webhook hasn't
             if "error" in result:
                 note = square.describe_sync(result)
-        return render(request, "claim.html", c=c, checkouts=square.unclaimed(conn), note=note, st=logic.tab_status(conn, c),
-                      hours=square.CLAIM_HOURS, square_on=bool(config.SQUARE_TOKEN))
+        found = square.unclaimed(conn, limit=square.PICK_SHOWN + 1)  # one extra, to know there are more
+        return render(request, "claim.html", c=c, checkouts=found[:square.PICK_SHOWN], more=len(found) > square.PICK_SHOWN,
+                      note=note, st=logic.tab_status(conn, c), hours=square.CLAIM_HOURS, square_on=bool(config.SQUARE_TOKEN))
+
+    def checkout_json(k, st):
+        return {"key": k["key"], "at": local(k["at"], "%H:%M"), "at_iso": k["at"],
+                "items": k["items"] or ("Tab repayment" if k["repay_cents"] else "Sale"),
+                "paid": money(k["sale_cents"]) if k["sale_cents"] else None,
+                "tab": money(k["tab_cents"]) if k["tab_cents"] else None,
+                "repaid": money(k["repay_cents"]) if k["repay_cents"] else None,
+                "tab_warning": bool(k["tab_cents"]) and (not st["can_charge"] or k["tab_cents"] > st["available_cents"])}
 
     @app.get("/api/customers/{cid:int}/new-sales")
     def new_sales(cid: int, since: str = "", who=Depends(staff), conn=Depends(get_conn)):
         """For the "new sale - claim it?" prompt on a customer's page: unclaimed sales that came in
         after `since` (when the page was opened, less a little slack), newest first."""
         c = load_customer(conn, cid)
+        if square.any_waiting(conn):  # a Claim sale press is waiting for its sale: that decides whose it is
+            return JSONResponse([], headers={"Cache-Control": "no-store"})
         st = logic.tab_status(conn, c)
-        out = []
-        for k in square.unclaimed(conn, limit=3):
-            if since and k["at"] <= since:
-                continue
-            out.append({"key": k["key"], "at": local(k["at"], "%H:%M"), "at_iso": k["at"],
-                        "items": k["items"] or ("Tab repayment" if k["repay_cents"] else "Sale"),
-                        "paid": money(k["sale_cents"]) if k["sale_cents"] else None,
-                        "tab": money(k["tab_cents"]) if k["tab_cents"] else None,
-                        "repaid": money(k["repay_cents"]) if k["repay_cents"] else None,
-                        "tab_warning": bool(k["tab_cents"]) and (not st["can_charge"] or k["tab_cents"] > st["available_cents"])})
+        out = [checkout_json(k, st) for k in square.unclaimed(conn, limit=3) if not since or k["at"] > since]
         return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+    @app.post("/customers/{cid:int}/claim/next")
+    def claim_next(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
+        """The Claim sale button: the sale rung up in Square in the 30 seconds before the press
+        (square.claim_next). If it isn't in yet, the bar at the top of every page shows the wait."""
+        pressed = datetime.now(timezone.utc)  # the press counts from the tap, not from when Square answers below
+        c = load_customer(conn, cid)
+        page, first = f"/customers/{cid}", c["name"].split(" ")[0]
+
+        def fail(msg):
+            if wants_json(request):
+                return JSONResponse({"error": msg}, status_code=400, headers={"Cache-Control": "no-store"})
+            return back(request, page, msg, "bad")
+
+        if not config.SQUARE_TOKEN:
+            return fail("Square isn't connected, so there's nothing to claim.")
+        if c["archived_at"] or c["merged_into"]:
+            return fail(f"{c['name']} is archived, so sales can't be claimed for them.")
+        st = logic.tab_status(conn, c)
+        # Until it's written, other requests and the watcher count this press as one that owns nothing
+        # yet, so a later tap that reaches claim_next first can't take this one's sale.
+        with square.pressing(pressed) as token:
+            trigger_sync(light=True)  # a sale just taken may not be in yet: ask Square, but only wait a moment
+            if _sync_thread is not None:
+                _sync_thread.join(CLAIM_SYNC_WAIT)
+            try:
+                what, got = square.claim_next(conn, c, who, now=pressed, press=token)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        if what.endswith("waiting") and request.app.state.background:
+            watch_claims()
+        if what == "still waiting":  # pressed again while their press waits: nothing new
+            if wants_json(request):
+                return JSONResponse({"waiting": waiting_json(got, c), "already": True}, headers={"Cache-Control": "no-store"})
+            return back(request, page, f"Already waiting for {first}'s sale.")
+        if what == "already":  # a second press (or a double tap) for a sale they've already got
+            if wants_json(request):
+                return JSONResponse({"claimed": checkout_json(got, st), "already": True}, headers={"Cache-Control": "no-store"})
+            return back(request, page, f"{first} already has the {sale_time(got['at'])} sale ({sale_amounts(got)}), so nothing "
+                                       "more was claimed. For another sale, use Pick a sale.")
+        if what == "claimed":
+            if wants_json(request):
+                return JSONResponse({"claimed": checkout_json(got, st)}, headers={"Cache-Control": "no-store"})
+            msg = f"Claimed the {sale_time(got['at'])} sale for {first} ({sale_amounts(got)})."
+            if checkout_json(got, st)["tab_warning"]:
+                msg += f" It's more than {first} can put on a tab, so it'll be flagged."
+            return back(request, page, msg)
+        if wants_json(request):
+            return JSONResponse({"waiting": waiting_json(got, c)}, headers={"Cache-Control": "no-store"})
+        return back(request, page, f"Waiting for {first}'s sale. It'll link as soon as Square sends it.")
+
+    def waiting_json(w, c):
+        return {"id": w["id"], "customer_id": c["id"], "name": c["name"], "pressed_at": w["pressed_at"], "wait_until": w["wait_until"]}
+
+    @app.post("/claim-waits/{wid:int}/cancel")
+    def claim_wait_cancel(request: Request, wid: int, who=Depends(staff), conn=Depends(get_conn)):
+        """Undo on the bar: stop a Claim sale press that's still waiting. Never unclaims a sale."""
+        row = conn.execute("SELECT customer_id FROM claim_waits WHERE id = ?", (wid,)).fetchone()
+        to = _same_site_referer(request) or (f"/customers/{row['customer_id']}" if row else "/")
+        try:
+            w = square.cancel_wait(conn, wid, who)
+            conn.commit()
+        except ValueError as e:
+            conn.rollback()
+            if wants_json(request):
+                return JSONResponse({"error": str(e)}, status_code=409, headers={"Cache-Control": "no-store"})
+            return back(request, to, str(e), "bad")
+        name = conn.execute("SELECT name FROM customers WHERE id = ?", (w["customer_id"],)).fetchone()["name"]
+        if wants_json(request):
+            return JSONResponse({"cancelled": wid}, headers={"Cache-Control": "no-store"})
+        return back(request, to, f"Stopped waiting for {name.split(' ')[0]}'s sale.")
+
+    @app.get("/api/claim-waits")
+    def api_claim_waits(who=Depends(staff), conn=Depends(get_conn)):
+        """The bar at the top of every page: Claim sale presses waiting, and ones just finished."""
+        return JSONResponse({"waits": claim_bar(conn)}, headers={"Cache-Control": "no-store"})
+
+    # ---- for the iOS app. Every staff page also answers with its data as JSON when asked (see
+    # web.render); these two are what the sign-in screen needs.
+
+    @app.get("/api/staff-names")
+    def api_staff_names():
+        """Who can be on the counter, for the sign-in screen (the sign-in page lists them too)."""
+        return JSONResponse(config.STAFF_NAMES)
+
+    @app.get("/api/me")
+    def api_me(request: Request, who=Depends(staff)):
+        return JSONResponse({"staff": who, "staff_names": config.STAFF_NAMES}, headers={"Cache-Control": "no-store"})
 
     @app.post("/customers/{cid:int}/claim")
     def claim(request: Request, cid: int, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
@@ -812,6 +1075,7 @@ def register(app):
             square.claim(conn, key, c, who)
         except ValueError as e:
             return back(request, f"/customers/{cid}/claim", str(e), "bad")
+        square.claim_waiting_safely(conn)  # a Claim sale press waiting for this sale is done now
         conn.commit()
         return back(request, f"/customers/{cid}", f"Sale claimed for {c['name']}.")
 
@@ -851,15 +1115,39 @@ def register(app):
         return back(request, f"/customers/{cid}", f"Points {delta:+d}.")
 
     @app.post("/customers/{cid:int}/tab")
-    def tab_decision(request: Request, cid: int, decision: str = Form(...), note: str = Form(""),
-                     who=Depends(staff), conn=Depends(get_conn)):
-        load_customer(conn, cid)
-        mapping = {"approve": "approved", "reject": "rejected", "revoke": "revoked", "reset": None}
+    def tab_decision(request: Request, cid: int, decision: str = Form(""), note: str = Form(""),
+                     band: str = Form(""), adjust: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+        """The customer's tab: put them in a limit band or set the score adjustment by hand (both set
+        the staff adjustment line in their tab score), or turn the tab off and back on."""
+        c = load_customer(conn, cid)
+        page = f"/customers/{cid}"
+        if band:  # a limit button (it sends band, not decision)
+            decision = "band"
+        if decision in ("band", "adjust"):
+            if decision == "band":
+                cfg = logic.settings(conn)
+                if band not in {str(floor) for floor, _ in logic.bands(cfg)}:
+                    return back(request, page, "Pick one of the limits.", "bad")
+                value = logic.adjust_for_band(conn, c, int(band), cfg)
+            else:
+                try:
+                    value = int(adjust.strip().removeprefix("+") or "0")
+                except ValueError:
+                    return back(request, page, "The adjustment must be a whole number, like +20 or -10.", "bad")
+            try:
+                logic.set_score_adjust(conn, cid, value, note.strip(), who)
+            except ValueError as e:
+                return back(request, page, str(e), "bad")
+            conn.commit()
+            st = logic.tab_status(conn, load_customer(conn, cid))
+            return back(request, page, f"Tab score {st['score']['score']}, limit ${st['limit_cents'] / 100:.2f}.")
+        # approve and reset are the old words for "on", still sent by older copies of the iOS app.
+        mapping = {"off": "revoked", "reject": "rejected", "revoke": "revoked", "on": None, "reset": None, "approve": None}
         if decision not in mapping:
-            raise HTTPException(400, "Pick approve, reject, revoke or reset.")
+            raise HTTPException(400, "Pick a limit, or turn the tab off or on.")
         logic.set_tab_decision(conn, cid, mapping[decision], note, who)
         conn.commit()
-        return back(request, f"/customers/{cid}", f"Tab {decision} saved.")
+        return back(request, page, "Tab turned off." if mapping[decision] else "Tab back on.")
 
     @app.post("/customers/{cid:int}/kind")
     def set_kind(request: Request, cid: int, kind: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
@@ -882,7 +1170,7 @@ def register(app):
                 (" ".join(name.split()), sid, (c["archived_at"] or db.now_iso()) if archived else None, cid),
             )
         except Exception:
-            return back(request, f"/customers/{cid}", "That Square customer ID is already linked to someone else.")
+            return back(request, f"/customers/{cid}", "That Square customer ID is already linked to someone else.", "bad")
         db.audit(conn, who, "customer_edit", cid, f"name={name!r} square={sid} archived={bool(archived)}")
         square.link_pending(conn)
         conn.commit()
@@ -892,7 +1180,10 @@ def register(app):
 
     @app.get("/import", response_class=HTMLResponse)
     def import_form(request: Request, who=Depends(staff)):
-        return render(request, "import.html", preview=None)
+        """The school list import lives on Customers now (its preview, step 2, is still import.html)."""
+        if wants_json(request):
+            return render(request, "import.html", preview=None)
+        return RedirectResponse("/customers#import", status_code=303)
 
     @app.post("/import", response_class=HTMLResponse)
     async def import_csv(request: Request, file: UploadFile, confirm: str = Form(""), who=Depends(staff),
@@ -920,11 +1211,12 @@ def register(app):
 
     @app.get("/square", response_class=HTMLResponse)
     def square_page(request: Request, show: str = "", who=Depends(staff), conn=Depends(get_conn)):
-        where = "WHERE customer_id IS NULL AND sp.kind != 'void' AND sp.created_at >= ?" if show == "unlinked" else ""
-        rows = conn.execute(
+        where = ("WHERE customer_id IS NULL AND sp.kind != 'void' AND sp.no_account IS NULL AND sp.created_at >= ?"
+                 if show == "unlinked" else "")
+        rows = [{**r, "key": square._checkout_key(r)} for r in conn.execute(
             f"SELECT sp.*, c.name FROM square_payments sp LEFT JOIN customers c ON c.id = sp.customer_id {where} "
             "ORDER BY sp.created_at DESC LIMIT 200", (square.live_from(conn),) if where else ()
-        ).fetchall()
+        ).fetchall()]
         people = conn.execute("SELECT name, email FROM customers WHERE archived_at IS NULL ORDER BY name").fetchall()
         unlinked_customers = conn.execute(
             "SELECT COUNT(*) FROM customers WHERE square_customer_id IS NULL AND archived_at IS NULL AND kind IS NOT 'test'"
@@ -938,7 +1230,7 @@ def register(app):
             webhook_on=bool(config.SQUARE_WEBHOOK_KEY), people=people,
             item_errors=json.loads(db.get_setting(conn, "square_item_errors") or "[]"),
             conflicts=json.loads(db.get_setting(conn, "square_customer_conflicts") or "[]"),
-            unclaimed=len(square.unclaimed(conn, hours=24 * 7, limit=1000)),
+            unclaimed=len(square.unclaimed(conn, hours=24 * 7, limit=1000)), tool_ctx=tools.form_ctx(conn),
         )
 
     @app.get("/square/payments/{pid}", response_class=PlainTextResponse)
@@ -962,14 +1254,45 @@ def register(app):
             square.assign_customer(conn, pid, c, who)
         except (tools.ToolError, ValueError) as e:
             return back(request, request.headers.get("referer") or "/square", str(e), "bad")
+        square.claim_waiting_safely(conn)  # a Claim sale press waiting for this sale is done now
         conn.commit()
         return back(request, request.headers.get("referer") or "/square", f"Assigned to {c['name']}.")
+
+    @app.post("/square/no-account")
+    def square_no_account(request: Request, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
+        """A sale nobody gets (a teacher, someone not recording, no account): its money still counts,
+        but it's never claimed or linked (square.mark_no_account)."""
+        return _no_account(request, conn, key, who, undo=False)
+
+    @app.post("/square/no-account/undo")
+    def square_no_account_undo(request: Request, key: str = Form(...), who=Depends(staff), conn=Depends(get_conn)):
+        return _no_account(request, conn, key, who, undo=True)
+
+    def _no_account(request, conn, key, who, undo):
+        to = request.headers.get("referer") or "/square"
+        try:
+            k = (square.undo_no_account if undo else square.mark_no_account)(conn, key, who)
+        except ValueError as e:
+            conn.rollback()
+            if wants_json(request):
+                return JSONResponse({"error": str(e)}, status_code=400, headers={"Cache-Control": "no-store"})
+            return back(request, to, str(e), "bad")
+        if undo:
+            square.claim_waiting_safely(conn)  # a Claim sale press waiting for this sale may take it now
+            msg = "Undone: it's a sale with nobody on it again."
+        else:
+            msg = "Marked No account. It still counts in takings, but nobody gets it." if k else "That sale is already No account."
+        conn.commit()
+        if wants_json(request):
+            return JSONResponse({"ok": True, "key": key, "no_account": not undo, "message": msg},
+                                headers={"Cache-Control": "no-store"})
+        return back(request, to, msg)
 
     @app.post("/square/sync")
     def square_sync_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         if not config.SQUARE_TOKEN:
-            return back(request, "/square", "Square isn't configured (SQUARE_ACCESS_TOKEN).")
-        if not jobs.start("Syncing with Square", lambda c: square.describe_sync(square.sync(c, wait=True, catalog=True)), who):
+            return back(request, "/square", "Square isn't configured (SQUARE_ACCESS_TOKEN).", "bad")
+        if not jobs.start("Syncing with Square", lambda c: square.sync_job(square.sync(c, wait=True, catalog=True)), who):
             return back(request, "/square", "Something's already running. Wait for it to finish.", "bad")
         return back(request, "/square", "Syncing with Square. You can keep using Fizzy; the bar at the top says when it's done.")
 
@@ -993,33 +1316,33 @@ def register(app):
                       display_menu=display.menu_items(conn), display_hidden=display.hidden_items(conn), pin_on=bool(pin.stored(conn)), admin_on=pin.admin_on(), update=updater.status(), perms=pin.permissions(conn),
                       actions=pin.ACTIONS, level_labels=pin.LEVEL_LABELS,
                       devices_on=devices.enabled(), access_host=config.ACCESS_HOST, main_host=config.HOST,
-                      passkey_list=passkeys.listed(conn), passkey_options=request.session.pop("pk_add_options", None),
+                      passkey_list=passkeys.listed(conn), passkey_options=take(request, "pk_add_options"),
                       device_list=conn.execute("SELECT * FROM devices ORDER BY revoked_at IS NOT NULL, created_at DESC").fetchall(),
                       this_device=getattr(request.state, "device", None),
                       access_email=getattr(request.state, "access_email", None),
-                      new_link=request.session.pop("new_device_link", None),
+                      new_link=take(request, "new_device_link"),
                       link_minutes=devices.LINK_MINUTES,
                       last_backup=db.get_setting(conn, "last_backup"),
-                      last_backup_path=db.get_setting(conn, "last_backup_path"), backup_dir=config.BACKUP_DIR)
+                      last_backup_path=db.get_setting(conn, "last_backup_path"), backup_dir=config.BACKUP_DIR,
+                      tool_ctx=tools.form_ctx(conn))
 
     @app.post("/settings")
     def save_settings(request: Request, tab_limit: str = Form(...), due_days: int = Form(...),
-                      unlock_spend: str = Form(...), score_needed: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+                      min_score: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         if not 1 <= due_days <= 365:
-            return back(request, "/settings", "Days to pay must be between 1 and 365.")
+            return back(request, "/tabs#rules", "Days to pay must be between 1 and 365.", "bad")
         try:
-            needed = int(score_needed) if score_needed.strip() else logic.settings(conn)["tab_score_needed"]
+            minimum = int(min_score) if min_score.strip() else logic.settings(conn)["tab_min_score"]
         except ValueError:
-            needed = -1
-        if not 0 <= needed <= 100:
-            return back(request, "/settings", "The score needed must be a whole number from 0 to 100.")
-        new = {"tab_limit_cents": cents(tab_limit), "tab_due_days": due_days, "unlock_spend_cents": cents(unlock_spend),
-               "tab_score_needed": needed}
+            minimum = -1
+        if not 0 <= minimum <= 100:
+            return back(request, "/tabs#rules", "The minimum tab score must be a whole number from 0 to 100.", "bad")
+        new = {"tab_limit_cents": cents(tab_limit), "tab_due_days": due_days, "tab_min_score": minimum}
         for k, v in new.items():
             db.set_setting(conn, k, v)
         db.audit(conn, who, "settings", None, json.dumps(new))
         conn.commit()
-        return back(request, "/settings", "Saved.")
+        return back(request, "/tabs#rules", "Saved.")
 
     @app.post("/settings/terms")
     def save_terms(request: Request, terms: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
@@ -1045,19 +1368,19 @@ def register(app):
     @app.post("/settings/maintenance")
     def maintenance_on(request: Request, message: str = Form(""), who=Depends(staff)):
         if not pin.admin_on():  # only the owner can turn it off again, so there has to be one
-            return back(request, "/settings#maintenance", "Set an owner password first (FIZZY_ADMIN_PASSWORD in .env).")
+            return back(request, "/settings#maintenance", "Set an owner password first (FIZZY_ADMIN_PASSWORD in .env).", "bad")
         set_maintenance(" ".join(message.split())[:200], who)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/settings/backup")
     def backup_now(request: Request, who=Depends(staff), conn=Depends(get_conn)):
         if not config.BACKUP_DIR:
-            return back(request, "/settings", "Set FIZZY_BACKUP_DIR to enable backups.")
+            return back(request, "/settings#backups", "Set FIZZY_BACKUP_DIR to enable backups.", "bad")
         path = db.backup(conn, config.BACKUP_DIR, config.BACKUP_KEEP)
         db.set_setting(conn, "last_backup", db.now_iso())
         db.set_setting(conn, "last_backup_path", path)
         conn.commit()
-        return back(request, "/settings", f"Backed up to {path}")
+        return back(request, "/settings#backups", f"Backed up to {path}")
 
     @app.get("/audit", response_class=HTMLResponse)
     def audit_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):

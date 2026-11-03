@@ -263,3 +263,74 @@ def test_name_without_middle_name_only_counts_when_unique(conn, cust):
         portal.set_passcode(conn, x, "code-1234", "Will")
     assert [r["id"] for r in portal.candidates(conn, "John Smith")] == [a["id"]]
     assert [r["id"] for r in portal.candidates(conn, "Mary Lee")] == [c["id"]]
+
+
+def test_leaderboard_ignores_badge_points_and_can_show_everyone_tied(conn, cust):
+    people = [cust(name=f"Kid {n}", email=f"rns{n}@x", sq=f"S{n}") for n in range(1, 6)]
+    conn.execute("UPDATE customers SET passcode_enc = 'x'")
+    ts = db.now_iso()
+    rows = [(p["id"], 100, "purchase") for p in people[:4]] + [(people[4]["id"], 300, "badge"), (people[0]["id"], 50, "rule")]
+    for cid, pts, reason in rows:
+        conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, created_at) VALUES (?, ?, ?, ?)", (cid, pts, reason, ts))
+    board, _ = portal.leaderboard(conn, limit=3)
+    assert len(board) == 3 and {r["points"] for r in board} == {100}   # badge and rule points don't count
+    tied, _ = portal.leaderboard(conn, limit=3, ties=True)
+    assert len(tied) == 4 and {r["rank"] for r in tied} == {1}          # all four who share first are shown
+
+
+@pytest.mark.badge_points
+def test_sweep_pays_badges_nobody_has_looked_at(conn, cust):
+    from fizzy import badges
+    a = cust(name="Izumi", email="rns9@x", sq="Z")
+    conn.execute("INSERT INTO points_ledger(customer_id, delta, reason, created_at) VALUES (?, 400, 'purchase', ?)", (a["id"], db.now_iso()))
+    before = conn.execute("SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = ?", (a["id"],)).fetchone()[0]
+    assert badges.sweep(conn) >= 1
+    after = conn.execute("SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = ?", (a["id"],)).fetchone()[0]
+    assert after > before and badges.sweep(conn) == 0                    # paid once, not again
+
+
+# ---- the student iOS app ------------------------------------------------------------------------
+
+J = {"X-Fizzy-Format": "json"}
+
+
+def test_app_signs_in_and_gets_the_page_as_data(client):
+    setup_student(client)
+    client.post("/rewards", data={"name": "Free Coke", "points": "1000"})
+    client.post("/logout")
+    out = client.get("/me", headers=J).json()
+    assert out["signed_in"] is False and out["rewards"] == [{"name": "Free Coke", "points_cost": 1000}]
+    bad = client.post("/me/login", data={"who": "Nora Le Fevre", "passcode": "nope"}, headers=J)
+    assert bad.status_code == 401 and "don't match" in bad.json()["error"]
+    ok = client.post("/me/login", data={"who": "rns5", "passcode": PC}, headers=J, follow_redirects=False)
+    assert ok.status_code == 200 and ok.json() == {"ok": True}
+    me = client.get("/me", headers=J).json()
+    assert me["signed_in"] and me["first"] == "Nora" and me["points"] == 1500
+    assert me["offers"][0]["can_redeem"] and me["tab"]["score"]["score"] >= 0 and me["boards"][0]["title"] == "This month"
+    assert me["badges"] and "days" in me["streak"] and me["tz"] == "Australia/Sydney"
+    text = client.get("/me", headers=J).text
+    assert "staff-only note xyz" not in text and "passcode" not in text.lower()
+    assert client.post("/me/logout", headers=J).json() == {"ok": True}
+    assert client.get("/me", headers=J).json()["signed_in"] is False
+
+
+def test_app_sign_in_code_works_once(client, monkeypatch):
+    monkeypatch.setattr(portal.secrets, "token_urlsafe", lambda n: "tok-app")
+    cid = setup_student(client)
+    client.post(f"/customers/{cid}/qr-login")
+    token = "tok-app"
+    client.post("/logout")
+    assert client.get(f"/me/q/{token}", headers=J).json() == {"ok": True}
+    assert client.get("/me", headers=J).json()["first"] == "Nora"
+    client.post("/me/logout", headers=J)
+    again = client.get(f"/me/q/{token}", headers=J)
+    assert again.status_code == 410 and "no good" in again.json()["error"]
+
+
+def test_app_gets_too_many_tries_as_data(client):
+    setup_student(client)
+    client.post("/logout")
+    for _ in range(portal.LIMIT_PER_NAME):
+        client.post("/me/login", data={"who": "Nora Le Fevre", "passcode": "wrong"}, headers=J)
+    r = client.post("/me/login", data={"who": "Nora Le Fevre", "passcode": "wrong"}, headers=J)
+    assert r.status_code in (401, 429) and "error" in r.json()
