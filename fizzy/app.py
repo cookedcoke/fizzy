@@ -302,6 +302,8 @@ def create_app(background=True):
                 return JSONResponse(apple_app_site_association(), headers={"Cache-Control": "public, max-age=3600"})
             if path == "/robots.txt":
                 return PlainTextResponse("User-agent: *\nDisallow: /\n")
+            if path.startswith("/static/") or path == "/manifest.webmanifest":   # the pages' styles, fonts and icons
+                return await call_next(request)
             code = path.strip("/")
             if code == "hunt":   # what this phone has found (the App Clip, opened without a code)
                 request.scope["path"] = "/me/hunt"

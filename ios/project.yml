@@ -53,7 +53,7 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO   # HTTPS only, which is exempt
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.food-and-drink
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_NSCameraUsageDescription: "To read the sign-in code staff show you at the counter."
+        INFOPLIST_KEY_NSCameraUsageDescription: "To scan sign-in codes at the counter, and hunt codes around school."
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "To reach a test server on the local network, if you set one."
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -69,6 +69,7 @@ targets:
         excludes: [Clip.entitlements]
       - path: Student/StudentAPI.swift   # isOffline
       - path: Student/Scanner.swift
+      - path: Student/TileReader.swift
       - path: Fizzy/JSON.swift
     settings:
       base:

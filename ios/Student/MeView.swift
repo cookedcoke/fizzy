@@ -326,7 +326,7 @@ struct CardSection: View {
             }
         }
         .sheet(isPresented: $scanning) {
-            CodeScanner(title: card.title.string) { code in scanning = false; Task { await send(code) } }
+            CodeScanner(title: card.title.string, guide: .poster) { code in scanning = false; Task { await send(code) } }
         }
         .alert(failed ? "That didn't work" : "Scanned", isPresented: Binding(get: { result != nil }, set: { if !$0 { result = nil } })) {
             Button("OK", role: .cancel) {}
