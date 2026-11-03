@@ -7,6 +7,7 @@ import UIKit
 ///
 /// Our own camera rather than VisionKit's scanner: it runs at 4K on the main lens zoomed to 2×, so a
 /// poster reads from across a room, with a zoom picker, pinch, the torch, and macro when very close.
+/// TileReader also reads codes packed edge to edge with no border, which no ordinary reader can.
 struct CodeScanner: View {
     var title = "Scan a code"
     var read: (String) -> String? = { $0 }
@@ -76,7 +77,7 @@ struct CodeScanner: View {
 
 /// The capture session. `zoom` is as the Camera app counts it: 1× is the main lens, whatever the phone.
 @Observable
-final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, @unchecked Sendable {
+final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     static let presets: [CGFloat] = [1, 2, 3]
 
     @ObservationIgnored let session = AVCaptureSession()
@@ -93,6 +94,9 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, @unchecked
     @ObservationIgnored private var mainLens: CGFloat = 1
     @ObservationIgnored private var done = false
     @ObservationIgnored private let queue = DispatchQueue(label: "co.cookedcoke.scanner")
+    /// Frames for TileReader, for codes packed with no white border round them (the hunt posters).
+    @ObservationIgnored private let frames = DispatchQueue(label: "co.cookedcoke.scanner.frames", qos: .userInitiated)
+    @ObservationIgnored private var tileBusy = false
 
     @MainActor
     func start() async {
@@ -116,6 +120,11 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, @unchecked
         if session.canAddOutput(output) { session.addOutput(output) }
         output.setMetadataObjectsDelegate(self, queue: .main)
         output.metadataObjectTypes = output.availableMetadataObjectTypes.contains(.qr) ? [.qr] : []
+        let video = AVCaptureVideoDataOutput()
+        video.alwaysDiscardsLateVideoFrames = true   // only ever the latest frame, never a queue of old ones
+        video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+        video.setSampleBufferDelegate(self, queue: frames)
+        if session.canAddOutput(video) { session.addOutput(video) }
         session.commitConfiguration()
 
         try? device.lockForConfiguration()
@@ -150,12 +159,31 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, @unchecked
 
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject], from connection: AVCaptureConnection) {
         for case let code as AVMetadataMachineReadableCodeObject in objects {
-            guard !done, let text = code.stringValue, let value = read(text) else { continue }
-            done = true
-            reads += 1
-            stop()
-            found(value)
+            if let text = code.stringValue { use(text) }
         }
+    }
+
+    /// The camera's own reader needs a white border round a code; this reads the hunt posters' packed
+    /// codes, one frame at a time (frames that arrive while it's busy are dropped).
+    func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard !tileBusy, let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
+        tileBusy = true
+        defer { tileBusy = false }
+        let image = CIImage(cvPixelBuffer: buffer)
+        // About 1440 pixels on the short side: enough for a whole poster, quick enough for a few frames a second.
+        let scale = min(1, 1440 / min(image.extent.width, image.extent.height))
+        let small = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        guard let frame = TileReader.ci.createCGImage(small, from: small.extent), let text = TileReader.read(frame) else { return }
+        DispatchQueue.main.async { self.use(text) }
+    }
+
+    /// On the main queue: both readers hand their codes over there.
+    private func use(_ text: String) {
+        guard !done, let value = read(text) else { return }
+        done = true
+        reads += 1
+        stop()
+        found(value)
     }
 }
 

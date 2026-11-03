@@ -69,6 +69,7 @@ targets:
         excludes: [Clip.entitlements]
       - path: Student/StudentAPI.swift   # isOffline
       - path: Student/Scanner.swift
+      - path: Student/TileReader.swift
       - path: Fizzy/JSON.swift
     settings:
       base:
