@@ -39,7 +39,9 @@ struct CustomerView: View {
             rewards(d)
             charges(d)
             repayments(d)
+            byHand(d)
             history(d)
+            movePoints(d)
             payments(d)
             score(d)
             more(d)
@@ -190,6 +192,29 @@ struct CustomerView: View {
                 Button { sheet = .tab } label: { Label("Tab limit", systemImage: "slider.horizontal.3") }
                 Button { sheet = .points } label: { Label("Adjust points", systemImage: "plusminus.circle") }
                 Button { Task { await makeQR() } } label: { Label("Show sign-in code", systemImage: "qrcode") }
+            }
+        }
+    }
+
+    /// "Name <email>", which the tools' person fields take exactly.
+    private func picked(_ c: J) -> String { "\(c.name.string) <\(c.email.string)>" }
+
+    /// This person's tab by hand: the same tools as on Tools, already pointed at them.
+    @ViewBuilder private func byHand(_ d: J) -> some View {
+        if d.c.archived_at.optString == nil {
+            Section("Tab by hand") {
+                ToolLink(id: "manual_charge", systemImage: "plus.circle", prefill: ["customer": picked(d.c)], from: page)
+                ToolLink(id: "extend_due", systemImage: "calendar.badge.clock", prefill: ["customer": picked(d.c)], from: page)
+                ToolLink(id: "write_off", systemImage: "xmark.circle", prefill: ["customer": picked(d.c)], from: page)
+            }
+        }
+    }
+
+    @ViewBuilder private func movePoints(_ d: J) -> some View {
+        if d.c.archived_at.optString == nil {
+            Section {
+                ToolLink(id: "transfer_points", label: "Move points to someone else", systemImage: "arrow.left.arrow.right",
+                         prefill: ["from": picked(d.c)], from: page)
             }
         }
     }

@@ -9,15 +9,13 @@ struct ServerSettingsView: View {
         PageList(page: page, title: "Settings") { d in
             Section { Text("Fizzy version \(d.update.version.string)").font(.footnote).foregroundStyle(.secondary) }
             NavigationLink("Who can do what") { PermissionsForm(page: page) }
-            NavigationLink("Tab rules") { TabRulesForm(page: page) }
-            NavigationLink("Customer display") { DisplayForm(page: page) }
             NavigationLink("Term dates") { TextBlockForm(page: page, title: "Term dates", path: "settings/terms", field: "terms",
                                                          initial: d.terms.array.map(line).joined(separator: "\n"),
                                                          placeholder: "2026-10-13 to 2026-12-11 Term 4") }
             NavigationLink("Closed days") { TextBlockForm(page: page, title: "Closed days", path: "settings/closed", field: "days",
                                                           initial: d.closed.array.map(line).joined(separator: "\n"),
                                                           placeholder: "2026-12-12 to 2027-01-31 Summer holidays") }
-            NavigationLink("Ask (Gemini)") { AskKeyForm(page: page) }
+            NavigationLink("Fizz (Gemini)") { AskKeyForm(page: page) }
             NavigationLink("PIN") { PinForm(page: page) }
             NavigationLink("Maintenance mode") { MaintenanceForm(page: page) }
             updates(d)
@@ -62,6 +60,12 @@ struct ServerSettingsView: View {
             LabeledContent("Last", value: d.last_backup.optString.map { Fmt.when($0) } ?? "Never")
             Button { page.act("settings/backup") } label: { Label("Back up now", systemImage: "externaldrive.badge.checkmark") }
             DownloadButton(title: "Download the database", path: "tools/backup.db")
+            ToolLink(id: "integrity", from: page)
+        }
+        Section {
+            ToolLink(id: "sign_out_all", from: page)
+        } footer: {
+            Text("Signs out every device, like if a phone got lost. Change the password too if someone else knows it.")
         }
     }
 }
@@ -79,7 +83,7 @@ struct PermissionsForm: View {
 
     /// Where each group starts, as on the website: an action listed here opens a new section.
     private let groupStarts = ["claim": "Everyday", "points": "Points and rewards", "tab_decisions": "Tabs", "customers": "Customers",
-                               "ask": "Ask (Gemini)", "qr_login": "Customers", "money": "Money", "school_tools": "Big stuff",
+                               "ask": "Fizz (Gemini)", "qr_login": "Customers", "money": "Money", "school_tools": "Big stuff",
                                "admin_accounts": "Special accounts"]
     private let levels = [("open", "Anyone"), ("pin", "PIN"), ("owner", "Owner")]
 
@@ -242,6 +246,24 @@ struct TabRulesForm: View {
     }
 }
 
+/// The customer display's message and shelf (the website's Display menu, Edit message).
+struct DisplaySettingsView: View {
+    @State private var page = Page("display/settings")
+
+    var body: some View {
+        Group {
+            if page.loaded {
+                DisplayForm(page: page)
+            } else if let error = page.error {
+                ContentUnavailableView("Couldn't open it", systemImage: "wifi.exclamationmark", description: Text(error))
+            } else {
+                ProgressView()
+            }
+        }
+        .task { if !page.loaded { _ = await page.load() } }
+    }
+}
+
 struct DisplayForm: View {
     let page: Page
     @State private var message = ""
@@ -308,7 +330,7 @@ struct AskKeyForm: View {
 
     var body: some View {
         let g = page.data.gemini
-        SettingsForm(page: page, title: "Ask (Gemini)", send: { await page.submit("settings/ask", [("key", key), ("model_name", model)]) }) {
+        SettingsForm(page: page, title: "Fizz (Gemini)", send: { await page.submit("settings/ask", [("key", key), ("model_name", model)]) }) {
             if g.env.bool {
                 Section { Text("The key comes from the server's .env.").font(.footnote) }
             } else {
@@ -320,7 +342,7 @@ struct AskKeyForm: View {
             Section("Model") { TextField(g.default.string, text: $model).textInputAutocapitalization(.never).autocorrectionDisabled() }
             if g.hint.optString != nil && !g.env.bool {
                 Section {
-                    ConfirmButton(title: "Remove key", message: "Remove the Gemini key? Ask stops working.", confirmLabel: "Remove") {
+                    ConfirmButton(title: "Remove key", message: "Remove the Gemini key? Fizz stops working.", confirmLabel: "Remove") {
                         page.act("settings/ask", [("remove", "1")])
                     }
                 }

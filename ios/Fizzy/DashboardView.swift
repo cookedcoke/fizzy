@@ -21,6 +21,15 @@ struct DashboardView: View {
                 if !Task.isCancelled { await page.load() }
             }
         }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                // The noticeboard: a note at the top of this page for the others.
+                NavigationLink { ToolHost(id: "notice", label: "Noticeboard", from: page) } label: {
+                    Image(systemName: page.data.notice.optString == nil ? "square.and.pencil" : "megaphone")
+                }
+                .accessibilityLabel(page.data.notice.optString == nil ? "Add a note" : "Edit note")
+            }
+        }
         .sheet(item: $assigning) { payment in
             AssignSheet(page: page, paymentID: payment.value.square_payment_id.string, people: page.data.people.array)
         }
@@ -29,8 +38,16 @@ struct DashboardView: View {
     // MARK: sections
 
     @ViewBuilder private func banners(_ d: J) -> some View {
-        if let notice = d.notice.optString { Label(notice, systemImage: "megaphone").foregroundStyle(.orange) }
-        if d.tabs_paused.bool { Label("All tabs are paused. Turn them back on in Tools.", systemImage: "pause.circle.fill").foregroundStyle(.red) }
+        if let notice = d.notice.optString {
+            NavigationLink { ToolHost(id: "notice", label: "Noticeboard", from: page) } label: {
+                Label(notice, systemImage: "megaphone").foregroundStyle(.orange)
+            }
+        }
+        if d.tabs_paused.bool {
+            NavigationLink { ToolHost(id: "pause_tabs", label: "Turn tabs back on", from: page) } label: {
+                Label("All tabs are paused. Turn them back on.", systemImage: "pause.circle.fill").foregroundStyle(.red)
+            }
+        }
         if !d.square_on.bool {
             Label("Square isn't connected yet, so points and tabs won't update by themselves. Ask the owner.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
         } else if let e = d.sync_error.optString {

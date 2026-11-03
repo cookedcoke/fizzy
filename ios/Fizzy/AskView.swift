@@ -178,7 +178,7 @@ final class AskLive {
     }
 }
 
-/// Ask (Gemini): questions about the stall's data, and changes it proposes that staff can accept.
+/// Fizz (Gemini, the website calls its page Ask): questions about the stall's data, and changes it proposes that staff can accept.
 struct AskView: View {
     @State private var page = Page("ask")
     @State private var text = ""
@@ -202,7 +202,7 @@ struct AskView: View {
                     }
                     if let e = page.error { Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
                     if page.loaded && !d.enabled.bool {
-                        Label("Ask is off. Put the Gemini API key in Settings to turn it on.", systemImage: "sparkles").foregroundStyle(.orange)
+                        Label("Fizz is off. Put the Gemini API key in Settings to turn it on.", systemImage: "sparkles").foregroundStyle(.orange)
                     }
                     if page.loaded && timeline.isEmpty && live.question == nil && d.enabled.bool {
                         Text("Try asking:").font(.footnote).foregroundStyle(.secondary)
@@ -240,7 +240,7 @@ struct AskView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) { composer(d) }
-        .navigationTitle("Ask")
+        .navigationTitle("Fizz")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !timeline.isEmpty {
@@ -339,7 +339,7 @@ struct AskView: View {
 
     @ViewBuilder private func composer(_ d: J) -> some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(live.active ? "Fizzy is answering…" : "Ask a question…", text: $text, axis: .vertical)
+            TextField(live.active ? "Fizz is answering…" : "Ask Fizz anything about the stall…", text: $text, axis: .vertical)
                 .lineLimit(1...5)
                 .focused($focused)
                 .padding(10)

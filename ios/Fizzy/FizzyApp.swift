@@ -150,8 +150,10 @@ struct MainTabs: View {
                 .tabItem { Label("Today", systemImage: "chart.bar.fill") }
             NavigationStack { CustomersView().fizzyDestinations() }
                 .tabItem { Label("Customers", systemImage: "person.2.fill") }
-            NavigationStack { TransactionsView().fizzyDestinations() }
-                .tabItem { Label("Transactions", systemImage: "list.bullet.rectangle") }
+            NavigationStack { AskView().fizzyDestinations() }
+                .tabItem { Label("Fizz", systemImage: "sparkles") }
+            NavigationStack { SalesView().fizzyDestinations() }
+                .tabItem { Label("Sales", systemImage: "list.bullet.rectangle") }
             NavigationStack { MoreView().fizzyDestinations() }
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }
         }
@@ -165,30 +167,66 @@ extension View {
     }
 }
 
+/// Sales, as on the website: Transactions and Square as two halves of one page.
+struct SalesView: View {
+    enum Half: String, CaseIterable { case transactions = "Transactions", square = "Square" }
+    @State var half: Half = .transactions
+
+    var body: some View {
+        Group {
+            switch half {
+            case .transactions: TransactionsView()
+            case .square: SquareView()
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Sales", selection: $half) { ForEach(Half.allCases, id: \.self) { Text($0.rawValue) } }
+                .pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 8).background(.bar)   // the list's own margin
+        }
+    }
+}
+
+/// Money, as on the website: Money (restocks, payouts) and Profit as two halves of one page.
+struct MoneyHub: View {
+    enum Half: String, CaseIterable { case money = "Money", profit = "Profit" }
+    @State var half: Half = .money
+
+    var body: some View {
+        Group {
+            switch half {
+            case .money: MoneyView()
+            case .profit: ProfitView()
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Money", selection: $half) { ForEach(Half.allCases, id: \.self) { Text($0.rawValue) } }
+                .pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 8).background(.bar)   // the list's own margin
+        }
+    }
+}
+
 /// Where the More menu goes. Links here are values, like the customer links further in: a stack
 /// that mixes value links with closure links can show the same page again instead of the new one.
 enum MoreDestination: Hashable {
-    case square, rewards, profit, money, tools, ask, importCSV, settings, log, thisApp
+    case tabs, rewards, money, display, settings, log, tools, thisApp
 }
 
-/// The rest of the website's pages.
+/// The website's other pages: Tabs, Rewards and Money from its header, then its More menu.
 struct MoreView: View {
     var body: some View {
         List {
             Section {
-                link("Square", "creditcard", .square)
+                link("Tabs", "creditcard", .tabs)
                 link("Rewards", "gift", .rewards)
-                link("Profit", "chart.line.uptrend.xyaxis", .profit)
                 link("Money", "banknote", .money)
             }
             Section {
-                link("Tools", "wrench.and.screwdriver", .tools)
-                link("Ask", "sparkles", .ask)
-                link("Import", "square.and.arrow.down", .importCSV)
-            }
-            Section {
+                link("Customer display", "tv", .display)
                 link("Settings", "gearshape", .settings)
                 link("Activity log", "clock.arrow.circlepath", .log)
+                link("Tools", "wrench.and.screwdriver", .tools)
+            }
+            Section {
                 link("This app", "iphone", .thisApp)
             }
         }
@@ -196,15 +234,13 @@ struct MoreView: View {
         .toolbar { ToolbarItem(placement: .topBarLeading) { StaffMenu() } }
         .navigationDestination(for: MoreDestination.self) { d in
             switch d {
-            case .square: SquareView()
+            case .tabs: TabsView()
             case .rewards: RewardsView()
-            case .profit: ProfitView()
-            case .money: MoneyView()
-            case .tools: ToolsView()
-            case .ask: AskView()
-            case .importCSV: ImportView()
+            case .money: MoneyHub()
+            case .display: DisplaySettingsView()
             case .settings: ServerSettingsView()
             case .log: LogView()
+            case .tools: ToolsView()
             case .thisApp: AppSettingsView()
             }
         }
@@ -212,6 +248,47 @@ struct MoreView: View {
 
     private func link(_ title: String, _ icon: String, _ to: MoreDestination) -> some View {
         NavigationLink(value: to) { Label(title, systemImage: icon) }
+    }
+}
+
+/// A website address as the screen that shows it (for Tools' list of where everything lives).
+enum Place {
+    case dashboard, fizz, customers, transactions, square, tabs, rewards, money, profit, display, settings, log
+
+    init?(href: String) {
+        let path = String(href.split(separator: "#").first ?? "").split(separator: "?").first.map(String.init) ?? ""
+        switch (path, href.contains("#ask")) {
+        case (_, true): self = .fizz
+        case ("/", _), ("", _): self = .dashboard
+        case ("/customers", _): self = .customers
+        case ("/transactions", _), ("/sales", _): self = .transactions
+        case ("/square", _): self = .square
+        case ("/tabs", _): self = .tabs
+        case ("/rewards", _): self = .rewards
+        case ("/money", _): self = .money
+        case ("/profit", _): self = .profit
+        case ("/display/settings", _): self = .display
+        case ("/settings", _): self = .settings
+        case ("/audit", _): self = .log
+        default: return nil
+        }
+    }
+
+    @ViewBuilder var view: some View {
+        switch self {
+        case .dashboard: DashboardView()
+        case .fizz: AskView()
+        case .customers: CustomersView()
+        case .transactions: SalesView(half: .transactions)
+        case .square: SalesView(half: .square)
+        case .tabs: TabsView()
+        case .rewards: RewardsView()
+        case .money: MoneyHub(half: .money)
+        case .profit: MoneyHub(half: .profit)
+        case .display: DisplaySettingsView()
+        case .settings: ServerSettingsView()
+        case .log: LogView()
+        }
     }
 }
 
