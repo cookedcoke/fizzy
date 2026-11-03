@@ -214,3 +214,86 @@ a.go { display: block; box-sizing: border-box; text-align: center; text-decorati
 details.more > summary { padding: 10px 0 }
 [hidden] { display: none !important }
 .badge .bp { display: block; font-style: normal; font-size: 12px; font-weight: 700; color: var(--red-deep); margin-top: 2px } .badge.got .bp { color: var(--ok) }
+
+/* ---- hunts: a scan's result, progress, the stops, and the prize ticket (me_hunt.html, me.html via _hunt.html) ---- */
+a.pill { display: inline-flex; align-items: center; text-decoration: none; min-height: 44px }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
+.center { text-align: center }
+.scan-result { display: flex; gap: 14px; align-items: center; margin: 14px 0 0; padding: 16px 18px; border-radius: var(--r);
+  background: var(--card); box-shadow: var(--shadow); border: 2px solid transparent }
+.scan-result h2 { font-size: 21px; font-weight: 800; line-height: 1.2 }
+.scan-result p { margin: 3px 0 0; font-size: 15px; color: var(--muted); line-height: 1.4 }
+.scan-result > div { min-width: 0; overflow-wrap: anywhere }
+.sr-ico { flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center }
+.sr-ico svg { width: 26px; height: 26px }
+.is-found { border-color: var(--ok) } .is-found .sr-ico { background: var(--ok); color: #fff } .is-found h2 { color: var(--ok) }
+.is-already .sr-ico { background: var(--sun-wash); color: #8A6200 }
+.is-done { background: linear-gradient(140deg, var(--sun-wash), var(--card) 70%); border-color: var(--sun) }
+.is-done .sr-ico { background: var(--sun); color: #5A3B00 } .is-done p { color: var(--ink); font-weight: 500 }
+.is-soon .sr-ico { background: var(--sun-wash); color: #8A6200 }
+.is-over .sr-ico { background: var(--line); color: var(--muted) }
+.is-bad { border-color: var(--red-wash) } .is-bad .sr-ico { background: var(--red-wash); color: var(--red-deep) } .is-bad h2 { color: var(--red-deep) }
+
+.hunt-head { display: flex; gap: 14px; align-items: center; margin-bottom: 4px }
+.hunt-head .icon { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; background: var(--sun-wash) }
+.hunt.ready .hunt-head .icon { background: var(--sun) }
+.hunt-head b { font-family: var(--display); font-weight: 700; font-size: 16.5px }
+.hunt-head .cost { color: var(--muted); font-size: 13px; margin-left: 4px }
+.hunt-head > div:last-child { min-width: 0 }
+.hunt .what { font-size: 13.5px; color: var(--muted); margin: 0 }
+.hunt-count { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 12px }
+.hunt-count .n { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -.01em }
+.hunt-count .left { font-size: 13px; color: var(--muted); font-weight: 600 }
+.hunt-bar { height: 10px; margin-top: 6px }
+.hunt-bar i { background: linear-gradient(90deg, var(--sun), #FF8A2B 60%, var(--red)) }
+
+.stops { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px }
+.stop { display: flex; gap: 9px; align-items: flex-start; min-height: 48px; padding: 9px 10px; border-radius: 12px;
+  border: 1.5px dashed var(--line); background: transparent }
+.stop .dot { flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center }
+.stop .dot svg { width: 15px; height: 15px }
+.stop .st { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; overflow-wrap: anywhere }
+.stop b { font-weight: 650; font-size: 14px }
+.stop small { font-size: 12.5px; color: var(--muted); margin-top: 2px }
+.stop.got { border: 1.5px solid transparent; background: var(--sun-wash) }
+.stop.got .dot { background: var(--sun); border-color: var(--sun); color: #5A3B00 }
+.stop.just { border-color: var(--sun); box-shadow: 0 0 0 3px rgba(255, 194, 61, .35) }
+.hunt.soon .stop { opacity: .7 }
+
+.next-poster { display: flex; gap: 12px; align-items: center; margin: 14px -18px -16px; padding: 13px 18px; border-top: 1px dashed var(--line);
+  font-size: 14px; color: var(--muted); line-height: 1.4 }
+.next-poster b { color: var(--ink) }
+.np-ico { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: var(--cream) }
+.np-ico svg { width: 20px; height: 20px }
+.hunt-empty { display: flex; gap: 14px; align-items: center }
+.hunt-empty p { margin: 0; color: var(--muted); font-size: 14px } .hunt-empty b { display: block; color: var(--ink); font-family: var(--display); font-size: 16.5px }
+
+.hunt-done { font-family: var(--display); font-weight: 800; font-size: 18px; line-height: 1.25; color: var(--ok); margin: 6px 0 10px }
+.ticket { position: relative; text-align: center; border-radius: 20px; padding: 18px 16px 20px; color: #3D2800;
+  background:
+    radial-gradient(circle at 0 50%, var(--card) 0 11px, transparent 12px),
+    radial-gradient(circle at 100% 50%, var(--card) 0 11px, transparent 12px),
+    linear-gradient(150deg, #FFD56B, var(--sun) 55%, #FFAE1F) }
+.ticket .t-k { font-size: 14px; font-weight: 700; line-height: 1.35; max-width: 30ch; margin: 0 auto }
+.ticket .t-code { font: 800 clamp(44px, 15vw, 64px)/1.1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .14em; margin: 8px 0 6px 0.14em }
+.ticket .t-name { font-family: var(--display); font-weight: 800; font-size: clamp(28px, 9vw, 40px); line-height: 1.1; margin-top: 10px; overflow-wrap: anywhere }
+.ticket .t-id { font: 700 20px/1.2 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .06em; margin-top: 4px; opacity: .85 }
+.ticket .t-sub { font-size: 13.5px; font-weight: 500 }
+.hunt .go { margin-top: 14px }
+.hunt details.more { margin-top: 8px } .hunt details.more > summary { min-height: 44px; display: flex; align-items: center }
+.hunt .ticket + details.more, .hunt p.center + details.more { border-top: 1px dashed var(--line); margin-top: 14px }
+.hunt-soon { margin: 12px 0 0; padding: 10px 14px; border-radius: 12px; background: var(--sun-wash); font-size: 14px; font-weight: 600 }
+@media (prefers-reduced-motion: no-preference) {
+  .scan-result { animation: rise .45s ease-out both }
+  .stop.just .dot { animation: pop .6s ease-out .15s both }
+  .is-done .sr-ico, .ticket { animation: pop .6s ease-out both }
+  @keyframes pop { 0% { transform: scale(.6) } 60% { transform: scale(1.12) } 100% { transform: scale(1) } }
+}
+@media (prefers-color-scheme: dark) {
+  .is-already .sr-ico, .is-soon .sr-ico { color: var(--sun) }
+  .stop.got .dot { color: #3D2800 }
+  .np-ico { background: var(--sun); color: #3D2800 }
+  .is-found .sr-ico { color: #0B2A1A }
+}
+.hunt-page .note a { color: var(--red-deep); font-weight: 600 }
+@media (min-width: 600px) { .stops { grid-template-columns: repeat(3, minmax(0, 1fr)) } }

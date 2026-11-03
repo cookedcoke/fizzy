@@ -295,7 +295,8 @@ def home(request: Request, conn=Depends(get_conn)):
     month, month_me = leaderboard(conn, since=month_start(), me=c["id"])
     alltime, alltime_me = leaderboard(conn, me=c["id"])
     note = request.session.pop("me_note", None)
-    return _page(request, "me.html", c=c, s=s, offers=rewards.offers_for(conn, c["id"], s["points"]), note=note,
+    note_ok = request.session.pop("me_note_ok", True)
+    return _page(request, "me.html", c=c, s=s, offers=rewards.offers_for(conn, c["id"], s["points"]), note=note, ok=note_ok,
                  cards=challenges.cards(conn, c["id"]),
                  activity=activity(conn, c["id"]), boards=[("This month", month, month_me), ("All time", alltime, alltime_me)],
                  me=_with_custom(conn, badges.for_customer(conn, c["id"]), c["id"]), events_on=events.on(conn), events_soon=events.upcoming(conn),
@@ -588,6 +589,7 @@ def _pending_scan(request, conn, c):
         won = challenges.merge_guest(conn, guest, c["id"])
         conn.commit()
         if won:
+            request.session["me_note_ok"] = True
             request.session["me_note"] = f"Your hunt progress is on your account now. You've finished {', '.join(won)}!"
 
 
@@ -615,6 +617,7 @@ def scan_link(request: Request, code: str, conn=Depends(get_conn)):
         if wants_json(request):
             return _json({"ok": ok, "message": msg})   # the My CCC app, opening a poster's link
         request.session["me_note"] = msg
+        request.session["me_note_ok"] = ok
         return RedirectResponse(_url("/"), status_code=303)
     guest = request.session.get("guest") or secrets.token_urlsafe(12)
     request.session["guest"] = guest
@@ -633,6 +636,46 @@ def hunt_page(request: Request, conn=Depends(get_conn)):
     if wants_json(request):
         return _json({"ok": True, "cards": cards})
     return _page(request, "me_hunt.html", note=None, ok=True, cards=cards, signin=_signin())
+
+
+_FOUND = re.compile(r"^Found it: (?P<label>.+?)\. (?P<rest>\d+ of \d+ (?:done|found)\.)$")
+_AGAIN = re.compile(r"^You've already found (?P<label>.+?)\. (?P<rest>\d+ of \d+ (?:done|found)\.)$")
+_ALL = re.compile(r"^Found it: (?P<label>.+?)\. That's everything[ -]*!?\s*(?P<rest>.*)$")
+
+
+def scan_result(ok, message):
+    """A scan's answer (challenges.scan / guest_scan) split for the page's result card: what kind it is
+    (found, already, done, soon, over, bad, or info for anything else), a short heading, and one line.
+    Only the page uses this; the apps get the message as it is."""
+    msg = " ".join(str(message or "").split())
+    if not msg:
+        return None
+    if ok:
+        m = _ALL.match(msg)
+        if m:
+            rest = m["rest"][:1].upper() + m["rest"][1:]
+            return {"kind": "done", "title": "You found them all!", "line": rest, "label": m["label"]}
+        m = _FOUND.match(msg)
+        if m:
+            return {"kind": "found", "title": f"Found it: {m['label']}", "line": m["rest"], "label": m["label"]}
+        m = _AGAIN.match(msg)
+        if m:
+            return {"kind": "already", "title": "Already found", "line": f"You've found {m['label']} before. {m['rest']}",
+                    "label": m["label"]}
+        if msg.startswith("You've already finished"):
+            return {"kind": "already", "title": "Already finished", "line": msg, "label": None}
+        return {"kind": "info", "title": None, "line": msg, "label": None}
+    if " starts on " in msg:
+        return {"kind": "soon", "title": "Not started yet", "line": msg, "label": None}
+    if msg.endswith(" has finished."):
+        return {"kind": "over", "title": "This hunt is over", "line": msg[:-len(" has finished.")] + " has finished. Thanks for playing!",
+                "label": None}
+    if "sign-in code" in msg:
+        return {"kind": "bad", "title": "That's a sign-in code", "line": "You're already signed in.", "label": None}
+    return {"kind": "bad", "title": "Not a hunt code", "line": msg, "label": None}
+
+
+templates.env.globals["scan_result"] = scan_result
 
 
 def _signin():

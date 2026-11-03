@@ -509,3 +509,37 @@ def test_a_won_prize_stays_on_the_page_until_given(conn, cust):
     assert len(card) == 1 and card[0]["done"] and "free drink" in card[0]["status"]
     conn.execute("UPDATE prizes SET given_at = 'x'")
     assert challenges.cards(conn, c["id"]) == []
+
+
+def test_scan_results_for_the_page():
+    from fizzy.portal import scan_result
+    r = scan_result(True, "Found it: Poster 3. 4 of 13 done.")
+    assert r["kind"] == "found" and r["title"] == "Found it: Poster 3" and r["line"] == "4 of 13 done." and r["label"] == "Poster 3"
+    assert scan_result(True, "You've already found Poster 1. 5 of 13 found.")["kind"] == "already"
+    assert scan_result(True, "You've already finished The Hunt.")["kind"] == "already"
+    r = scan_result(True, "Found it: Poster 12. That's everything - you've finished The Hunt! Show this at the counter for a free drink.")
+    assert r["kind"] == "done" and r["line"].startswith("You've finished The Hunt!")
+    r = scan_result(True, "Found it: Poster 12. That's everything! Show your claim code AC3DE at the stall.")
+    assert r["kind"] == "done" and r["line"] == "Show your claim code AC3DE at the stall."
+    assert scan_result(False, "That code isn't part of a challenge that's on.")["kind"] == "bad"
+    assert scan_result(False, "Spring starts on Sunday 8 Nov. Come back then.")["kind"] == "soon"
+    assert scan_result(False, "Winter has finished.")["kind"] == "over"
+    assert scan_result(True, "Your hunt progress is on your account now.")["kind"] == "info"
+    assert scan_result(True, None) is None
+
+
+def test_hunt_pages_show_the_scan_progress_and_prize(client):
+    setup_student(client)
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink"})
+    client.post("/logout")
+    page = client.get("/me/c/XP6RCECMRQ").text                       # a guest
+    assert "is-found" in page and "Found it: Start" in page and "bakery stall" in page and "PPUCH7QEGB" not in page
+    assert "Open your camera" in page
+    assert "is-bad" in client.get("/me/c/NOTACODE1234").text
+    page = client.get("/me/c/PPUCH7QEGB").text
+    assert "is-done" in page and 'class="t-code"' in page and "Open your camera" not in page
+    client.post("/me/login", data={"who": "rns5", "passcode": PC})   # moves the finished hunt onto the account
+    page = client.get("/me").text
+    assert "Nora Le Fevre" in page and ">rns5<" in page and "Show this at the counter for a free drink" in page
+    page = client.get("/me/c/NOTACODE1234", follow_redirects=True).text
+    assert "is-bad" in page and "Not a hunt code" in page
