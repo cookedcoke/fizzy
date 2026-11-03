@@ -129,7 +129,7 @@ struct HuntView: View {
             .overlay { if hunt.loading && hunt.cards.isEmpty { ProgressView() } }
             .refreshable { await hunt.refresh() }
             .sheet(isPresented: $scanning) {
-                CodeScanner(title: "Scan the next code", read: { URL(string: $0)?.scheme?.lowercased().hasPrefix("http") == true ? $0 : nil }) { text in
+                CodeScanner(title: "Scan the next code", guide: .poster, read: { URL(string: $0)?.scheme?.lowercased().hasPrefix("http") == true ? $0 : nil }) { text in
                     scanning = false
                     if let url = URL(string: text) { Task { await hunt.open(url) } }
                 }

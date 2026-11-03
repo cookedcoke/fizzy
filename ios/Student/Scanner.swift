@@ -10,8 +10,12 @@ import UIKit
 /// TileReader also reads codes packed edge to edge with no border, which no ordinary reader can.
 struct CodeScanner: View {
     var title = "Scan a code"
+    /// What to fit inside the corner guides: a code on its own, or a whole hunt poster (A4, upright).
+    var guide = Guide.code
     var read: (String) -> String? = { $0 }
     let found: (String) -> Void
+
+    enum Guide { case code, poster }
 
     /// A sign-in code from the counter is a link ending in /q/<token>.
     static func signInToken(_ text: String) -> String? {
@@ -38,6 +42,7 @@ struct CodeScanner: View {
                                 camera.setZoom((pinchFrom ?? 1) * g.magnification)
                             }
                             .onEnded { _ in pinchFrom = nil })
+                        .overlay { guides }
                         .overlay(alignment: .bottom) { controls }
                 }
             }
@@ -60,9 +65,25 @@ struct CodeScanner: View {
         .onDisappear { camera.stop() }
     }
 
+    /// Corners to line the code or poster up in. Only a guide: anything in the frame still reads.
+    private var guides: some View {
+        GeometryReader { geo in
+            // a poster: as big as fits above the controls, at A4's shape
+            let posterWidth = min(geo.size.width * 0.8, geo.size.height * 0.6 / 1.414)
+            let size = guide == .poster ? CGSize(width: posterWidth, height: posterWidth * 1.414)
+                                        : CGSize(width: geo.size.width * 0.65, height: geo.size.width * 0.65)
+            Corners()
+                .stroke(.white, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                .shadow(color: .black.opacity(0.4), radius: 3)
+                .frame(width: size.width, height: size.height)
+                .position(x: geo.size.width / 2, y: geo.size.height * 0.45)
+        }
+        .allowsHitTesting(false)
+    }
+
     private var controls: some View {
         VStack(spacing: 12) {
-            Text("Point at the code. Far away? Zoom in.")
+            Text(guide == .poster ? "Fit the whole poster inside the corners." : "Fit the code inside the corners.")
                 .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
                 .background(.thinMaterial, in: Capsule())
             Picker("Zoom", selection: Binding(get: { Camera.presets.min { abs($0 - camera.zoom) < abs($1 - camera.zoom) } ?? 1 },
@@ -204,4 +225,18 @@ private struct CameraPreview: UIViewRepresentable {
     }
 
     func updateUIView(_ view: Preview, context: Context) {}
+}
+
+/// Four L-shaped corners round a rectangle, like the Camera app's code guide.
+private struct Corners: Shape {
+    func path(in r: CGRect) -> Path {
+        let l = min(36, r.width / 3, r.height / 3)
+        var p = Path()
+        for (x, y, dx, dy) in [(r.minX, r.minY, 1.0, 1.0), (r.maxX, r.minY, -1, 1), (r.minX, r.maxY, 1, -1), (r.maxX, r.maxY, -1, -1)] {
+            p.move(to: CGPoint(x: x, y: y + dy * l))
+            p.addLine(to: CGPoint(x: x, y: y))
+            p.addLine(to: CGPoint(x: x + dx * l, y: y))
+        }
+        return p
+    }
 }
