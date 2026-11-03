@@ -72,7 +72,11 @@ app.on('before-quit', (event) => {
   const choice = win ? dialog.showMessageBoxSync(win, options) : dialog.showMessageBoxSync(options);
   if (choice === 1) {
     quitting.now = true;
-    app.quit();
+    display.destroy();
+    // Calling quit from inside this event is ignored, which left Fizzy in the Dock with no
+    // windows. Quit again once this event has finished, and make sure it really goes.
+    setImmediate(() => app.quit());
+    setTimeout(() => app.exit(0), 3000).unref();
   }
 });
 
