@@ -1,5 +1,4 @@
 import SwiftUI
-import VisionKit
 
 struct SignInView: View {
     @Environment(Student.self) private var model
