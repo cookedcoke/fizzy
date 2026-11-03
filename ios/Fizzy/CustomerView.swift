@@ -35,6 +35,7 @@ struct CustomerView: View {
         PageList(page: page, title: customer.name.string) { d in
             summary(d)
             actions(d)
+            prizes(d)
             todos(d)
             rewards(d)
             charges(d)
@@ -192,6 +193,31 @@ struct CustomerView: View {
                 Button { sheet = .tab } label: { Label("Tab limit", systemImage: "slider.horizontal.3") }
                 Button { sheet = .points } label: { Label("Adjust points", systemImage: "plusminus.circle") }
                 Button { Task { await makeQR() } } label: { Label("Show sign-in code", systemImage: "qrcode") }
+            }
+        }
+    }
+
+    /// Challenge prizes they've won: hand it over at the counter, then press Given.
+    @ViewBuilder private func prizes(_ d: J) -> some View {
+        let list = d.prizes.array
+        if !list.isEmpty {
+            Section("Challenge prizes") {
+                ForEach(list, id: \.self) { p in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(p.text.string).bold()
+                            Text("\(p.name.optString ?? "A challenge") · won \(Fmt.when(p.won_at.string, "EEE d MMM"))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let given = p.given_at.optString {
+                            Text("Given \(Fmt.when(given, "d MMM"))").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Button("Given") { page.act("customers/\(d.c.id.int)/prizes/\(p.id.int)/given") }
+                                .buttonStyle(.borderedProminent).controlSize(.small)
+                        }
+                    }
+                }
             }
         }
     }
