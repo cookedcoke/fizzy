@@ -26,7 +26,17 @@ struct CustomersView: View {
             }
         }
         .overlay {
-            if !query.isEmpty && hits.isEmpty && searched == query && error == nil { ContentUnavailableView.search(text: query) }
+            if !query.isEmpty && hits.isEmpty && searched == query && error == nil {
+                ContentUnavailableView {
+                    Label("No one matches “\(query)”", systemImage: "magnifyingglass")
+                } description: {
+                    Text("Someone who isn't in the school list, like a teacher? Add them.")
+                } actions: {
+                    ToolLink(id: "add_customer", label: "Add “\(query.trimmingCharacters(in: .whitespaces))”",
+                             prefill: newPerson(query), from: page)
+                        .buttonStyle(.borderedProminent)
+                }
+            }
             if query.isEmpty && !page.loaded && page.error == nil { ProgressView() }
         }
         .navigationTitle("Customers")
@@ -38,7 +48,17 @@ struct CustomersView: View {
         .task(id: query) { await search() }
         .task { if !page.loaded { await page.load() } }
         .refreshable { await page.load() }
-        .toolbar { ToolbarItem(placement: .topBarLeading) { StaffMenu() } }
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { StaffMenu() }
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { CustomersMoreView(page: page) } label: { Image(systemName: "ellipsis.circle") }
+                    .accessibilityLabel("More for customers")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { ToolHost(id: "add_customer", from: page) } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Add customer")
+            }
+        }
         .navigationDestination(item: $jumpTo) { CustomerView(id: $0.id) }
     }
 
@@ -57,15 +77,20 @@ struct CustomersView: View {
             } header: {
                 Text("Recently in · \(Fmt.number(d["count"].int)) active")
             }
-            Section("Square export") {
-                DownloadButton(title: "Export new people for Square (\(d.not_in_square.int))", path: "export/square-customers.csv", query: ["only": "new"])
-                DownloadButton(title: "Export everyone", path: "export/square-customers.csv",
-                               confirm: "This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them.")
-            }
         }
     }
 
     private func jump(_ id: Int) { query = ""; jumpTo = CustomerID(id: id) }
+
+    /// Add customer, started from what was searched for: a student number fills in their school
+    /// email, anything else the name (as the website does).
+    private func newPerson(_ q: String) -> [String: String] {
+        let t = q.trimmingCharacters(in: .whitespaces).lowercased()
+        if t.range(of: #"^(rns)?\d{8}$"#, options: .regularExpression) != nil {
+            return ["email": (t.hasPrefix("rns") ? t : "rns" + t) + "@reddamnorthshore.nsw.edu.au"]
+        }
+        return ["name": q.trimmingCharacters(in: .whitespaces)]
+    }
 
     private func search() async {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -117,5 +142,39 @@ struct CustomersView: View {
                 }
             }
         }
+    }
+}
+
+/// Everything for customers as a whole, as on the website's Customers page, More: rarer, and the
+/// ones that change a lot at once.
+struct CustomersMoreView: View {
+    let page: Page
+
+    var body: some View {
+        List {
+            Section {
+                NavigationLink { ImportView() } label: { Label("Import the school list", systemImage: "square.and.arrow.down") }
+            } footer: {
+                Text("The school's CSV. Adds new students and fixes names; never deletes anyone.")
+            }
+            Section("Export") {
+                DownloadButton(title: "New people for Square (\(page.data.not_in_square.int))", path: "export/square-customers.csv", query: ["only": "new"])
+                DownloadButton(title: "Everyone for Square", path: "export/square-customers.csv",
+                               confirm: "This has everyone, including people already in Square. Importing it again gives Square a duplicate of each of them.")
+                DownloadButton(title: "Customers spreadsheet", path: "tools/export/customers.csv")
+            }
+            Section {
+                ToolLink(id: "bulk_points", from: page)
+                ToolLink(id: "merge", from: page)
+                ToolLink(id: "bulk_archive", from: page)
+                ToolLink(id: "restore", from: page)
+            }
+            Section("Test accounts") {
+                ToolLink(id: "test_accounts", label: "Make test accounts", from: page)
+                ToolLink(id: "delete_test_accounts", from: page)
+            }
+        }
+        .navigationTitle("More for customers")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

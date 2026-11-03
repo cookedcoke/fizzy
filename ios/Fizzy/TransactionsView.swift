@@ -56,6 +56,11 @@ struct TransactionsView: View {
             } footer: {
                 if d.more.int > 0 { Text("Latest \(d.rows.count) shown, \(d.more.int) more.") }
             }
+            Section {
+                ToolLink(id: "takings", label: "Takings report", systemImage: "doc.text", from: page)
+            } footer: {
+                Text("Syncing, re-syncing and finding a payment are on Square.")
+            }
         }
         .searchable(text: $q, prompt: "Customer or item")
         .onSubmit(of: .search) { Task { await reload() } }

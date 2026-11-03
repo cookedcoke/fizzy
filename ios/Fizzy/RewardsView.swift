@@ -8,7 +8,8 @@ struct RewardsView: View {
     var body: some View {
         PageList(page: page, title: "Rewards") { d in
             Section {
-                Text("Start rewards and double points days in Ask.").font(.footnote).foregroundStyle(.secondary)
+                NavigationLink { NewRewardForm(page: page) } label: { Label("Start a reward", systemImage: "gift") }
+                NavigationLink { NewEventForm(page: page) } label: { Label("Schedule double points", systemImage: "bolt") }
             }
             Section("Live · \(d.live.count)") {
                 ForEach(d.live.array, id: \.self) { r in
@@ -71,7 +72,7 @@ struct RewardsView: View {
                         Button(r.paused.bool ? "Restart" : "Pause") { page.act("rules/\(r.id.int)/\(r.paused.bool ? "resume" : "pause")") }.tint(.orange)
                     }
                 }
-                if d.custom.array.isEmpty { Text("None yet. Make one in Ask.").foregroundStyle(.secondary) }
+                if d.custom.array.isEmpty { Text("None yet. Make one with Fizz.").foregroundStyle(.secondary) }
             }
             if !d.events.array.isEmpty {
                 Section("Double points days · \(d.events.count)") {
@@ -119,6 +120,13 @@ struct RewardsView: View {
                     }
                 }
             }
+            Section {
+                ToolLink(id: "bonus_points", from: page)
+                ToolLink(id: "leaderboard", from: page)
+                ToolLink(id: "raffle", from: page)
+                DownloadButton(title: "Export points history", path: "tools/export/points.csv")
+            }
+            Section { ToolLink(id: "reset_points", from: page) }
         }
         .confirmAsk($ask)
     }
@@ -147,5 +155,75 @@ struct RewardsView: View {
         ask = ConfirmAsk(message: running ? "End “\(name)” now? Bonus already earned stays."
                                           : "Skip “\(name)” on \(Fmt.when(start, "EEE d MMM"))? It's deleted; the schedule (if any) carries on.",
                          confirmLabel: word, role: .destructive) { page.act("events/\(id)/cancel") }
+    }
+}
+
+/// Something to spend points on (the website's Start a reward).
+struct NewRewardForm: View {
+    let page: Page
+    @State private var name = ""
+    @State private var points = ""
+    @State private var squareNote = ""
+    @State private var limit = ""
+    @State private var announce = true
+
+    var body: some View {
+        SettingsForm(page: page, title: "Start a reward", action: "Start",
+                     ready: !name.trimmingCharacters(in: .whitespaces).isEmpty && !points.isEmpty, send: {
+            var form: Params = [("name", name), ("points", points), ("square_note", squareNote), ("limit", limit)]
+            if page.data.discord_on.bool && announce { form.append(("announce", "1")) }
+            return await page.submit("rewards", form)
+        }) {
+            Section {
+                TextField("Name, e.g. Free Coke, $2 off", text: $name)
+                LabeledContent("Points it costs") {
+                    TextField("1000", text: $points).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
+                TextField("What to do in Square (optional)", text: $squareNote)
+                LabeledContent("Limit per customer") {
+                    TextField("No limit", text: $limit).keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
+            } footer: {
+                Text("What to do in Square: e.g. \"Points: Free Coke discount\", so staff know which discount to apply.")
+            }
+            if page.data.discord_on.bool { Section { Toggle("Announce on Discord", isOn: $announce) } }
+        }
+    }
+}
+
+/// Extra points on one day, a few days, or every week (the website's Schedule double points).
+struct NewEventForm: View {
+    let page: Page
+    @State private var name = "Double points"
+    @State private var multiplier = "2"
+    @State private var start = ""
+    @State private var end = ""
+    @State private var weekly = false
+    @State private var severalDays = false
+    @State private var announce = true
+
+    var body: some View {
+        SettingsForm(page: page, title: "Double points", action: "Schedule",
+                     ready: !name.trimmingCharacters(in: .whitespaces).isEmpty && !start.isEmpty, send: {
+            var form: Params = [("name", name), ("multiplier", multiplier), ("start", start), ("end", severalDays ? end : "")]
+            if weekly { form.append(("weekly", "1")) }
+            if page.data.discord_on.bool && announce { form.append(("announce", "1")) }
+            return await page.submit("events", form)
+        }) {
+            Section {
+                TextField("Name", text: $name)
+                LabeledContent("Multiplier") {
+                    TextField("2", text: $multiplier).keyboardType(.decimalPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
+                DayField(title: severalDays ? "First day" : "Day", text: $start)
+                Toggle("More than one day", isOn: $severalDays)
+                if severalDays { DayField(title: "Last day", text: $end) }
+                Toggle("Repeat every week", isOn: $weekly)
+            } footer: {
+                Text("Repeat every week makes it every week on the same day, e.g. every Friday.")
+            }
+            if page.data.discord_on.bool { Section { Toggle("Announce on Discord", isOn: $announce) } }
+        }
+        .onAppear { if start.isEmpty { start = page.data.today.string; end = start } }
     }
 }

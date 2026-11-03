@@ -10,7 +10,7 @@ struct SquareView: View {
     struct RawPayment: Identifiable { let id = UUID(); let text: String }
 
     var body: some View {
-        PageList(page: page, title: "Square") { d in
+        PageList(page: page, title: "Square", staffMenu: true) { d in
             Section {
                 Button { page.act("square/sync") } label: { Label("Sync now", systemImage: "arrow.triangle.2.circlepath") }
                     .disabled(!d.square_on.bool || page.busy)
@@ -66,6 +66,12 @@ struct SquareView: View {
                     Button(onlyUnlinked ? "Show all" : "Only unlinked") { onlyUnlinked.toggle(); Task { await reload() } }
                         .textCase(nil).font(.footnote)
                 }
+            }
+            Section("More") {
+                ToolLink(id: "resync", from: page)
+                ToolLink(id: "history", from: page)
+                ToolLink(id: "find_payment", from: page)
+                DownloadButton(title: "Export Square payments", path: "tools/export/square_payments.csv")
             }
         }
         .sheet(item: $assigning) { AssignSheet(page: page, paymentID: $0.value.string, people: page.data.people.array) }

@@ -1,23 +1,45 @@
 import SwiftUI
 
-/// Every tool on the website's Tools page, grouped the same way.
+/// Every action in Fizzy, searchable, each opening where it lives (the website's Tools index).
+/// Nothing is only here: tools also sit on the page of the thing they change.
 struct ToolsView: View {
     @State private var page = Page("tools")
+    @State private var query = ""
 
     var body: some View {
         PageList(page: page, title: "Tools") { d in
-            ForEach(Array(d.tools.array.enumerated()), id: \.offset) { _, group in
-                Section(group[0].string) {
-                    ForEach(group[1].array, id: \.self) { t in
-                        let id = t[0].string
-                        NavigationLink {
-                            ToolFormView(page: page, id: id, label: t[1].string, tip: t[2].string)
-                        } label: {
-                            Text(t[1].string).foregroundStyle(ToolSpec.danger.contains(id) ? .red : .primary)
-                        }
-                    }
+            let items = d.index.array.filter { matches($0) }
+            let sections = items.reduce(into: [String]()) { if !$0.contains($1.section.string) { $0.append($1.section.string) } }
+            ForEach(sections, id: \.self) { section in
+                Section(section == "Pages" ? "On their pages" : section) {
+                    ForEach(items.filter { $0.section.string == section }, id: \.self) { item in row(item, d) }
                 }
             }
+            if items.isEmpty && !query.isEmpty { ContentUnavailableView.search(text: query) }
+        }
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find an action")
+    }
+
+    private func matches(_ item: J) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return true }
+        return [item.label, item.tip, item.where].contains { $0.string.lowercased().contains(q) }
+    }
+
+    @ViewBuilder private func row(_ item: J, _ d: J) -> some View {
+        let id = item.id.string
+        let label = VStack(alignment: .leading, spacing: 2) {
+            Text(item.label.string).foregroundStyle(ToolSpec.danger.contains(id) ? Color.red : Color.primary)
+            Text(item.where.string).font(.caption).foregroundStyle(.secondary)
+        }
+        if id.hasPrefix("export_") {
+            DownloadButton(title: item.label.string, path: "tools/export/\(id.dropFirst(7)).csv")
+        } else if !id.isEmpty && !ToolSpec.entry(id, d).isNull {
+            NavigationLink { ToolFormView(page: page, id: id, label: item.label.string, tip: item.tip.string) } label: { label }
+        } else if let place = Place(href: item.href.string) {
+            NavigationLink { place.view } label: { label }
+        } else {
+            label
         }
     }
 }
@@ -36,6 +58,28 @@ enum Field {
 
 enum ToolSpec {
     static let danger: Set<String> = ["reset_points", "revoke_all", "write_off", "merge", "sign_out_all", "bulk_archive", "delete_test_accounts"]
+
+    /// Reports with nothing to fill in: they run as soon as they're opened.
+    static let instant: Set<String> = ["chase", "balances", "integrity"]
+
+    /// Names for links, before Tools' data has loaded (the server's names are used once it has).
+    static let names: [String: String] = [
+        "bulk_points": "Give points to many", "bonus_points": "Bonus points for a period", "transfer_points": "Move points",
+        "reset_points": "Reset all points", "pause_tabs": "Pause all tabs", "revoke_all": "Turn off all tabs",
+        "manual_charge": "Add a tab charge", "write_off": "Write off", "extend_due": "More time to pay",
+        "add_customer": "Add customer", "merge": "Merge two customers", "bulk_archive": "Archive customers",
+        "restore": "Restore customers", "test_accounts": "Test accounts", "delete_test_accounts": "Delete test accounts",
+        "takings": "Takings report", "chase": "Who to chase", "balances": "All balances", "leaderboard": "Leaderboard",
+        "raffle": "Raffle", "sync_now": "Sync with Square now", "resync": "Re-sync from a date", "history": "Import sales history",
+        "find_payment": "Find a payment", "export": "Export", "download_backup": "Download a backup",
+        "integrity": "Check the database", "notice": "Noticeboard", "sign_out_all": "Sign everyone out",
+    ]
+
+    /// [id, label, tip] for a tool, from Tools' groups.
+    static func entry(_ id: String, _ d: J) -> J {
+        for group in d.tools.array { if let t = group[1].array.first(where: { $0[0].string == id }) { return t } }
+        return .null
+    }
 
     static func note(_ label: String = "Note (optional)", required: Bool = false) -> Field { .text(name: "note", label: label, required: required) }
 
@@ -77,17 +121,71 @@ enum ToolSpec {
     }
 }
 
+/// A tool, opened from the page of the thing it changes. Its form needs Tools' data (the people to pick
+/// from, today's date...), which other pages don't send, so it loads that; done, the page it came from reloads.
+struct ToolLink: View {
+    let id: String
+    var label: String? = nil
+    var systemImage: String? = nil
+    var prefill: [String: String] = [:]
+    var from: Page? = nil
+
+    var body: some View {
+        NavigationLink {
+            ToolHost(id: id, prefill: prefill, from: from)   // titled with the tool's own name; `label` is just this link's wording
+        } label: {
+            let title = label ?? ToolSpec.names[id] ?? id
+            // Coloured inside the label, so the list still lines its divider up with the text.
+            if let systemImage, ToolSpec.danger.contains(id) {
+                Label(title, systemImage: systemImage).foregroundStyle(.red)
+            } else if let systemImage {
+                Label(title, systemImage: systemImage)
+            } else if ToolSpec.danger.contains(id) {
+                Text(title).foregroundStyle(.red)
+            } else {
+                Text(title)
+            }
+        }
+    }
+}
+
+struct ToolHost: View {
+    let id: String
+    var label: String?
+    var prefill: [String: String] = [:]
+    var from: Page?
+    @State private var page = Page("tools")
+
+    var body: some View {
+        Group {
+            if page.loaded {
+                let t = ToolSpec.entry(id, page.data)
+                ToolFormView(page: page, id: id, label: label ?? t[1].optString ?? ToolSpec.names[id] ?? id,
+                             tip: t[2].string, prefill: prefill, from: from)
+            } else if let error = page.error {
+                ContentUnavailableView("Couldn't open it", systemImage: "wifi.exclamationmark", description: Text(error))
+            } else {
+                ProgressView()
+            }
+        }
+        .task { if !page.loaded { _ = await page.load() } }
+    }
+}
+
 struct ToolFormView: View {
     let page: Page
     let id: String
     let label: String
     let tip: String
+    var prefill: [String: String] = [:]
+    var from: Page? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var text: [String: String] = [:]
     @State private var checks: Set<String> = []
     @State private var error: String?
     @State private var busy = false
     @State private var report: Pick?
+    @State private var ranOnce = false
 
     private var d: J { page.data }
     private var fields: [Field] { ToolSpec.fields(id, d) }
@@ -126,12 +224,19 @@ struct ToolFormView: View {
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .toolbar { KeyboardDoneButton() }
-        .onAppear(perform: defaults)
-        .sheet(item: $report) { ReportSheet(report: $0.value) }
+        .onAppear {
+            defaults()
+            if ToolSpec.instant.contains(id) && !ranOnce { ranOnce = true; run() }
+        }
+        .sheet(item: $report, onDismiss: { if ToolSpec.instant.contains(id) { dismiss() } }) { ReportSheet(report: $0.value) }
     }
 
     private var runLabel: String {
-        id == "pause_tabs" ? (d.cfg.tabs_paused.bool ? "Turn tabs back on" : "Pause all tabs") : "Run"
+        switch id {
+        case "pause_tabs": d.cfg.tabs_paused.bool ? "Turn tabs back on" : "Pause all tabs"
+        case "notice": d.notice.optString == nil ? "Save note" : "Save"
+        default: "Run"
+        }
     }
 
     private func binding(_ name: String) -> Binding<String> {
@@ -196,6 +301,7 @@ struct ToolFormView: View {
             }
         }
         if id == "pause_tabs" { text["paused"] = d.cfg.tabs_paused.bool ? "0" : "1" }
+        for (k, v) in prefill { text[k] = v }
     }
 
     private func run() {
@@ -210,6 +316,7 @@ struct ToolFormView: View {
             if let body = o.body { report = Pick(value: body); return }
             // The website shows a refusal as "<tool name>: <what was wrong>"
             if let m = o.message, m.hasPrefix("\(label):") || !o.ok { error = m; page.flash = nil; return }
+            if let from { from.flash = page.flash; Task { _ = await from.load() } }
             dismiss()
         }
     }
@@ -226,7 +333,7 @@ struct ReportSheet: View {
                 if let note = report.note.optString { Text(note).font(.footnote).foregroundStyle(.secondary) }
                 ForEach(Array(report.rows.array.enumerated()), id: \.offset) { _, row in
                     VStack(alignment: .leading, spacing: 3) {
-                        ForEach(Array(report.headers.array.enumerated()), id: \.offset) { i, h in
+                        ForEach(Array(report.headers.array.enumerated()).filter { !row[$0.offset].string.isEmpty || !row[$0.offset].text.isNull }, id: \.offset) { i, h in
                             let cell = row[i]
                             HStack(alignment: .firstTextBaseline) {
                                 Text(h.string).font(.caption).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
