@@ -193,3 +193,5 @@ def test_link_host_serves_apples_file_and_poster_codes(client, monkeypatch):
     assert r["ok"] and r["cards"][0]["claim"] and "claim code" in r["message"]
     page = client.get("/tools", headers={"host": "link.cookedcoke.co"}, follow_redirects=False)   # never a staff page
     assert "Tools" not in page.text
+    css = client.get("/static/me.css", headers={"host": "link.cookedcoke.co"}, follow_redirects=False)  # the page's styles load
+    assert css.status_code == 200 and "text/css" in css.headers["content-type"]
