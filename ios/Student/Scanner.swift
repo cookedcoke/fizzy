@@ -110,8 +110,9 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, @unchecked
 
         let output = AVCaptureMetadataOutput()
         session.beginConfiguration()
-        session.sessionPreset = session.canSetSessionPreset(.hd4K3840x2160) ? .hd4K3840x2160 : .hd1920x1080
         if session.canAddInput(input) { session.addInput(input) }
+        // After the camera is attached: before that, nothing can do 4K and it quietly stays at 1080p.
+        session.sessionPreset = session.canSetSessionPreset(.hd4K3840x2160) ? .hd4K3840x2160 : .hd1920x1080
         if session.canAddOutput(output) { session.addOutput(output) }
         output.setMetadataObjectsDelegate(self, queue: .main)
         output.metadataObjectTypes = output.availableMetadataObjectTypes.contains(.qr) ? [.qr] : []
