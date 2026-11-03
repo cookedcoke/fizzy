@@ -5,6 +5,7 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:link.cookedcoke.co</string>
+		<string>appclips:link.cookedcoke.co</string>
 	</array>
 </dict>
 </plist>

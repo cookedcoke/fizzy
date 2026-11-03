@@ -195,3 +195,317 @@ def test_link_host_serves_apples_file_and_poster_codes(client, monkeypatch):
     assert "Tools" not in page.text
     css = client.get("/static/me.css", headers={"host": "link.cookedcoke.co"}, follow_redirects=False)  # the page's styles load
     assert css.status_code == 200 and "text/css" in css.headers["content-type"]
+
+
+# ---- review fixes: guests, claims, merges, edits and the link host -----------------------------------------
+
+def _db():
+    from fizzy import db
+    return db.connect()
+
+
+def _prizes(cid):
+    conn = _db()
+    try:
+        return [dict(r) for r in conn.execute("SELECT * FROM prizes WHERE customer_id = ?", (cid,))]
+    finally:
+        conn.close()
+
+
+def _rule_points(cid):
+    conn = _db()
+    try:
+        return conn.execute("SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE customer_id = ? AND reason = 'rule'", (cid,)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_one_guest_phone_wins_the_prize_once(client):
+    a = setup_student(client, "Alice A", "rns101", points=0)
+    b = setup_student(client, "Bob B", "rns102", points=0)
+    c = setup_student(client, "Cat C", "rns103", points=0)
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink", "prize_points": "500"})
+    client.post("/logout")
+    client.get("/me/c/XP6RCECMRQ")
+    client.get("/me/c/PPUCH7QEGB")                       # finished once, as a guest
+    for sid in ("rns101", "rns102", "rns103"):           # then three people sign in on that phone
+        client.post("/me/login", data={"who": sid, "passcode": PC}, headers=J)
+        client.post("/me/logout", headers=J)
+    assert len(_prizes(a)) == 1 and _rule_points(a) == 500
+    assert _prizes(b) == [] and _prizes(c) == [] and _rule_points(b) == _rule_points(c) == 0
+    # signing out leaves the phone as a fresh guest, with nothing found yet
+    assert "1 of 2 found" in client.get("/me/c/XP6RCECMRQ").text
+
+
+def test_claimed_guest_progress_never_moves_on_sign_in(client):
+    a = setup_student(client, "Alice A", "rns101", points=0)
+    b = setup_student(client, "Bob B", "rns102", points=0)
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink"})
+    client.post("/logout")
+    client.get("/me/c/XP6RCECMRQ")
+    claim = re.search(r"claim code ([A-Z0-9]{5})", client.get("/me/c/PPUCH7QEGB").text).group(1)
+    conn = _db()
+    try:
+        ok, _ = challenges.claim(conn, claim, b, "Mike")    # staff on another device claim it for Bob
+        conn.commit()
+    finally:
+        conn.close()
+    assert ok
+    client.post("/me/login", data={"who": "rns101", "passcode": PC}, headers=J)
+    assert _prizes(a) == [] and len(_prizes(b)) == 1
+
+
+def test_guest_scans_move_once(conn, cust):
+    a, b = cust(), cust(name="Other", email="b@x.edu", sq="SQ2")
+    rules.create(conn, challenges.new_hunt("Market Day", "", "", "", POSTERS, "A free drink", ""), "Will")
+    challenges.guest_scan(conn, "phone-1", "XP6RCECMRQ")
+    challenges.merge_guest(conn, "phone-1", a["id"])
+    challenges.merge_guest(conn, "phone-1", b["id"])
+    assert challenges.cards(conn, a["id"])[0]["progress"]["done"] == 1
+    assert challenges.cards(conn, b["id"])[0]["progress"]["done"] == 0
+
+
+def test_claim_never_gives_a_prize_twice(conn, cust):
+    c = cust()
+    rules.create(conn, challenges.new_hunt("Market Day", "", "", "", POSTERS, "A free drink", ""), "Will")
+    challenges.scan(conn, c["id"], "XP6RCECMRQ")
+    challenges.scan(conn, c["id"], "PPUCH7QEGB")           # finished signed in
+    pid = conn.execute("SELECT id FROM prizes").fetchone()[0]
+    conn.execute("UPDATE prizes SET given_at = ?, given_by = 'Mike' WHERE id = ?", ("2026-11-02T01:00:00+00:00", pid))
+    for guest in ("phone-1", "phone-2"):                    # fresh sessions replay the public codes
+        challenges.guest_scan(conn, guest, "XP6RCECMRQ")
+        ok, msg, _ = challenges.guest_scan(conn, guest, "PPUCH7QEGB")
+        code = re.search(r"claim code ([A-Z0-9]{5})", msg).group(1)
+        ok, msg = challenges.claim(conn, code, c["id"], "Mike")
+        assert not ok and "already given on" in msg.lower() and "Give them" not in msg
+        assert conn.execute("SELECT claimed_at FROM guest_finishes WHERE claim = ?", (code,)).fetchone()[0] is None
+
+
+def test_a_failed_claim_moves_nothing_and_archived_accounts_are_refused(conn, cust):
+    c, old = cust(), cust(name="Old", email="old@x.edu", sq="SQ2")
+    rid, codes = hunt(conn)
+    for code in codes:
+        challenges.guest_scan(conn, "phone-1", code)
+    claim = conn.execute("SELECT claim FROM guest_finishes").fetchone()[0]
+    spec = json.loads(conn.execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])
+    spec["steps"].append({"label": "Canteen", "scan": True})          # a stop added after the phone finished
+    rules.update(conn, rid, spec, "Will")
+    ok, msg = challenges.claim(conn, claim, c["id"], "Mike")
+    assert not ok and "doesn't finish" in msg
+    assert conn.execute("SELECT COUNT(*) FROM challenge_scans").fetchone()[0] == 0   # nothing moved over
+    conn.execute("UPDATE customers SET archived_at = ? WHERE id = ?", ("2026-11-01T00:00:00+00:00", old["id"]))
+    ok, msg = challenges.claim(conn, claim, old["id"], "Mike")
+    assert not ok and "archived" in msg
+
+
+def test_delete_test_accounts_after_a_hunt(client):
+    login(client)
+    client.post("/tools/test_accounts", data={"n": "1"})
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink"})
+    conn = _db()
+    try:
+        tid = conn.execute("SELECT id FROM customers WHERE kind = 'test'").fetchone()[0]
+        challenges.scan(conn, tid, "XP6RCECMRQ")
+        challenges.guest_scan(conn, "phone-1", "XP6RCECMRQ")
+        challenges.guest_scan(conn, "phone-1", "PPUCH7QEGB")
+        challenges.merge_guest(conn, "phone-1", tid)          # finished and won on the test account
+        conn.commit()
+    finally:
+        conn.close()
+    r = client.post("/tools/delete_test_accounts", data={"confirm": "DELETE"})
+    assert "Deleted 1 test account" in r.text
+    conn = _db()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM customers WHERE id = ?", (tid,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM prizes").fetchone()[0] == 0
+        assert conn.execute("SELECT customer_id FROM guest_finishes").fetchone()[0] is None
+    finally:
+        conn.close()
+
+
+def test_merge_moves_hunt_progress_and_prizes(client):
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Kim Keep", "email": "rns201@reddamnorthshore.nsw.edu.au"})
+    client.post("/tools/add_customer", data={"name": "Kim Dup", "email": "rns202@reddamnorthshore.nsw.edu.au"})
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink", "prize_points": "100"})
+    client.post("/challenges", data={"name": "Second", "stops": "A | | AAAAAAAAAA1\nB | | BBBBBBBBBB2", "prize_text": "A cookie"})
+    conn = _db()
+    try:
+        keep, dup = [r[0] for r in conn.execute("SELECT id FROM customers WHERE name LIKE 'Kim %' ORDER BY id")]
+        for cid in (keep, dup):                               # both won Market Day (and its points): one of each stays
+            challenges.scan(conn, cid, "XP6RCECMRQ")
+            challenges.scan(conn, cid, "PPUCH7QEGB")
+        conn.execute("UPDATE prizes SET given_at = ?, given_by = 'Mike' WHERE customer_id = ?", ("2026-11-02T01:00:00+00:00", dup))
+        challenges.scan(conn, dup, "AAAAAAAAAA1")             # only the duplicate started the second
+        conn.commit()
+    finally:
+        conn.close()
+    r = client.post("/tools/merge", data={"keep": "Kim Keep", "dup": "Kim Dup"})
+    assert r.status_code == 200 and "Merged" in r.text
+    conn = _db()
+    try:
+        prizes = challenges.prizes_for(conn, keep)
+        assert len(prizes) == 1 and prizes[0]["given_at"]           # the drink was handed over already: not again
+        assert challenges.prizes_for(conn, dup) == []
+        assert conn.execute("SELECT COUNT(*) FROM points_ledger WHERE rule_key LIKE 'rule:%'").fetchone()[0] == 1
+        second = [c for c in challenges.cards(conn, keep) if c["title"] == "Second"][0]
+        assert second["progress"]["done"] == 1
+    finally:
+        conn.close()
+
+
+def test_editing_a_hunt_keeps_codes_and_ticks_with_their_stops(conn, cust):
+    c = cust()
+    rid = make(conn, {"kind": "challenge", "name": "Hunt", "summary": "Find 3",
+                      "steps": [{"label": "Library", "scan": True}, {"label": "Gym", "scan": True}, {"label": "Lifts", "scan": True}],
+                      "prize": {"text": "A drink"}})
+    spec = json.loads(conn.execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])
+    old = {s["label"]: s["code"] for s in spec["steps"]}
+    challenges.scan(conn, c["id"], old["Library"])                    # ticked Library
+    spec["steps"].insert(0, {"label": "Canteen", "scan": True})       # a stop added at the front
+    for s in spec["steps"]:
+        s.pop("code", None)                                           # Fizz sends it back without codes
+    rules.update(conn, rid, spec, "Will")
+    new = {s["label"]: s["code"] for s in json.loads(conn.execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])["steps"]}
+    assert new["Library"] == old["Library"] and new["Gym"] == old["Gym"] and new["Lifts"] == old["Lifts"]
+    assert new["Canteen"] not in old.values()
+    steps = challenges.cards(conn, c["id"])[0]["steps"]
+    assert [(s["label"], s["done"]) for s in steps] == [("Canteen", False), ("Library", True), ("Gym", False), ("Lifts", False)]
+    spec["steps"][3]["label"] = "The lifts"                           # a typo fixed where it stands keeps its code
+    rules.update(conn, rid, spec, "Will")
+    assert json.loads(conn.execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])["steps"][3]["code"] == old["Lifts"]
+    del spec["steps"][1]                                              # Library taken out: its find goes with it
+    rules.update(conn, rid, spec, "Will")
+    assert challenges.cards(conn, c["id"])[0]["progress"]["done"] == 0
+
+
+def test_old_scans_by_position_move_to_codes(tmp_path):
+    from fizzy import db
+    conn = db.connect(str(tmp_path / "old.db"))
+    db.init(conn)
+    conn.execute("INSERT INTO customers(name, email, created_at) VALUES ('Kid', 'k@x.edu', 'x')")
+    spec = {"kind": "challenge", "name": "H", "summary": "s", "prize": {"text": "A drink"},
+            "steps": [{"label": "A", "scan": True, "code": "AAAAAAAAAA"}, {"label": "B", "scan": True, "code": "BBBBBBBBBB"}]}
+    conn.execute("INSERT INTO rules(id, kind, name, spec, created_by, created_at) VALUES (1, 'challenge', 'H', ?, 'W', 'x')", (json.dumps(spec),))
+    conn.executescript("""
+        DROP TABLE challenge_scans; DROP TABLE guest_scans;
+        CREATE TABLE challenge_scans (customer_id INTEGER NOT NULL REFERENCES customers(id), rule_id INTEGER NOT NULL,
+            step INTEGER NOT NULL, scanned_at TEXT NOT NULL, PRIMARY KEY (customer_id, rule_id, step));
+        CREATE TABLE guest_scans (guest TEXT NOT NULL, rule_id INTEGER NOT NULL, step INTEGER NOT NULL,
+            scanned_at TEXT NOT NULL, PRIMARY KEY (guest, rule_id, step));
+        INSERT INTO challenge_scans VALUES (1, 1, 1, 'x');
+        INSERT INTO challenge_scans VALUES (1, 1, 7, 'x');
+        INSERT INTO guest_scans VALUES ('phone', 1, 0, 'x');
+    """)
+    db.init(conn)
+    assert [tuple(r) for r in conn.execute("SELECT customer_id, rule_id, step_code FROM challenge_scans")] == [(1, 1, "BBBBBBBBBB")]
+    assert [tuple(r) for r in conn.execute("SELECT guest, step_code, customer_id FROM guest_scans")] == [("phone", "AAAAAAAAAA", None)]
+    db.init(conn)                                                      # again: nothing changes
+    assert conn.execute("SELECT COUNT(*) FROM challenge_scans").fetchone()[0] == 1
+    conn.close()
+
+
+def test_link_host_sends_browsers_to_the_student_site(client, monkeypatch):
+    setup_student(client, points=0)
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink"})
+    client.post("/logout")
+    monkeypatch.setattr(config, "LINK_HOST", "link.cookedcoke.co")
+    monkeypatch.setattr(config, "PUBLIC_HOST", "my.cookedcoke.co")
+    r = client.get("http://link.cookedcoke.co/XP6RCECMRQ", follow_redirects=False)        # Safari
+    assert r.status_code == 303 and r.headers["location"] == "https://my.cookedcoke.co/c/XP6RCECMRQ"
+    r = client.get("http://link.cookedcoke.co/hunt", follow_redirects=False)
+    assert r.headers["location"] == "https://my.cookedcoke.co/hunt"
+    clip = client.get("http://link.cookedcoke.co/PPUCH7QEGB", headers=J)                    # the App Clip still gets data
+    assert clip.status_code == 200 and clip.json()["ok"]
+    assert client.get("http://link.cookedcoke.co/hunt", headers=J).json()["ok"]
+    # On the student site: a guest find there moves over when they sign in there.
+    page = client.get("http://my.cookedcoke.co/c/XP6RCECMRQ")
+    assert "1 of 2 found" in page.text and 'href="https://my.cookedcoke.co/"' in page.text
+    client.post("http://my.cookedcoke.co/login", data={"who": "rns5", "passcode": PC}, headers=J)
+    me = client.get("http://my.cookedcoke.co/", headers=J).json()
+    assert me["cards"][0]["progress"]["done"] == 1
+    # Signed in, the app opening a poster's link gets an answer, not the home page.
+    r = client.get("http://my.cookedcoke.co/c/PPUCH7QEGB", headers=J).json()
+    assert r["ok"] and "finished" in r["message"]
+
+
+def test_printed_codes_use_the_link_host(client, monkeypatch):
+    login(client)
+    client.post("/challenges", data={"name": "Market Day", "stops": "Library\nGym", "prize_text": "A free drink"})
+    monkeypatch.setattr(config, "LINK_HOST", "link.cookedcoke.co")
+    monkeypatch.setattr(config, "PUBLIC_HOST", "my.cookedcoke.co")
+    conn = _db()
+    try:
+        code = json.loads(conn.execute("SELECT spec FROM rules").fetchone()[0])["steps"][0]["code"]
+    finally:
+        conn.close()
+    assert challenges.code_url(code) == f"https://link.cookedcoke.co/{code}"
+    client.post("/logout")
+    clip = client.get(f"http://link.cookedcoke.co/{code}", headers=J).json()     # both hosts know the same codes
+    site = client.get(f"http://my.cookedcoke.co/c/{code}", headers=J).json()
+    assert clip["ok"] and site["ok"] and "Library" in clip["message"] and "Library" in site["message"]
+    monkeypatch.setattr(config, "LINK_HOST", "")
+    assert challenges.code_url(code) == f"https://my.cookedcoke.co/c/{code}"
+
+
+def test_apples_file_opens_the_app_only_for_codes(client, monkeypatch):
+    monkeypatch.setattr(config, "LINK_HOST", "link.cookedcoke.co")
+    aasa = client.get("http://link.cookedcoke.co/.well-known/apple-app-site-association").json()
+    comps = aasa["applinks"]["details"][0]["components"]
+    excluded = [c["/"] for c in comps if c.get("exclude")]
+    assert {"/", "/hunt", "/static/*"} <= set(excluded) and comps[-1]["/"] == "/*" and not comps[-1].get("exclude")
+
+
+def test_fizz_never_sees_a_hunts_codes(client):
+    from fizzy import ask
+    login(client)
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink"})
+    conn = _db()
+    try:
+        out = json.dumps(ask.run_tool(conn, "Mike", "list_rules", {}))
+    finally:
+        conn.close()
+    assert "Market Day" in out and "XP6RCECMRQ" not in out and "PPUCH7QEGB" not in out
+    rows = ask._sql("SELECT name, spec FROM rules")["rows"]
+    assert rows[0]["name"] == "Market Day" and rows[0]["spec"] is None
+
+
+def test_challenge_levels(client):
+    from fizzy import db, pin
+    conn = db.connect()
+    old = config.ADMIN_PASSWORD
+    try:
+        db.init(conn)
+        pin.set_pin(conn, "4821", "t")
+        config.ADMIN_PASSWORD = "x"
+        rid = rules.create(conn, challenges.new_hunt("Market Day", "", "", "", POSTERS, "A free drink", ""), "Will")
+        bid = make(conn, {"kind": "badge", "name": "B", "summary": "s", "need": {"metric": "days", "op": ">=", "value": 3}, "points": 10})
+        conn.commit()
+        assert pin.required(conn, "POST", f"/rules/{rid}/pause", {}) == pin.PIN          # like starting it
+        assert pin.required(conn, "POST", f"/rules/{rid}/delete", {}) == pin.PIN
+        assert pin.required(conn, "POST", f"/rules/{bid}/pause", {}) == pin.OWNER        # badges as before
+        assert pin.required(conn, "POST", "/challenges", {"prize_points": "100"}) == pin.PIN
+        assert pin.required(conn, "POST", "/challenges", {"prize_points": "600"}) == pin.OWNER   # big, like points by hand
+        db.set_setting(conn, "permissions", json.dumps({"points": "owner"}))
+        assert pin.required(conn, "POST", "/challenges", {"prize_points": "100"}) == pin.OWNER
+        assert pin.required(conn, "POST", "/challenges", {"prize_points": ""}) == pin.PIN
+        browser = pin.rules(conn)["actions"]
+        assert ["POST", rf"^/rules/{rid}/(pause|resume|delete)$", pin.PIN] in browser
+    finally:
+        config.ADMIN_PASSWORD = old
+        conn.close()
+
+
+def test_a_won_prize_stays_on_the_page_until_given(conn, cust):
+    from datetime import timedelta
+    from fizzy import stats
+    c = cust()
+    today = stats.today()
+    rid, codes = hunt(conn, window={"from": (today - timedelta(days=3)).isoformat(), "to": (today - timedelta(days=1)).isoformat()})
+    for code in codes:
+        conn.execute("INSERT INTO challenge_scans(customer_id, rule_id, step_code, scanned_at) VALUES (?, ?, ?, 'x')", (c["id"], rid, code))
+    challenges.award(conn, c["id"])
+    card = challenges.cards(conn, c["id"])
+    assert len(card) == 1 and card[0]["done"] and "free drink" in card[0]["status"]
+    conn.execute("UPDATE prizes SET given_at = 'x'")
+    assert challenges.cards(conn, c["id"]) == []

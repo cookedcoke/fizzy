@@ -2,7 +2,7 @@
 {% block body %}
 <div class="top">
   <span class="wordmark"><img src="/static/logo.svg?v={{ V }}" alt="">My Cooked Coke</span>
-  <a class="pill" href="{{ me_url('/') }}">Sign in</a>
+  <a class="pill" href="{{ signin or me_url('/') }}">Sign in</a>
 </div>
 <main>
   {% if note %}<div class="event {{ 'on' if ok }}" role="status">{{ note }}</div>{% endif %}
@@ -24,6 +24,6 @@
   {% else %}
   <div class="card"><p class="empty">Scan a hunt code with your phone's camera to start.</p></div>
   {% endfor %}
-  <p class="note">This is kept on this phone, so use the same phone for every code. Have My CCC? Sign in and it moves to your account.</p>
+  <p class="note">This is kept in this browser, so scan every code with the same phone. <a href="{{ signin or me_url('/') }}">Sign in here</a> and what you've found moves to your account.</p>
 </main>
 {% endblock %}

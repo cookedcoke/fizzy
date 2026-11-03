@@ -321,12 +321,15 @@ struct ChallengeCodesView: View {
 
 
 enum QR {
+    /// One for the app: a CIContext is costly to make, and a page of codes would make one each.
+    private static let context = CIContext()
+
     static func image(_ text: String) -> UIImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
         filter.correctionLevel = "M"
         guard let out = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)),
-              let cg = CIContext().createCGImage(out, from: out.extent) else { return nil }
+              let cg = context.createCGImage(out, from: out.extent) else { return nil }
         return UIImage(cgImage: cg)
     }
 }

@@ -1,5 +1,7 @@
+import Accelerate
 import CoreGraphics
 import CoreImage
+import CoreVideo
 import Foundation
 import Vision
 
@@ -13,6 +15,29 @@ enum TileReader {
     struct Gray {
         let w: Int, h: Int
         var px: [UInt8]
+
+        /// The camera frame's luma (Y) plane, which is grey already, shrunk so its short side is about `short`
+        /// pixels. Nil for a frame that isn't the planar YCbCr the scanner asks for.
+        init?(luma buffer: CVPixelBuffer, short: Int) {
+            guard CVPixelBufferIsPlanar(buffer) else { return nil }
+            CVPixelBufferLockBaseAddress(buffer, .readOnly)
+            defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+            guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return nil }
+            let sw = CVPixelBufferGetWidthOfPlane(buffer, 0), sh = CVPixelBufferGetHeightOfPlane(buffer, 0)
+            guard sw > 0, sh > 0 else { return nil }
+            let scale = min(1, Double(short) / Double(min(sw, sh)))
+            let ow = max(1, Int(Double(sw) * scale)), oh = max(1, Int(Double(sh) * scale))
+            var src = vImage_Buffer(data: base, height: vImagePixelCount(sh), width: vImagePixelCount(sw),
+                                    rowBytes: CVPixelBufferGetBytesPerRowOfPlane(buffer, 0))
+            var out = [UInt8](repeating: 255, count: ow * oh)
+            let error = out.withUnsafeMutableBytes { buf -> vImage_Error in
+                var dst = vImage_Buffer(data: buf.baseAddress, height: vImagePixelCount(oh), width: vImagePixelCount(ow), rowBytes: ow)
+                return vImageScale_Planar8(&src, &dst, nil, vImage_Flags(kvImageNoFlags))
+            }
+            guard error == kvImageNoError else { return nil }
+            w = ow; h = oh; px = out
+        }
+
         init(_ img: CGImage) {
             w = img.width; h = img.height
             px = [UInt8](repeating: 255, count: w * h)
@@ -27,12 +52,14 @@ enum TileReader {
     /// Dark or light, against the average brightness nearby (copes with glare and shadow).
     static func binarize(_ g: Gray, radius: Int) -> [Bool] {
         let w = g.w, h = g.h
-        var integral = [Int](repeating: 0, count: (w + 1) * (h + 1))
+        // UInt32 is half the memory of Int, and wrapping sums still give each box's right total (any box holds
+        // far less than 2^32 of brightness), so overflow on a big frame does no harm.
+        var integral = [UInt32](repeating: 0, count: (w + 1) * (h + 1))
         for y in 0..<h {
-            var row = 0
+            var row: UInt32 = 0
             for x in 0..<w {
-                row += Int(g.px[y * w + x])
-                integral[(y + 1) * (w + 1) + x + 1] = integral[y * (w + 1) + x + 1] + row
+                row &+= UInt32(g.px[y * w + x])
+                integral[(y + 1) * (w + 1) + x + 1] = integral[y * (w + 1) + x + 1] &+ row
             }
         }
         var dark = [Bool](repeating: false, count: w * h)
@@ -40,8 +67,8 @@ enum TileReader {
             let y0 = max(0, y - radius), y1 = min(h, y + radius + 1)
             for x in 0..<w {
                 let x0 = max(0, x - radius), x1 = min(w, x + radius + 1)
-                let sum = integral[y1 * (w + 1) + x1] - integral[y0 * (w + 1) + x1] - integral[y1 * (w + 1) + x0] + integral[y0 * (w + 1) + x0]
-                let mean = sum / ((x1 - x0) * (y1 - y0))
+                let sum = integral[y1 * (w + 1) + x1] &- integral[y0 * (w + 1) + x1] &- integral[y1 * (w + 1) + x0] &+ integral[y0 * (w + 1) + x0]
+                let mean = Int(sum) / ((x1 - x0) * (y1 - y0))
                 dark[y * w + x] = Int(g.px[y * w + x]) < mean - 6
             }
         }
@@ -112,8 +139,11 @@ enum TileReader {
                 }
             }
         }
-        return found.filter { $0.hits >= 2 }
+        // The best-supported few only: every three of them is tried as a code, so this keeps that quick.
+        return Array(found.filter { $0.hits >= 2 }.sorted { $0.hits > $1.hits }.prefix(maxFinders))
     }
+
+    static let maxFinders = 60
 
     /// Threes of corner squares that could be one code: a right angle, two equal sides, a real QR size.
     static func tiles(_ fs: [Finder]) -> [(CGPoint, CGPoint, CGPoint, Double, Double)] {
@@ -171,10 +201,23 @@ enum TileReader {
 
     /// The first code readable tile by tile, or nil. Ordinary codes are left to the camera's own reader.
     static func read(_ img: CGImage, tries: Int = 40) -> String? {
-        let g = Gray(img)
+        read(Gray(img), CIImage(cgImage: img), tries: tries)
+    }
+
+    /// The same, straight from a camera frame (420f): its grey plane is read as it is, with no colour
+    /// picture made first. About 1440 pixels on the short side: enough for a whole poster, quick enough.
+    static func read(_ buffer: CVPixelBuffer, tries: Int = 40) -> String? {
+        guard let g = Gray(luma: buffer, short: 1440) else { return nil }
+        let sw = CVPixelBufferGetWidth(buffer), sh = CVPixelBufferGetHeight(buffer)
+        let image = CIImage(cvPixelBuffer: buffer)
+            .transformed(by: CGAffineTransform(scaleX: Double(g.w) / Double(sw), y: Double(g.h) / Double(sh)))
+        return read(g, image, tries: tries)
+    }
+
+    /// `ciImage`: the same picture as `g`, the same size, to cut the codes out of.
+    private static func read(_ g: Gray, _ ciImage: CIImage, tries: Int) -> String? {
         let dark = binarize(g, radius: max(8, min(g.w, g.h) / 60))
         let fs = finders(dark, g.w, g.h)
-        let ciImage = CIImage(cgImage: img)
         for t in tiles(fs).prefix(tries) {
             guard let crop = cut(ciImage, height: Double(g.h), tl: t.0, tr: t.1, bl: t.2, module: t.3) else { continue }
             if let text = vision(crop).first { return text }

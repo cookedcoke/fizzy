@@ -633,6 +633,12 @@ keep the student site behind the tunnel. That host only serves the student pages
 isn't affected by the device lock. Without `FIZZY_PUBLIC_HOST`, the student pages are at
 `/me` on the staff site (handy for trying it out, but behind the device lock if that's on).
 
+**Hunt posters' short links.** With `FIZZY_LINK_HOST=link.cookedcoke.co` (another public hostname on
+the tunnel, also without Access), printed hunt codes are `https://link.cookedcoke.co/<code>`. On an
+iPhone the camera opens the My CCC app there, or its App Clip if the app isn't installed. Any other
+browser is sent on to `https://my.cookedcoke.co/c/<code>`, so the find counts on the student site:
+on their account if they're signed in there, else kept in that browser until they sign in there.
+
 ## 8. Tools
 
 Each tool lives on the page of what it changes (the **Home** column) and is also on **Tools** (header,
@@ -1006,6 +1012,7 @@ blank (`KEY=`) counts as not set and uses its default.
 | `SQUARE_TAB_TENDERS` | *(off)* | Optional extra: payment types that also mean "on the tab", e.g. `EXTERNAL` (Other Payment Types) or `SQUARE_ACCOUNT` (House Account). Only if the discount can't be used |
 | `FIZZY_HOST` | `fizzy.cookedcoke.co` | Main address; used in device registration links |
 | `FIZZY_PUBLIC_HOST` | *(off)* | The student site's address, e.g. `my.cookedcoke.co`. Only student pages are served there |
+| `FIZZY_LINK_HOST` | *(off)* | Hunt posters' short links, e.g. `link.cookedcoke.co`: serves Apple's file for the app and App Clip; browsers go on to the student site |
 | `FIZZY_ACCESS_HOST` | *(off)* | Turns on the device lock. Unregistered devices are sent here (behind Cloudflare Access) |
 | `CF_ACCESS_TEAM_DOMAIN` | — | Your Access team domain, e.g. `cookedcoke.cloudflareaccess.com` |
 | `CF_ACCESS_AUD` | — | The Access application's Audience (AUD) tag |

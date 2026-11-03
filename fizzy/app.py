@@ -11,6 +11,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
@@ -43,10 +44,17 @@ PHONE_EXEMPT = GATE_EXEMPT + ("/me",)
 
 
 def apple_app_site_association():
-    """For link.cookedcoke.co: the My CCC app opens any link there, and its App Clip opens when it isn't installed."""
+    """For link.cookedcoke.co: the My CCC app opens a poster's code there (not the other pages), and its App
+    Clip opens when it isn't installed. Apple reads the components in order: the first match decides."""
     app_id = f"{config.APPLE_TEAM_ID}.{config.STUDENT_APP_ID}"
-    return {"applinks": {"details": [{"appIDs": [app_id], "components": [{"/": "/*", "comment": "hunt codes"}]}]},
+    pages = [{"/": p, "exclude": True} for p in ("/", "/hunt", "/hunt/", "/static/*", "/robots.txt", "/manifest.webmanifest")]
+    return {"applinks": {"details": [{"appIDs": [app_id], "components": pages + [{"/": "/*", "comment": "hunt codes"}]}]},
             "appclips": {"apps": [f"{app_id}.Clip"]}}
+
+
+def _from_app(request):
+    """The App Clip (or app) asking for data, not a browser opening a page."""
+    return wants_json(request) or "application/json" in (request.headers.get("accept") or "").lower()
 
 
 def phone_page():
@@ -305,6 +313,12 @@ def create_app(background=True):
             if path.startswith("/static/") or path == "/manifest.webmanifest":   # the pages' styles, fonts and icons
                 return await call_next(request)
             code = path.strip("/")
+            if code and "/" not in code and config.PUBLIC_HOST and not _from_app(request):
+                # A browser (Safari, when the app and clip don't open it): on to the student site, so the code
+                # counts in that site's own session there (signed in: their account; not: that phone's hunt,
+                # which signing in there moves over). This host's cookie never reaches the student site.
+                where = "hunt" if code == "hunt" else "c/" + quote(code, safe="")
+                return RedirectResponse(f"https://{config.PUBLIC_HOST}/{where}", status_code=303)
             if code == "hunt":   # what this phone has found (the App Clip, opened without a code)
                 request.scope["path"] = "/me/hunt"
                 request.state.public = True

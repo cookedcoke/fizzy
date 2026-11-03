@@ -397,6 +397,7 @@ def promos(conn=Depends(get_conn)):
 @router.post("/me/logout")
 def logout(request: Request):
     request.session.pop("me", None)
+    request.session.pop("guest", None)   # the next person on this phone starts their own hunt
     if wants_json(request):
         return _json({"ok": True})
     return RedirectResponse(_url("/"), status_code=303)
@@ -582,7 +583,7 @@ def sign_out_phones(request: Request, cid: int, who=Depends(staff), conn=Depends
 
 def _pending_scan(request, conn, c):
     """Codes found on this phone before signing in (a hunt played without an account): theirs now."""
-    guest = request.session.get("guest")
+    guest = request.session.pop("guest", None)   # once: whoever signs in next on this phone doesn't get it too
     if guest:
         won = challenges.merge_guest(conn, guest, c["id"])
         conn.commit()
@@ -611,6 +612,8 @@ def scan_link(request: Request, code: str, conn=Depends(get_conn)):
     if c is not None:
         ok, msg = challenges.scan(conn, c["id"], code[:60])
         conn.commit()
+        if wants_json(request):
+            return _json({"ok": ok, "message": msg})   # the My CCC app, opening a poster's link
         request.session["me_note"] = msg
         return RedirectResponse(_url("/"), status_code=303)
     guest = request.session.get("guest") or secrets.token_urlsafe(12)
@@ -619,7 +622,7 @@ def scan_link(request: Request, code: str, conn=Depends(get_conn)):
     conn.commit()
     if wants_json(request):   # the My CCC App Clip
         return _json({"ok": ok, "message": msg, "cards": challenges.guest_cards(conn, guest)})
-    return _page(request, "me_hunt.html", note=msg, ok=ok, cards=challenges.guest_cards(conn, guest))
+    return _page(request, "me_hunt.html", note=msg, ok=ok, cards=challenges.guest_cards(conn, guest), signin=_signin())
 
 
 @router.get("/me/hunt")
@@ -629,4 +632,9 @@ def hunt_page(request: Request, conn=Depends(get_conn)):
     cards = challenges.guest_cards(conn, guest) if guest else []
     if wants_json(request):
         return _json({"ok": True, "cards": cards})
-    return _page(request, "me_hunt.html", note=None, ok=True, cards=cards)
+    return _page(request, "me_hunt.html", note=None, ok=True, cards=cards, signin=_signin())
+
+
+def _signin():
+    """The hunt page's sign-in link: the student site itself, where this browser's finds are kept."""
+    return f"https://{config.PUBLIC_HOST}/" if config.PUBLIC_HOST else None

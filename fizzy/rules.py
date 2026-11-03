@@ -711,7 +711,8 @@ def student_badges(conn, cid):
         if rule.get("repeat", "once") != "once":  # repeating: "earned" means this period
             pr = _period(conn, rule["repeat"], stats.today())
             earned = bool(pr) and f"rule:{rule['id']}:{pr[0].isoformat()}" in got
-        b = {"icon": rule.get("icon") or "\u2b50",  # a star (the staff site's source stays emoji-free) "name": rule["name"], "how": rule["summary"], "earned": earned,
+        b = {"icon": rule.get("icon") or "\u2b50",  # a star (the staff site's source stays emoji-free)
+             "name": rule["name"], "how": rule["summary"], "earned": earned,
              "points": rule["points"], "progress": 0, "count": ""}
         if not earned:
             if ps is None:

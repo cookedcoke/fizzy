@@ -81,14 +81,22 @@ final class Student {
 
     /// A hunt poster's link, opened with the app installed (link.cookedcoke.co). Signed in, it counts on
     /// their account; not, it's kept against this phone like on the website, and moves over when they sign in.
-    func openLink(_ url: URL) async -> String {
+    /// Nil for a link that isn't a code (the link host's start page, /hunt): the app just opens.
+    func openLink(_ url: URL) async -> String? {
+        guard let code = StudentAPI.huntCode(in: url) else { return nil }
+        // A link that launched the app arrives while it's still finding out who's signed in: wait for that,
+        // or a signed-in student's find would be kept as a guest's.
+        while phase == .loading {
+            if Task.isCancelled { return nil }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
         do {
             if phase == .signedIn {
                 let message = try await StudentAPI.shared.scan(url.absoluteString)
                 await load()
                 return message
             }
-            return try await StudentAPI.shared.guestScan(url)
+            return try await StudentAPI.shared.guestScan(code)
         } catch {
             return isOffline(error) ? "No signal. Scan it again when there is." : error.localizedDescription
         }
@@ -123,7 +131,9 @@ struct RootView: View {
             if now == .active, model.phase != .loading { Task { await model.load() } }
         }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
-            if let url = activity.webpageURL { Task { linkResult = await model.openLink(url) } }
+            if let url = activity.webpageURL {
+                Task { if let result = await model.openLink(url) { linkResult = result } }
+            }
         }
         .alert("Hunt", isPresented: Binding(get: { linkResult != nil }, set: { if !$0 { linkResult = nil } })) {
             Button("OK", role: .cancel) {}

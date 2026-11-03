@@ -80,18 +80,43 @@ def validate(conn, rule):
     return rule
 
 
+def _label_key(label):
+    return " ".join(str(label or "").split()).casefold()
+
+
 def give_codes(rule, old=None):
-    """Every scan step gets a secret code. An edit keeps the codes of steps already there."""
-    before = [s for s in (old or {}).get("steps", [])]
+    """Every scan step gets a secret code. An edit keeps the codes of steps already there, matched by
+    label (Fizz sends steps back without their codes, and may add or take out steps anywhere), so a
+    printed code, and who's found it, stays with its stop."""
+    before = [s for s in (old or {}).get("steps", []) if s.get("scan") and s.get("code")]
+    taken = {s["code"].upper() for s in rule["steps"] if s.get("scan") and s.get("code")}
+    free = [s for s in before if s["code"].upper() not in taken]
+    new_labels = {_label_key(s["label"]) for s in rule["steps"]}
+    waiting = [s for s in rule["steps"] if s.get("scan") and not s.get("code")]
+    for s in waiting:
+        prev = next((p for p in free if _label_key(p["label"]) == _label_key(s["label"])), None)
+        if prev:
+            s["code"] = prev["code"]
+            free.remove(prev)
+    # A stop renamed where it stood (a typo fixed) keeps its code too: same place, and its old label is gone.
+    old_steps = (old or {}).get("steps", [])
     for i, s in enumerate(rule["steps"]):
+        if s.get("scan") and not s.get("code") and i < len(old_steps):
+            prev = old_steps[i]
+            if prev in free and _label_key(prev["label"]) not in new_labels:
+                s["code"] = prev["code"]
+                free.remove(prev)
+    for s in rule["steps"]:
         if s.get("scan") and not s.get("code"):
-            prev = before[i] if i < len(before) else None
-            s["code"] = prev["code"] if prev and prev.get("scan") and prev.get("code") else secrets.token_urlsafe(9)
+            s["code"] = secrets.token_urlsafe(9)
     return rule
 
 
 def code_url(code, base=None):
-    """What a code's QR holds: the student site, so a phone camera opens it too."""
+    """What a code's QR holds: the short link host (the iPhone camera opens the App Clip or the app
+    there, and a browser is sent on to the student site), else the student site, so any phone camera opens it."""
+    if config.LINK_HOST:
+        return f"https://{config.LINK_HOST}/{code}"
     if config.PUBLIC_HOST:
         return f"https://{config.PUBLIC_HOST}/c/{code}"
     return f"{(base or f'https://{config.HOST}').rstrip('/')}/me/c/{code}"
@@ -122,12 +147,12 @@ def is_on(conn, rule, today=None):
 def done_steps(conn, cid, rule, ps=None, ctx=None):
     """A tick for each step."""
     from . import rules
-    scanned = {r[0] for r in conn.execute("SELECT step FROM challenge_scans WHERE customer_id = ? AND rule_id = ?",
+    scanned = {r[0] for r in conn.execute("SELECT step_code FROM challenge_scans WHERE customer_id = ? AND rule_id = ?",
                                           (cid, rule["id"]))}
     out, inside = [], None
-    for i, s in enumerate(rule["steps"]):
+    for s in rule["steps"]:
         if s.get("scan"):
-            out.append(i in scanned)
+            out.append(s.get("code") in scanned)
             continue
         if inside is None:
             ctx = ctx or rules._ctx(conn)
@@ -191,8 +216,8 @@ def scan(conn, cid, text):
         return False, f"{rule['name']} has finished."
     if _won(conn, cid, rule["id"]):
         return True, f"You've already finished {rule['name']}."
-    added = conn.execute("INSERT OR IGNORE INTO challenge_scans(customer_id, rule_id, step, scanned_at) VALUES (?, ?, ?, ?)",
-                         (cid, rule["id"], i, now_iso())).rowcount
+    added = conn.execute("INSERT OR IGNORE INTO challenge_scans(customer_id, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?)",
+                         (cid, rule["id"], rule["steps"][i]["code"], now_iso())).rowcount
     label = rule["steps"][i]["label"]
     if added:
         audit(conn, "student", "challenge_scan", cid, f"{rule['name']}: {label}")
@@ -252,14 +277,16 @@ def card(conn, cid, rule, ps=None, ctx=None):
 
 def cards(conn, cid):
     """Challenges that are on (or start in the next two weeks), for this student. Finished ones stay
-    while they're on, so the student can show the prize at the counter."""
+    while they're on, and after that until the prize is handed over, so the student can show it at the counter."""
     from . import rules
     today = stats.today()
     out, ps, ctx = [], None, None
     for rule in rules.active(conn, "challenge"):
         a, b = _window(conn, rule)
         if b and b < today:
-            continue
+            won = _won(conn, cid, rule["id"])
+            if not (won and won["text"] and not won["given_at"]):
+                continue
         if a and a > today + timedelta(days=14):
             continue
         if ps is None:
@@ -273,13 +300,15 @@ def cards(conn, cid):
 # A phone camera opens a code's link without anyone signed in (a new student, or one with no passcode
 # yet). Their scans are kept against that phone (a random id in its session). Finishing every scan step
 # gives a short claim code; at the stall, staff type it on the student's page (adding them first if
-# they're new) and the prize is theirs. Signing in moves the phone's progress onto their account.
+# they're new) and the prize is theirs. Signing in on the student site in that browser moves its progress
+# onto their account, once (the App Clip keeps its own, so it shows the claim code instead).
 
 CLAIM_ALPHABET = "ACDEFGHJKMNPQRTUVWXY3479"   # nothing that looks like something else
 
 
 def _guest_steps(conn, guest, rid):
-    return {r[0] for r in conn.execute("SELECT step FROM guest_scans WHERE guest = ? AND rule_id = ?", (guest, rid))}
+    """The codes this phone has found for a challenge."""
+    return {r[0] for r in conn.execute("SELECT step_code FROM guest_scans WHERE guest = ? AND rule_id = ?", (guest, rid))}
 
 
 def guest_scan(conn, guest, text):
@@ -294,15 +323,15 @@ def guest_scan(conn, guest, text):
         return False, f"{rule['name']} starts on {a.strftime('%A %-d %b')}. Come back then.", rule
     if b and today > b:
         return False, f"{rule['name']} has finished.", rule
-    added = conn.execute("INSERT OR IGNORE INTO guest_scans(guest, rule_id, step, scanned_at) VALUES (?, ?, ?, ?)",
-                         (guest, rule["id"], i, now_iso())).rowcount
+    added = conn.execute("INSERT OR IGNORE INTO guest_scans(guest, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?)",
+                         (guest, rule["id"], rule["steps"][i]["code"], now_iso())).rowcount
     label = rule["steps"][i]["label"]
     done = _guest_steps(conn, guest, rule["id"])
-    scans = [j for j, s in enumerate(rule["steps"]) if s.get("scan")]
-    if all(j in done for j in scans) and len(scans) == len(rule["steps"]):
+    scans = [s["code"] for s in rule["steps"] if s.get("scan")]
+    if all(c in done for c in scans) and len(scans) == len(rule["steps"]):
         claim = _claim_for(conn, guest, rule["id"])
         return True, f"Found it: {label}. That's everything! Show your claim code {claim} at the stall.", rule
-    left = f"{sum(j in done for j in scans)} of {len(rule['steps'])} found."
+    left = f"{sum(c in done for c in scans)} of {len(rule['steps'])} found."
     return True, (f"Found it: {label}. {left}" if added else f"You've already found {label}. {left}"), rule
 
 
@@ -329,25 +358,44 @@ def guest_cards(conn, guest):
         if not done:
             continue
         fin = conn.execute("SELECT * FROM guest_finishes WHERE guest = ? AND rule_id = ?", (guest, rule["id"])).fetchone()
-        steps = [{"label": s["label"], "detail": s.get("hint", ""), "done": i in done} for i, s in enumerate(rule["steps"])]
+        steps = [{"label": s["label"], "detail": s.get("hint", ""), "done": bool(s.get("code")) and s["code"] in done}
+                 for s in rule["steps"]]
         out.append({"title": rule["name"], "text": rule["summary"], "prize": prize_line(rule["prize"]), "steps": steps,
                     "progress": {"done": sum(x["done"] for x in steps), "total": len(steps)},
                     "claim": fin["claim"] if fin else None, "claimed": bool(fin and fin["claimed_at"])})
     return out
 
 
-def merge_guest(conn, guest, cid):
-    """A phone's progress onto the student's account (they signed in, or staff claimed it). The caller commits."""
-    for r in conn.execute("SELECT rule_id, step, scanned_at FROM guest_scans WHERE guest = ?", (guest,)).fetchall():
-        conn.execute("INSERT OR IGNORE INTO challenge_scans(customer_id, rule_id, step, scanned_at) VALUES (?, ?, ?, ?)",
-                     (cid, r["rule_id"], r["step"], r["scanned_at"]))
-    conn.execute("UPDATE guest_finishes SET customer_id = ? WHERE guest = ? AND customer_id IS NULL", (cid, guest))
+def merge_guest(conn, guest, cid, rule_id=None):
+    """A phone's progress onto the student's account (they signed in, or staff claimed it). Each scan moves
+    once, and never a hunt that's been claimed or moved onto someone else's account already. The caller commits."""
+    only = " AND rule_id = ?" if rule_id is not None else ""
+    args = (guest,) + ((rule_id,) if rule_id is not None else ())
+    gone = {r[0] for r in conn.execute(f"SELECT rule_id FROM guest_finishes WHERE guest = ?{only} "
+                                       "AND (claimed_at IS NOT NULL OR (customer_id IS NOT NULL AND customer_id != ?))",
+                                       args + (cid,))}
+    for r in conn.execute(f"SELECT rule_id, step_code, scanned_at FROM guest_scans WHERE guest = ?{only} AND customer_id IS NULL",
+                          args).fetchall():
+        if r["rule_id"] in gone:
+            continue
+        conn.execute("INSERT OR IGNORE INTO challenge_scans(customer_id, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?)",
+                     (cid, r["rule_id"], r["step_code"], r["scanned_at"]))
+        conn.execute("UPDATE guest_scans SET customer_id = ? WHERE guest = ? AND rule_id = ? AND step_code = ?",
+                     (cid, guest, r["rule_id"], r["step_code"]))
+    conn.execute(f"UPDATE guest_finishes SET customer_id = ? WHERE guest = ?{only} AND customer_id IS NULL AND claimed_at IS NULL",
+                 (cid,) + args)
     return award(conn, cid)
+
+
+def _day(ts):
+    from .web import local
+    return local(ts, "%a %-d %b")
 
 
 def claim(conn, code, cid, staff_name):
     """Staff typed a claim code on a student's page: the phone's progress is theirs, and so is the
     prize, handed over now. Returns (ok, message). The caller commits."""
+    from . import rules
     code = re.sub(r"[^A-Za-z0-9]", "", code or "").upper()
     fin = conn.execute("SELECT f.*, r.name FROM guest_finishes f LEFT JOIN rules r ON r.id = f.rule_id WHERE f.claim = ?",
                        (code,)).fetchone()
@@ -357,13 +405,26 @@ def claim(conn, code, cid, staff_name):
         return False, f"{code} was already claimed."
     if fin["customer_id"] and fin["customer_id"] != cid:
         return False, f"{code} belongs to someone else's account."
-    merge_guest(conn, fin["guest"], cid)
-    prize = conn.execute("SELECT * FROM prizes WHERE customer_id = ? AND rule_id = ?", (cid, fin["rule_id"])).fetchone()
+    who = conn.execute("SELECT archived_at, merged_into FROM customers WHERE id = ?", (cid,)).fetchone()
+    if who is None or who["merged_into"] or who["archived_at"]:
+        return False, "This account is archived. Claim it on their current account."
+    prize = _won(conn, cid, fin["rule_id"])
+    if prize is not None and (prize["given_at"] or not prize["text"]):
+        return False, f"{fin['name']}: already given on {_day(prize['given_at'] or prize['won_at'])}."
     if prize is None:
-        return False, f"That doesn't finish {fin['name']} for them yet."
+        # Check the phone's finds finish it for them before moving anything onto their account.
+        rule = next((r for r in rules.active(conn, "challenge") if r["id"] == fin["rule_id"]), None)
+        found = _guest_steps(conn, fin["guest"], fin["rule_id"])
+        ticks = done_steps(conn, cid, rule) if rule else []
+        if not rule or not all(t or (s.get("scan") and s.get("code") in found) for s, t in zip(rule["steps"], ticks)):
+            return False, f"That doesn't finish {fin['name'] or 'that hunt'} for them yet."
+        merge_guest(conn, fin["guest"], cid, fin["rule_id"])
+        prize = _won(conn, cid, fin["rule_id"])
+        if prize is None:
+            return False, f"That doesn't finish {fin['name']} for them yet."
     conn.execute("UPDATE guest_finishes SET customer_id = ?, claimed_at = ?, claimed_by = ? WHERE id = ?",
                  (cid, now_iso(), staff_name, fin["id"]))
-    if prize["text"] and not prize["given_at"]:
+    if prize["text"]:
         conn.execute("UPDATE prizes SET given_at = ?, given_by = ? WHERE id = ?", (now_iso(), staff_name, prize["id"]))
     audit(conn, staff_name, "prize_claimed", cid, f"{fin['name']} ({code})")
     what = prize["text"] or f"{prize['points']:,} points"
