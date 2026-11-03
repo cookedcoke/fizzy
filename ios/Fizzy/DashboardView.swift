@@ -192,12 +192,10 @@ struct DashboardView: View {
         let s = d.sales
         Section("Top items") {
             ForEach(s.top_today.array, id: \.self) { Line(left: $0.name.string, right: "\($0.qty.int) sold") }
-            // and line 221:
-            ForEach(s.top_week.array, id: \.self) { Line(left: $0.name.string, right: "\($0.qty.int) sold") }
             if s.top_today.array.isEmpty { Text("Nothing yet today.").foregroundStyle(.secondary) }
         }
         Section("Top items · last 7 school days") {
-            ForEach(s.top_week.array, id: \.self) { Line(left: $0.name.string, right: "\($0.qty.int)") }
+            ForEach(s.top_week.array, id: \.self) { Line(left: $0.name.string, right: "\($0.qty.int) sold") }
             if s.top_week.array.isEmpty { Text("Nothing yet.").foregroundStyle(.secondary) }
         }
         Section("Latest sales") {
