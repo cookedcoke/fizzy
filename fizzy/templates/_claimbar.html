@@ -1,0 +1,21 @@
+{# Claim sale presses: waiting for Square to send a sale, or just finished. Drawn here for the first
+   paint; app.js (claimBar) keeps it up to date from /api/claim-waits with the same markup. #}
+<div class="claimbar" id="claimbar" role="status" aria-live="polite"{% if not claim_waits %} hidden{% endif %}>
+{%- for w in claim_waits %}
+  <div class="cw {{ w.status }}" data-id="{{ w.id }}" data-status="{{ w.status }}">
+  {%- if w.status == 'waiting' %}
+    <span class="spin" aria-hidden="true"></span>
+    <span class="t">Waiting for Square to send <b>{{ w.name }}</b>'s sale</span>
+    <form class="inline" method="post" action="/claim-waits/{{ w.id }}/cancel"><button class="sm" title="Stop waiting: the sale won't go to {{ w.first }}">Undo</button></form>
+  {%- elif w.status == 'claimed' %}
+    <span class="t"><b>{{ w.name }}</b>'s sale is in: {{ w.amounts }}.</span>
+    <a class="btn sm" href="/customers/{{ w.customer_id }}">View</a>
+    <button type="button" class="sm x" aria-label="Hide this">&times;</button>
+  {%- else %}
+    <span class="t">No sale came in for <b>{{ w.name }}</b>.</span>
+    <a class="btn sm" href="/customers/{{ w.customer_id }}/claim">Pick a sale</a>
+    <button type="button" class="sm x" aria-label="Hide this">&times;</button>
+  {%- endif %}
+  </div>
+{%- endfor %}
+</div>

@@ -25,7 +25,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
 from . import ask, badges, display, jobs, passkeys, pwa, rules, transactions, updater
-from .web import HERE, LoginRequired, back, cents, get_conn, is_phone, local, money, render, session_gen, staff, take, templates, wants_json
+from .web import (HERE, LoginRequired, back, cents, claim_bar, get_conn, is_phone, local, money, render, sale_amounts, sale_time,
+                  session_gen, staff, take, templates, wants_json)
 
 log = logging.getLogger("fizzy")
 
@@ -66,10 +67,17 @@ def _poller():
         try:
             # The last sync *or failed attempt*: a failing sync waits a full poll interval before
             # retrying instead of re-reading Square every minute.
-            last = max(db.get_setting(conn, "square_last_sync") or "", db.get_setting(conn, "square_last_attempt") or "")
+            # Light syncs (the Claim sale watcher) don't count: they skip the customer list.
+            last = max(db.get_setting(conn, "square_full_sync") or "", db.get_setting(conn, "square_last_attempt") or "")
             due = not last or datetime.now(timezone.utc) - logic.parse_ts(last) >= timedelta(seconds=config.SQUARE_POLL_SECONDS)
             if config.SQUARE_TOKEN and due:
                 square.sync(conn)
+            # Claim sale presses: expire old ones even with Square down, and watch any still waiting
+            # (e.g. after a restart, when no press has started the watcher).
+            square.claim_waiting(conn)
+            conn.commit()
+            if square.any_waiting(conn):
+                watch_claims()
             events.reconcile(conn)
             conn.commit()
             swept = db.get_setting(conn, "badges_swept_at")
@@ -103,12 +111,19 @@ def _poller():
 
 _sync_thread = None
 _sync_again = threading.Event()
+CLAIM_SYNC_WAIT = 3  # seconds the Claim sale button waits for Square before it settles for waiting
 
 
-def trigger_sync():
+_sync_full_again = threading.Event()
+
+
+def trigger_sync(light=False):
     """A webhook arrived: sync now. One thread at a time; a webhook during a sync means one more
-    pass straight after it, so nothing waits for the next poll."""
+    pass straight after it, so nothing waits for the next poll. light=True (Claim sale) only fetches
+    new sales (see square.sync), so it's quick."""
     global _sync_thread
+    if not light:
+        _sync_full_again.set()
     _sync_again.set()
     if _sync_thread is not None and _sync_thread.is_alive():
         return
@@ -117,11 +132,53 @@ def trigger_sync():
         try:
             while _sync_again.is_set():
                 _sync_again.clear()
-                square.sync(conn)
+                full = _sync_full_again.is_set()
+                _sync_full_again.clear()
+                square.sync(conn, light=not full)
         finally:
             conn.close()
     _sync_thread = threading.Thread(target=run, daemon=True)
     _sync_thread.start()
+
+
+CLAIM_WATCH_SECONDS = 5
+_watch_thread = None
+_watch_lock = threading.Lock()
+
+
+def watch_claims():
+    """While a Claim sale press is waiting, ask Square for new sales every few seconds (the webhook
+    may be slow or missing), and give each press its sale as soon as it's in. One thread; it stops
+    when nothing is waiting."""
+    global _watch_thread
+    with _watch_lock:
+        if _watch_thread is not None and _watch_thread.is_alive():
+            return
+        def run():
+            global _watch_thread
+            conn = db.connect()
+            try:
+                while not _stop.is_set():
+                    with _watch_lock:  # decided under the lock, so a press made right now is never missed
+                        if not square.any_waiting(conn):
+                            _watch_thread = None
+                            return
+                    try:
+                        if config.SQUARE_TOKEN:
+                            square.sync(conn, light=True)  # only new sales; matches presses itself; queued if one is running
+                        square.claim_waiting(conn)  # expiry, and in case the sync was queued or failed
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        log.exception("claim watcher failed")
+                    _stop.wait(CLAIM_WATCH_SECONDS)
+            finally:
+                conn.close()
+                with _watch_lock:
+                    if _watch_thread is threading.current_thread():
+                        _watch_thread = None
+        _watch_thread = threading.Thread(target=run, daemon=True, name="claim-watch")
+        _watch_thread.start()
 
 
 @asynccontextmanager
@@ -859,8 +916,9 @@ def register(app):
             result = square.sync(conn, wait=8)  # fetch the sale that was just taken, if the webhook hasn't
             if "error" in result:
                 note = square.describe_sync(result)
-        return render(request, "claim.html", c=c, checkouts=square.unclaimed(conn), note=note, st=logic.tab_status(conn, c),
-                      hours=square.CLAIM_HOURS, square_on=bool(config.SQUARE_TOKEN))
+        found = square.unclaimed(conn, limit=square.PICK_SHOWN + 1)  # one extra, to know there are more
+        return render(request, "claim.html", c=c, checkouts=found[:square.PICK_SHOWN], more=len(found) > square.PICK_SHOWN,
+                      note=note, st=logic.tab_status(conn, c), hours=square.CLAIM_HOURS, square_on=bool(config.SQUARE_TOKEN))
 
     def checkout_json(k, st):
         return {"key": k["key"], "at": local(k["at"], "%H:%M"), "at_iso": k["at"],
@@ -875,9 +933,89 @@ def register(app):
         """For the "new sale - claim it?" prompt on a customer's page: unclaimed sales that came in
         after `since` (when the page was opened, less a little slack), newest first."""
         c = load_customer(conn, cid)
+        if square.any_waiting(conn):  # a Claim sale press is waiting for its sale: that decides whose it is
+            return JSONResponse([], headers={"Cache-Control": "no-store"})
         st = logic.tab_status(conn, c)
         out = [checkout_json(k, st) for k in square.unclaimed(conn, limit=3) if not since or k["at"] > since]
         return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+    @app.post("/customers/{cid:int}/claim/next")
+    def claim_next(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
+        """The Claim sale button: the sale rung up in Square in the 30 seconds before the press
+        (square.claim_next). If it isn't in yet, the bar at the top of every page shows the wait."""
+        pressed = datetime.now(timezone.utc)  # the press counts from the tap, not from when Square answers below
+        c = load_customer(conn, cid)
+        page, first = f"/customers/{cid}", c["name"].split(" ")[0]
+
+        def fail(msg):
+            if wants_json(request):
+                return JSONResponse({"error": msg}, status_code=400, headers={"Cache-Control": "no-store"})
+            return back(request, page, msg, "bad")
+
+        if not config.SQUARE_TOKEN:
+            return fail("Square isn't connected, so there's nothing to claim.")
+        if c["archived_at"] or c["merged_into"]:
+            return fail(f"{c['name']} is archived, so sales can't be claimed for them.")
+        st = logic.tab_status(conn, c)
+        # Until it's written, other requests and the watcher count this press as one that owns nothing
+        # yet, so a later tap that reaches claim_next first can't take this one's sale.
+        with square.pressing(pressed) as token:
+            trigger_sync(light=True)  # a sale just taken may not be in yet: ask Square, but only wait a moment
+            if _sync_thread is not None:
+                _sync_thread.join(CLAIM_SYNC_WAIT)
+            try:
+                what, got = square.claim_next(conn, c, who, now=pressed, press=token)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        if what.endswith("waiting") and request.app.state.background:
+            watch_claims()
+        if what == "still waiting":  # pressed again while their press waits: nothing new
+            if wants_json(request):
+                return JSONResponse({"waiting": waiting_json(got, c), "already": True}, headers={"Cache-Control": "no-store"})
+            return back(request, page, f"Already waiting for {first}'s sale.")
+        if what == "already":  # a second press (or a double tap) for a sale they've already got
+            if wants_json(request):
+                return JSONResponse({"claimed": checkout_json(got, st), "already": True}, headers={"Cache-Control": "no-store"})
+            return back(request, page, f"{first} already has the {sale_time(got['at'])} sale ({sale_amounts(got)}), so nothing "
+                                       "more was claimed. For another sale, use Pick a sale.")
+        if what == "claimed":
+            if wants_json(request):
+                return JSONResponse({"claimed": checkout_json(got, st)}, headers={"Cache-Control": "no-store"})
+            msg = f"Claimed the {sale_time(got['at'])} sale for {first} ({sale_amounts(got)})."
+            if checkout_json(got, st)["tab_warning"]:
+                msg += f" It's more than {first} can put on a tab, so it'll be flagged."
+            return back(request, page, msg)
+        if wants_json(request):
+            return JSONResponse({"waiting": waiting_json(got, c)}, headers={"Cache-Control": "no-store"})
+        return back(request, page, f"Waiting for {first}'s sale. It'll link as soon as Square sends it.")
+
+    def waiting_json(w, c):
+        return {"id": w["id"], "customer_id": c["id"], "name": c["name"], "pressed_at": w["pressed_at"], "wait_until": w["wait_until"]}
+
+    @app.post("/claim-waits/{wid:int}/cancel")
+    def claim_wait_cancel(request: Request, wid: int, who=Depends(staff), conn=Depends(get_conn)):
+        """Undo on the bar: stop a Claim sale press that's still waiting. Never unclaims a sale."""
+        row = conn.execute("SELECT customer_id FROM claim_waits WHERE id = ?", (wid,)).fetchone()
+        to = _same_site_referer(request) or (f"/customers/{row['customer_id']}" if row else "/")
+        try:
+            w = square.cancel_wait(conn, wid, who)
+            conn.commit()
+        except ValueError as e:
+            conn.rollback()
+            if wants_json(request):
+                return JSONResponse({"error": str(e)}, status_code=409, headers={"Cache-Control": "no-store"})
+            return back(request, to, str(e), "bad")
+        name = conn.execute("SELECT name FROM customers WHERE id = ?", (w["customer_id"],)).fetchone()["name"]
+        if wants_json(request):
+            return JSONResponse({"cancelled": wid}, headers={"Cache-Control": "no-store"})
+        return back(request, to, f"Stopped waiting for {name.split(' ')[0]}'s sale.")
+
+    @app.get("/api/claim-waits")
+    def api_claim_waits(who=Depends(staff), conn=Depends(get_conn)):
+        """The bar at the top of every page: Claim sale presses waiting, and ones just finished."""
+        return JSONResponse({"waits": claim_bar(conn)}, headers={"Cache-Control": "no-store"})
 
     # ---- for the iOS app. Every staff page also answers with its data as JSON when asked (see
     # web.render); these two are what the sign-in screen needs.
@@ -898,6 +1036,7 @@ def register(app):
             square.claim(conn, key, c, who)
         except ValueError as e:
             return back(request, f"/customers/{cid}/claim", str(e), "bad")
+        square.claim_waiting_safely(conn)  # a Claim sale press waiting for this sale is done now
         conn.commit()
         return back(request, f"/customers/{cid}", f"Sale claimed for {c['name']}.")
 
@@ -1072,6 +1211,7 @@ def register(app):
             square.assign_customer(conn, pid, c, who)
         except (tools.ToolError, ValueError) as e:
             return back(request, request.headers.get("referer") or "/square", str(e), "bad")
+        square.claim_waiting_safely(conn)  # a Claim sale press waiting for this sale is done now
         conn.commit()
         return back(request, request.headers.get("referer") or "/square", f"Assigned to {c['name']}.")
 

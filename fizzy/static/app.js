@@ -253,7 +253,7 @@
   // On a customer's page: admin and test accounts change the level (the server works this out for names typed into tools).
   function needFor(method, url, data) {
     var n = need(method, url, data), path = new URL(url, location.href).pathname;
-    if (n === undefined || !lockCust || !lockCust.kind || path.indexOf("/customers/" + lockCust.id + "/") !== 0 || /\/(claim|kind)$/.test(path)) return n;
+    if (n === undefined || !lockCust || !lockCust.kind || path.indexOf("/customers/" + lockCust.id + "/") !== 0 || /\/(claim|claim\/next|kind)$/.test(path)) return n;
     if (lockCust.kind === "test") return lockCust.levels[0];
     return Math.max(n, lockCust.levels[n]);
   }
@@ -419,6 +419,7 @@
     };
     var showSale = function (sales) {
       var skip = dismissed(), fresh = sales.filter(function (s) { return skip.indexOf(s.key) < 0; });
+      if (!sales.length && !cp.hidden) document.dispatchEvent(new CustomEvent("fizzy:claim-check"));  // maybe a press is waiting: the bar says so
       if (!fresh.length) { hide(); return; }
       var s = fresh[0];
       if (s.key === shownKey) return;
@@ -444,6 +445,24 @@
     listen($(".cp-no", cp), "click", function () { dismiss(cp.elements.key.value); });
     poll();
     every(poll, 3000);
+  }
+
+  // ---- a button that mustn't go twice (Claim sale): a double tap sends it once ----------------------
+  // Turbo doesn't stop a second submit while the first is on its way, and Claim sale takes a moment (it
+  // asks Square first). Once the request has gone the button is disabled; it comes back only if the
+  // answer wasn't a success (e.g. a passcode was needed), since a success replaces the page.
+  function onceForm(f) {
+    var busy = false, by = null;
+    listen(f, "submit", function (e) { if (busy) e.preventDefault(); });
+    listen(f, "turbo:submit-start", function (e) {
+      busy = true; by = e.detail.formSubmission.submitter || $("button", f);
+      if (by) { by.disabled = true; by.setAttribute("aria-busy", "true"); }
+    });
+    listen(f, "turbo:submit-end", function (e) {
+      if (e.detail.success) return;
+      busy = false;
+      if (by) { by.disabled = false; by.removeAttribute("aria-busy"); }
+    });
   }
 
   // ---- passcode reveal (customer page): fetched only when asked for; the server logs each look ----
@@ -570,6 +589,68 @@
     check();
   }
 
+  // ---- Claim sale presses (every page): waiting for a sale, or just finished ----------------------
+  // The bar under the header (_claimbar.html). The server draws it with the page; while there's anything
+  // in it, this asks /api/claim-waits every 2 seconds, then stops once it's empty. A finished line goes
+  // by itself after a minute, or at once with its x.
+  function claimBar(bar) {
+    var hideKey = "fizzy-claim-hidden", gone = false, sig = "", poller = null;
+    later(function () { gone = true; });
+    function hidden() { try { return JSON.parse(sessionStorage.getItem(hideKey) || "[]"); } catch (e) { return []; } }
+    function hide(id) {
+      try { var h = hidden(); h.push(id); sessionStorage.setItem(hideKey, JSON.stringify(h.slice(-50))); } catch (e) { /* private mode */ }
+    }
+    function line(w) {
+      var name = "<b>" + esc(w.name) + "</b>", x = '<button type="button" class="sm x" aria-label="Hide this">&times;</button>', inner;
+      if (w.status === "waiting") {
+        inner = '<span class="spin" aria-hidden="true"></span><span class="t">Waiting for Square to send ' + name + "'s sale</span>" +
+          '<form class="inline" method="post" action="/claim-waits/' + Number(w.id) + '/cancel"><button class="sm" title="Stop waiting: the sale won\'t go to ' +
+          esc(w.first) + '">Undo</button></form>';
+      } else if (w.status === "claimed") {
+        inner = '<span class="t">' + name + "'s sale is in: " + esc(w.amounts) + '.</span><a class="btn sm" href="/customers/' + Number(w.customer_id) + '">View</a>' + x;
+      } else {
+        inner = '<span class="t">No sale came in for ' + name + '.</span><a class="btn sm" href="/customers/' + Number(w.customer_id) + '/claim">Pick a sale</a>' + x;
+      }
+      return '<div class="cw ' + esc(w.status) + '" data-id="' + Number(w.id) + '" data-status="' + esc(w.status) + '">' + inner + "</div>";
+    }
+    function lines() { return $$(".cw", bar); }
+    function signature() { return lines().map(function (l) { return l.dataset.id + ":" + l.dataset.status; }).join(","); }
+    function show(d) {
+      var skip = hidden(), waits = (d.waits || []).filter(function (w) { return w.status === "waiting" || skip.indexOf(w.id) < 0; });
+      var now = waits.map(function (w) { return w.id + ":" + w.status; }).join(",");
+      if (now !== sig) {  // only redrawn when something changed, so an Undo being pressed isn't swept away
+        sig = now; bar.innerHTML = waits.map(line).join("");
+      }
+      bar.hidden = !waits.length;
+      if (waits.length) start(); else stop();
+    }
+    function poll() {
+      if (document.visibilityState !== "visible") return;
+      fetch("/api/claim-waits", { credentials: "same-origin", cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { if (d && !gone) show(d); }).catch(function () {});
+    }
+    function stop() { if (poller !== null) { clearInterval(poller); poller = null; } }
+    function start() { if (poller === null) poller = every(poll, 2000); }
+    // Nothing in the bar: look now and then anyway, so a press made on another till shows up here
+    // (and at once when this page's "New sale" box goes away because of one).
+    every(function () { if (poller === null) poll(); }, 10000);
+    listen(document, "fizzy:claim-check", function () { if (poller === null) poll(); });
+    listen(bar, "click", function (e) {
+      var b = e.target.closest(".x"), el = b && b.closest(".cw");
+      if (!el) return;
+      hide(Number(el.dataset.id)); el.remove();
+      sig = signature();
+      if (!lines().length) { bar.hidden = true; stop(); }
+    });
+    // As drawn by the server: leave out lines already hidden here.
+    var skip = hidden();
+    lines().forEach(function (el) { if (el.dataset.status !== "waiting" && skip.indexOf(Number(el.dataset.id)) >= 0) el.remove(); });
+    sig = signature();
+    bar.hidden = !lines().length;
+    if (lines().length) start();
+  }
+
   // ---- landing on a section -------------------------------------------------------------------
   // A redirect to /settings#pin (or /tools#merge...) followed by Turbo loses the # part, so Fizzy
   // sends it as <body data-jump="pin"> instead (see back() in web.py). A <details> there is opened:
@@ -603,6 +684,7 @@
 
     $$("input[data-search]").forEach(bindSearch);
     var cp = $("#claim-prompt"); if (cp) claimPrompt(cp);
+    $$("form[data-once]").forEach(onceForm);
     $$("[data-reveal]").forEach(revealButton);
     $$("[data-qr-login]").forEach(qrButton);
     // "i" tips: open towards whichever side has room
@@ -615,6 +697,7 @@
     var auto = $("[data-autorefresh]"); if (auto) autoRefresh(auto);
     later(unprerender);
     var jb = $("#jobbar"); if (jb) jobBar(jb);
+    var cb = $("#claimbar"); if (cb) claimBar(cb);
     // Customer display: tell the screen facing the queue what to show (on Auto, who's being served).
     // Straight to it, no server in between: the Mac app's bridge, or a BroadcastChannel when it's a
     // second browser window. The header's Display menu shows this device's choice.

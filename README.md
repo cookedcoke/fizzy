@@ -35,18 +35,35 @@ their tab?*
 1. In Fizzy: type their name in the search box and pick them. Their page shows points, tab and rewards.
 2. On the Square Terminal, ring it up **without adding a customer** (with the Fizzy Tab
    discount or the Tab repayment item if needed) and take payment.
-3. Back in Fizzy, press **Claim sale**. The newest sale with no customer is at the top:
-   click it to give it to them (or an earlier one below it). Points, tab charges and
-   repayments land straight away.
+3. **Then** press **Claim sale** on their page. Fizzy gives them the sale rung up in Square in the
+   **30 seconds before** the press. Points, tab charges and repayments land straight away.
 
-**Even quicker:** if their page is already open when you take the payment, a *New sale* box
-pops up within a few seconds: **Claim** gives it to them, **Not theirs** dismisses it. (It
-only offers sales from about the time the page was opened, never older ones, and never
-claims anything without a click.)
+Always ring it up first, then press. Pressing first links nothing (use **Pick a sale** for that).
 
-Fizzy asks Square for the latest sales when you open **Claim sale**, so there's no waiting. If a tab sale
-is more than they're allowed, the claim page says so before you claim it. Forget to claim?
-Nothing breaks: the sale waits on the **Square** page to be assigned later.
+You don't have to wait on their page. If Square hasn't sent the sale yet, a bar under the header on
+every page says *Waiting for Square to send Mia Patel's sale*. Serve the next person: Mia's sale
+links as soon as Square sends it (Fizzy keeps watching for 3 minutes), then the bar says *Mia
+Patel's sale is in: $4.50 paid*, or *No sale came in for Mia Patel* with a **Pick a sale** link.
+Pressed it by mistake? **Undo** on the bar stops the wait. (A sale it already linked stays linked; fix
+that on the Square page.) Pressing again while it's waiting does nothing new. A second purchase works:
+ring it up, then press again. But once a press has finished, pressing again is a new press: it takes
+the next sale rung up in the 30 seconds before it, even the next person's. So press once.
+
+Each sale goes to the first press in the 30 seconds after it was rung up, by Square's times, so it
+doesn't matter what order or how late Square sends sales. The one thing it can't sort out: a sale
+nobody pressed for (say, someone not in Fizzy) rung up in the same 30 seconds as Mia's, that Square
+sends before hers. Mia's press takes it (the newest in), so fix that on the Square page.
+
+**Pick a sale** (next to Claim sale) lists the latest sales from the last 6 hours with no customer,
+newest first: click one to give it to them. Use it when the button missed one (older ones are on the
+**Square** page). If a tab sale is more than they're allowed, the list says so before you claim it.
+
+**Or let it pop up:** if their page is open when you take the payment, a *New sale* box pops up
+within a few seconds: **Claim** gives it to them, **Not theirs** dismisses it. (It only offers sales
+from about the time the page was opened, never older ones, never claims anything without a click,
+and stays away while a Claim sale press is waiting for anyone, so the two never argue.)
+
+Forget to claim? Nothing breaks: the sale waits on the **Square** page to be assigned later.
 
 **Or attach the customer in Square** (the steps below), and Fizzy picks it up by itself.
 
@@ -359,7 +376,8 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 | **Dashboard** | Search; noticeboard; warnings (Square not connected, tabs paused). **Today's sales:** sold, taken, orders and average, customers, put on tabs and repaid; sold by hour against the same day last week; the last 7 school days; top items; latest sales. It refreshes itself every minute while nobody's touching it. **Tabs:** totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers; people waiting for tab approval |
 | **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend; record repayment; tab limit (pick a band or set a score adjustment, turn the tab off or on); tab score with every line explained; adjust points; tab charges with due dates and status; repayments; points history; Square payments; tab history; activity log; edit (name, Square ID, archive) |
 | **Customers** | Search with a results table; download the Square import CSV |
-| **Claim sale** (button on a customer) | The latest Square sales with no customer; click one to give it to this customer |
+| **Claim sale** (button on a customer) | Gives this customer the Square sale rung up in the 30 seconds before the press, or waits for Square to send it (the bar under the header, with Undo) |
+| **Pick a sale** (button on a customer) | The latest Square sales with no customer; click one to give it to this customer |
 | **Rewards** | Start and end reward events; see how many were redeemed |
 | **Square** | Connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer |
 | **Tools** | Occasional jobs (next section) |
@@ -399,7 +417,7 @@ The pages are kept to labels and buttons. What they used to explain:
 - **Restocks and payouts.** Restocks take the cost of the whole lot ($18 for 24 Cokes); profit uses the cost of one. Payouts split evenly between whoever's ticked; change the amounts to what people actually got.
 - **Profit.** Clear a cost to remove it; under 20% margin shows red. Renaming an item in Square keeps its cost. Revenue counts discounts such as rewards, counts tab sales at full price, and doesn't take refunds off.
 - **Square profiles not linked.** Profiles with the same email as someone already in Fizzy are probably doubles: merge them in Square (Customers, select both, Merge), or assign their sales on the Square page.
-- **Claiming sales.** Lists sales with nobody on them, newest first. Picked the wrong one? Fix it on the Square page.
+- **Claiming sales.** Ring the sale up first, then press Claim sale: it takes the sale from the 30 seconds before the press (the newest, if there are two), as soon as Square sends it. A sale goes to the first press after it, so pressing for the next person never takes the last one's. Pick a sale lists the latest sales with nobody on them, newest first. Picked the wrong one? Fix it on the Square page.
 - **History import.** Safe to run again. Takes a minute or two for a lot of history; Fizzy keeps working meanwhile.
 - **Directory import.** Needs a name column (`Cleaned Name` or `Name`) and `Email`; everything else is ignored. Adds new students and fixes names, never deletes anyone.
 - **Backups.** `fizzy.db` has students' names and emails in it, so keep downloads private.
@@ -1117,6 +1135,33 @@ scripts in `<head>` from page to page; only `<body>` is swapped. So:
   before Turbo, since any page can show points, tabs or who's on the counter that changed elsewhere.
 - A control that sends its form as soon as it changes keeps the saved value in `data-was`; if the
   passcode box for that form is cancelled, `app.js` puts it back.
+
+**Claim sale for the iOS app.** `POST /customers/{id}/claim/next` with `X-Fizzy-Format: json` answers
+`{"claimed": {...}}` (the same fields as a sale in `GET /customers/{id}/claim`; with `"already": true` when
+the customer already had a sale from then, given another way, and nothing new was claimed), `{"waiting":
+{"id", "customer_id", "name", "pressed_at", "wait_until"}}` (with `"already": true` when their press was
+already waiting), or `{"error": "..."}` (400). `POST /claim-waits/{id}/cancel` is Undo (`{"cancelled": id}`,
+or 409 when it already finished), and `GET /api/claim-waits` is what the bar shows. Presses live in the
+`claim_waits` table; `square.claim_waiting` matches waiting ones at the end of every sync, and a watcher
+thread in `app.py` syncs every 5 seconds while any are waiting. Those syncs (and the one a press starts)
+are light: only new payments, orders and refunds, no customer or item list unless a sale comes from a
+Square profile Fizzy doesn't know, and no order is fetched for a payment Fizzy already has. The poller's
+full sync goes by `square_full_sync`, so light ones don't put it off.
+
+How presses and sales are matched (see the top of the claim section of `square.py`): a sale rung up at t
+(`first_at`, its first payment) belongs to the first press with t <= `pressed_at` <= t + 30 s, and no
+other press can have it. Presses are the `claim_waits` rows that aren't cancelled: one claimed at once
+keeps its row (`done_by` "at once", left out of the bar) and an expired one still counts, so a later
+press never takes their sales. So does a press whose request is still waiting on Square
+(`square.pressing`, held by `app.py` until the row is committed), so a later tap whose request gets
+written first can't take its sale. Times are compared to the millisecond, Square's own from the raw
+JSON (`_rung_at`), since `created_at` is whole seconds. `claim_next` (given the tap's time by `app.py`, taken before it waits for
+Square) adds the press and claims the newest sale in Fizzy that belongs to it, or leaves it waiting up to
+`CLAIM_GRACE` (180 s); `claim_waiting` does the same for every waiting press after each sync. A checkout
+paid in several goes isn't matched while its order lists a payment not yet in, or its payments (with tips)
+come to less than the order's total (`_all_in`). Since ownership only depends on Square's times and the
+press times, the owners come out the same whatever order or delay sales arrive with
+(`test_every_arrival_order_gives_the_same_owners`), except for the stray sale in the counter section.
 
 ---
 

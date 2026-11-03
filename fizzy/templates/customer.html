@@ -48,8 +48,12 @@
   <div class="actions" style="margin:0">
   <button type="button" data-qr-login="/customers/{{ c.id }}/qr-login"
      title="A QR code on the customer display that signs {{ c.name.split(' ')[0] }} in to the student site. Works once, for a minute.">Sign-in code</button>
-  <a class="btn primary" href="/customers/{{ c.id }}/claim"
-     title="Give {{ c.name.split(' ')[0] }} the sale you just rang up">Claim sale</a>
+  <a class="btn" href="/customers/{{ c.id }}/claim"
+     title="Choose from the latest sales with no customer">Pick a sale</a>
+  {% if not c.archived_at %}
+  <form class="inline" method="post" action="/customers/{{ c.id }}/claim/next" data-once><button class="primary"
+     title="Links the sale you rang up in the last 30 seconds">Claim sale</button></form>
+  {% endif %}
   </div>
 </div>
 

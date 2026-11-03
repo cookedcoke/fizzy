@@ -297,6 +297,22 @@ CREATE TABLE IF NOT EXISTS points_rules (
     stopped_at TEXT
 );
 
+-- Each "Claim sale" press (square.claim_next). It owns the sales rung up in the 30 seconds before
+-- pressed_at that no earlier press owns (by their Square time, not when they reached Fizzy). A waiting
+-- one gets its sale from square.claim_waiting; one claimed at once is kept too (done_by 'at once'), and
+-- an expired one still counts, so later presses don't take their sales. A cancelled one (Undo) doesn't.
+CREATE TABLE IF NOT EXISTS claim_waits (
+    id INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    staff TEXT,
+    pressed_at TEXT,
+    wait_until TEXT,                         -- after this it's given up on (Square sends sales late)
+    status TEXT NOT NULL DEFAULT 'waiting',  -- waiting | claimed | cancelled | expired
+    checkout_key TEXT,                       -- the sale it claimed (square._checkout_key)
+    done_at TEXT,
+    done_by TEXT                             -- who cancelled it, or 'at once'
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);
@@ -304,6 +320,7 @@ CREATE INDEX IF NOT EXISTS ix_repay_customer ON tab_repayments(customer_id);
 CREATE INDEX IF NOT EXISTS ix_points_customer ON points_ledger(customer_id);
 CREATE INDEX IF NOT EXISTS ix_sqpay_customer ON square_payments(customer_id);
 CREATE INDEX IF NOT EXISTS ix_audit_customer ON audit_log(customer_id);
+CREATE INDEX IF NOT EXISTS ix_claim_waits_status ON claim_waits(status, done_at);
 """
 
 DEFAULT_SETTINGS = {

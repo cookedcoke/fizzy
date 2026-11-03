@@ -41,7 +41,7 @@ def local(ts, fmt="%a %-d %b %H:%M"):
 ACTION_LABELS = {
     "update_requested": "Asked for an update", "maintenance": "Maintenance mode",
     "admin_pin": "Changed the PIN", "archive": "Archived", "assign_customer": "Said whose sale it was",
-    "breach_ack": "Dismissed a warning", "customer_add": "Added a customer", "customer_edit": "Edited a customer",
+    "breach_ack": "Dismissed a warning", "claim_wait": "Claim sale button", "customer_add": "Added a customer", "customer_edit": "Edited a customer",
     "customer_kind": "Changed account type", "device_link": "Made a device link", "device_revoked": "Removed a device",
     "download_backup": "Downloaded a backup", "export": "Exported", "export_square_csv": "Exported for Square",
     "extend_due": "Gave more time to pay", "import": "Imported the school list", "item_costs": "Changed item costs",
@@ -72,6 +72,27 @@ templates.env.filters["local"] = local
 templates.env.filters["ymd"] = lambda d, fmt="%a %-d %b": datetime.strptime(d, "%Y-%m-%d").strftime(fmt) if d else ""
 templates.env.globals["STATUS_LABELS"] = logic.STATUS_LABELS
 templates.env.globals["TZ"] = config.TZ.key
+
+
+def sale_amounts(k):
+    """A checkout's money in words: "$4.50 paid, $3.00 on tab"."""
+    parts = [(k["sale_cents"], "paid"), (k["tab_cents"], "on tab"), (k["repay_cents"], "repaid")]
+    return ", ".join(f"{money(c)} {what}" for c, what in parts if c)
+
+
+def sale_time(ts):
+    return local(ts, "%-I:%M %p").lower()
+
+
+def claim_bar(conn, now=None):
+    """The Claim sale presses for the bar at the top of every staff page (see square.recent_waits)."""
+    from . import square
+    out = []
+    for w in square.recent_waits(conn, now):
+        sale = w.pop("sale")
+        out.append({**w, "first": w["name"].split(" ")[0], "amounts": sale_amounts(sale) if sale else "",
+                    "sale_at": sale_time(sale["at"]) if sale else ""})
+    return out
 
 
 class LoginRequired(Exception):
@@ -185,6 +206,8 @@ def render(request, name, **ctx):
             ctx["lock_rules"] = pin.rules(conn, request.session.get("staff"))
             ctx["unlocked"] = pin.unlocked(request, conn)
             ctx["unlocked_until"] = (request.session.get("unlock") or {}).get("until", 0)
+            if not wants_json(request):  # the app asks /api/claim-waits itself
+                ctx.setdefault("claim_waits", claim_bar(conn))
         finally:
             conn.close()
     if wants_json(request):

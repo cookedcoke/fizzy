@@ -139,6 +139,7 @@
 <main>
 {% if flash %}<div class="flash {{ flash_kind }}" role="status">{{ flash }}</div>{% endif %}
 {% if staff %}<div class="jobbar" id="jobbar" hidden role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span class="t"></span><button type="button" class="sm" hidden>OK</button></div>{% endif %}
+{% if staff and claim_waits is defined %}{% include "_claimbar.html" %}{% endif %}
 {% block body %}{% endblock %}
 </main>
 {% if display_msg %}<script type="application/json" id="display-msg">{{ display_msg|tojson }}</script>{% endif %}

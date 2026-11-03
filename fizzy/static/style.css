@@ -727,6 +727,19 @@ header .clock.squeezed { display: none !important }
   background: var(--surface); padding: 8px var(--s3); margin-bottom: var(--s4) }
 .jobbar .t { flex: 1 } .jobbar.ok { border-left-color: var(--ok); background: var(--ok-wash) } .jobbar.bad { border-left-color: var(--red); background: var(--red-wash) }
 .jobbar.ok .spin, .jobbar.bad .spin { display: none }
+/* Claim sale presses waiting for a sale, or just finished (_claimbar.html): one line each */
+.claimbar { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s4) }
+.claimbar[hidden] { display: none }
+.claimbar .cw { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) 10px; min-width: 0; border: 1px solid var(--line);
+  border-left: 4px solid var(--warn-mark); border-radius: var(--r-card); background: var(--surface); padding: 6px var(--s3) }
+.claimbar .cw .t { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere }
+.claimbar .cw.claimed { border-color: var(--ok-line); border-left-color: var(--ok); background: var(--ok-wash) }
+.claimbar .cw.expired { border-color: var(--warn-line); border-left-color: var(--warn-mark); background: var(--warn-wash) }
+.claimbar .cw .x { width: 28px; padding: 0; font-size: 16px; line-height: 1 }
+.claimbar .cw form { margin: 0 }
+.claimbar:not([hidden]) .cw { animation: rise .2s var(--ease) }
+@media (prefers-reduced-motion: reduce) { .claimbar .cw { animation: none !important } }
+html.morphed .claimbar .cw { animation: none }
 .spin { width: 14px; height: 14px; border: 2px solid var(--line-strong); border-top-color: var(--ink); border-radius: 50%; animation: spin .8s linear infinite; flex: none }
 @keyframes spin { to { transform: rotate(360deg) } }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s } }

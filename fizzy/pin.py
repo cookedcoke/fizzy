@@ -44,7 +44,8 @@ LOCKED = [r"^/settings/(pin|permissions|maintenance|update|ask)$", r"^/settings/
 # (id, label, [(method, path)], default level). First match wins, so specific ones go first.
 ACTIONS = [
     ("claim", "Claim Square sales, and say whose sale it was",
-     [("POST", r"^/customers/\d+/claim$"), ("POST", r"^/square/payments/[^/]+/assign$")], "open"),
+     [("POST", r"^/customers/\d+/claim$"), ("POST", r"^/customers/\d+/claim/next$"), ("POST", r"^/claim-waits/\d+/cancel$"),
+      ("POST", r"^/square/payments/[^/]+/assign$")], "open"),
     ("sync", "Sync with Square, refresh the catalogue",
      [("POST", r"^/square/sync$"), ("POST", r"^/tools/sync_now$"), ("POST", r"^/profit/refresh$")], "open"),
     ("warnings", "Dismiss warnings, back up now", [("POST", r"^/breach/"), ("POST", r"^/settings/backup$")], "open"),
@@ -215,7 +216,7 @@ def required(conn, method, path, form=None, staff=None):
             # old unclaimed sales would pad someone's tab score, so those need the PIN too.
             # Moving a sale that already belongs to someone isn't claiming: it takes from them.
             level = max(level, LEVELS[perms["square_kind"]])
-    if form is not None and not re.search(r"^/customers/\d+/claim$", path):
+    if form is not None and not re.search(r"^/customers/\d+/claim(/next)?$", path):
         kinds, complete = _targets(conn, path, form)
         if "admin" in kinds:
             level = max(level, LEVELS[perms["admin_accounts"]])

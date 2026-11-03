@@ -2,7 +2,7 @@
 {% block body %}
 <div class="pagehead">
   <div><h1>Claim a sale for {{ c.name }}</h1>
-    <div class="meta">Last {{ hours }} hours, no customer</div></div>
+    <div class="meta">The latest sales with no customer, from the last {{ hours }} hours</div></div>
   <a class="btn" href="/customers/{{ c.id }}" title="Back to {{ c.name }}">Back</a>
 </div>
 {% if note %}<div class="err">{{ note }} Showing what Fizzy already has.</div>{% endif %}
@@ -23,6 +23,7 @@
   </button>
   {% endfor %}
 </form>
+{% if more %}<p class="meta">Only the latest {{ checkouts|length }} are here. Older ones are on the <a href="/square?show=unlinked">Square page</a>.</p>{% endif %}
 {% else %}
 <div class="panel"><p class="empty">No unclaimed sales from the last {{ hours }} hours.
   {% if square_on %}If you just took it, give Square a moment, then <a href="/customers/{{ c.id }}/claim">check again</a>.
