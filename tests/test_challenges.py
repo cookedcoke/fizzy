@@ -177,3 +177,19 @@ def test_signing_in_moves_the_phones_progress(client):
     assert me["cards"][0]["progress"] == {"done": 1, "total": 2}
     client.post("/me/scan", data={"code": "PPUCH7QEGB"}, headers=J)
     assert client.get("/me", headers=J).json()["cards"][0]["done"]
+
+
+def test_link_host_serves_apples_file_and_poster_codes(client, monkeypatch):
+    login(client)
+    client.post("/challenges", data={"name": "Market Day", "stops": POSTERS, "prize_text": "A free drink"})
+    client.post("/logout")
+    monkeypatch.setattr(config, "LINK_HOST", "link.cookedcoke.co")
+    aasa = client.get("/.well-known/apple-app-site-association", headers={"host": "link.cookedcoke.co"}).json()
+    assert aasa["appclips"]["apps"] == ["9MQ6DTJYXF.co.cookedcoke.student.Clip"]
+    assert aasa["applinks"]["details"][0]["appIDs"] == ["9MQ6DTJYXF.co.cookedcoke.student"]
+    r = client.get("/XP6RCECMRQ", headers={"host": "link.cookedcoke.co"})                     # a poster, opened in Safari
+    assert "1 of 2 found" in r.text
+    r = client.get("/PPUCH7QEGB", headers={"host": "link.cookedcoke.co", **J}).json()        # the App Clip
+    assert r["ok"] and r["cards"][0]["claim"] and "claim code" in r["message"]
+    page = client.get("/tools", headers={"host": "link.cookedcoke.co"}, follow_redirects=False)   # never a staff page
+    assert "Tools" not in page.text

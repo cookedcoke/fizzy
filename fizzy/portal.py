@@ -617,6 +617,8 @@ def scan_link(request: Request, code: str, conn=Depends(get_conn)):
     request.session["guest"] = guest
     ok, msg, rule = challenges.guest_scan(conn, guest, code[:60])
     conn.commit()
+    if wants_json(request):   # the My CCC App Clip
+        return _json({"ok": ok, "message": msg, "cards": challenges.guest_cards(conn, guest)})
     return _page(request, "me_hunt.html", note=msg, ok=ok, cards=challenges.guest_cards(conn, guest))
 
 
@@ -624,4 +626,7 @@ def scan_link(request: Request, code: str, conn=Depends(get_conn)):
 def hunt_page(request: Request, conn=Depends(get_conn)):
     """What this phone has found so far, without signing in."""
     guest = request.session.get("guest")
-    return _page(request, "me_hunt.html", note=None, ok=True, cards=challenges.guest_cards(conn, guest) if guest else [])
+    cards = challenges.guest_cards(conn, guest) if guest else []
+    if wants_json(request):
+        return _json({"ok": True, "cards": cards})
+    return _page(request, "me_hunt.html", note=None, ok=True, cards=cards)

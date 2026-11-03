@@ -85,6 +85,13 @@ final class StudentAPI {
         return try await answer(request).message.string
     }
 
+    /// A hunt code's link opened with no one signed in: the server keeps it against this phone.
+    func guestScan(_ link: URL) async throws -> String {
+        let (data, _) = try await session.data(from: link)
+        let body = (try? JSONDecoder().decode(J.self, from: data)) ?? .null
+        return body.message.optString ?? body.error.optString ?? "Couldn't read that code."
+    }
+
     func signOut() async {
         var request = URLRequest(url: url("/logout"))
         request.httpMethod = "POST"

@@ -285,14 +285,19 @@ struct CardSection: View {
                         Label(prize, systemImage: "gift.fill").font(.subheadline.bold()).foregroundStyle(.pink)
                     }
                 }
-            }
-            .padding(.vertical, 2)
-            if total > 1 && !done {
-                VStack(alignment: .leading, spacing: 4) {
-                    ProgressView(value: Double(have), total: Double(max(total, 1)))
-                    Text("\(have) of \(total) done").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                if total > 1 && !done {
+                    Spacer(minLength: 8)
+                    // How far along, beside the title rather than as a row of its own.
+                    Gauge(value: Double(have), in: 0...Double(total)) {
+                        EmptyView()
+                    } currentValueLabel: {
+                        Text("\(have)/\(total)").monospacedDigit()
+                    }
+                    .gaugeStyle(.accessoryCircularCapacity)
+                    .tint(.green)
                 }
             }
+            .padding(.vertical, 2)
             ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
