@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from . import badges, config, db, events, logic, portal, rewards, stats
-from .web import back, get_conn, local, money, staff, templates
+from .web import back, get_conn, local, money, render, staff, templates
 
 router = APIRouter()
 
@@ -42,6 +42,14 @@ def hidden_items(conn):
         return set()
 
 
+@router.get("/display/settings", response_class=HTMLResponse)
+def settings_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+    """The display's message, what's on its shelf, and whether it shows what people owe (header, Display, Edit message)."""
+    return render(request, "display_settings.html", display_message=db.get_setting(conn, "display_message", "") or "",
+                  display_owing=db.get_setting(conn, "display_owing", "1") == "1",
+                  display_menu=menu_items(conn), display_hidden=hidden_items(conn))
+
+
 @router.post("/settings/display")
 async def save_message(request: Request, who=Depends(staff), conn=Depends(get_conn)):
     import json
@@ -55,7 +63,7 @@ async def save_message(request: Request, who=Depends(staff), conn=Depends(get_co
     db.set_setting(conn, "display_owing", "1" if owing else "0")
     db.audit(conn, who, "settings", None, f"display message: {text}")
     conn.commit()
-    return back(request, "/settings#display", "Saved.")
+    return back(request, "/display/settings", "Saved.")
 
 
 @router.get("/api/display/idle")

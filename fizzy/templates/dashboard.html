@@ -1,10 +1,14 @@
 {% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% import "_tools.html" as tl with context %}
 {% block body %}
 {% include "_search.html" %}
 {% if unlinked_tabs %}<datalist id="people">{% for c in people %}<option value="{{ c.name }} <{{ c.email }}>">{% endfor %}</datalist>{% endif %}
 
-{% if notice %}<div class="notice">{{ notice }}<a class="small" href="/tools#notice">Edit</a></div>{% endif %}
-{% if tabs_paused %}<div class="err">All tabs are paused. <a href="/tools#pause_tabs">Turn back on</a></div>{% endif %}
+{% if notice %}<div class="notice">{{ notice }}<a class="small" href="#notice" data-open="notice">Edit</a></div>{% endif %}
+{# The noticeboard's form: opened by Add a note (or Edit). class "hold": the minute refresh waits while it's open. #}
+<details class="panel notebox hold" id="notice"><summary>Noticeboard <span class="muted small">· for the others, at the top of this page</span></summary>
+  {{ tl.form('notice', back='/', prefill={'button': 'Save note' if not notice else 'Save'}) }}</details>
+{% if tabs_paused %}<div class="err">All tabs are paused. <a href="/tabs#pause_tabs">Turn back on</a></div>{% endif %}
 {% if not square_on %}<div class="err">Square isn't connected yet, so points and tabs won't update by themselves. Ask the owner.</div>
 {% elif sync_error %}<div class="err">Last Square sync failed: {{ sync_error }}</div>{% endif %}
 {% if not backup[0] %}<div class="err">{{ backup[1] }}</div>{% endif %}
@@ -19,9 +23,10 @@
   · <a href="/rewards">Manage</a></div>{% endif %}
 {% set t = sales.today %}<span hidden data-autorefresh="60"></span>
 <div class="pagehead"><div><h1>Today</h1><div class="meta">{{ t.day.strftime('%A %-d %B') }}</div></div>
-  <div class="actions" style="margin:0"><a class="btn" href="/money" title="Restocks and payouts">Money</a>
+  <div class="actions" style="margin:0"><button type="button" data-open="notice" title="Leave a note at the top of this page for the others">{{ 'Edit note' if notice else 'Add a note' }}</button>
+    <a class="btn" href="/money" title="Restocks and payouts">Money</a>
     <a class="btn" href="/profit" title="Profit and item costs">Profit</a>
-    <a class="btn" href="/tools#takings" title="What came in over any dates">Takings report</a></div></div>
+    <a class="btn" href="/transactions#takings" title="What came in over any dates">Takings report</a></div></div>
 {% if closed %}{% set l = closed.last %}
 <div class="panel closed-day"><h2>{{ closed.reason }}, so the stall's closed today</h2>
   <p class="big">Opens {{ 'tomorrow' if closed.next_in == 1 else closed.next.strftime('%A') if closed.next_in < 7 else closed.next.strftime('%A %-d %B') }}{% if closed.next_in > 1 %} <span class="muted">· in {{ closed.next_in }} days</span>{% endif %}</p>
@@ -117,6 +122,13 @@
   </div>
 </div>
 <div class="col">
+  {# Fizz (Ask): a small chat. The minute refresh leaves it alone while a question is being typed or answered (app.js). #}
+  <section class="panel askpanel" id="ask" data-ask-chat="box">
+    <h2>Fizz <a class="aside" href="/ask" data-turbo="false" title="The same chat, full screen">Full screen</a>
+      {% if chat.timeline and not chat.pending %}<form class="inline aside" method="post" action="/ask/clear"><input type="hidden" name="back" value="/">
+        <button class="sm" data-confirm="Clear this chat?">New chat</button></form>{% endif %}</h2>
+    {% set chat_back = "/" %}{% include "_chat.html" %}
+  </section>
   <div class="panel"><h2>Top items</h2>
     <div class="scroll"><table>
       <tr><th>Today</th><th class="n">Sold</th></tr>

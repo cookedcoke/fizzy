@@ -1,0 +1,8 @@
+{#- Two pages shown as one, with a switch at the top: Sales (Transactions, Square) and Money (Money, Profit).
+    Each keeps its own address; the header tab is on for both. -#}
+{% macro bar(label, items) -%}
+{% set p = request.url.path %}
+<nav class="subtabs" aria-label="{{ label }}">{% for href, text in items %}<a href="{{ href }}" class="{{ 'on' if p == href }}"{% if p == href %} aria-current="page"{% endif %}>{{ text }}</a>{% endfor %}</nav>
+{%- endmacro %}
+{% macro sales() %}{{ bar('Sales', [('/transactions', 'Sales'), ('/square', 'Square')]) }}{% endmacro %}
+{% macro money() %}{{ bar('Money', [('/money', 'Money'), ('/profit', 'Profit')]) }}{% endmacro %}

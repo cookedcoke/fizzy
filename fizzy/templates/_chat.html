@@ -1,0 +1,40 @@
+{#- The Fizz chat (Ask, in the code): the dashboard's box, or full screen on /ask. Needs `chat` (ask.chat) and `chat_back`, the
+    page to come back to after Do it or New chat. app.js (askChat) sends questions and draws the answers. -#}
+{% set backf %}{% if chat_back %}<input type="hidden" name="back" value="{{ chat_back }}">{% endif %}{% endset %}
+{% if not chat.enabled %}
+<div class="notice">No Gemini key yet, so Fizz is off. Add one in <a href="/settings#ask">Settings</a>.</div>
+{% endif %}
+
+<div class="chat" id="chat" aria-live="polite"{% if chat.pending %} data-pending="{{ chat.pending.text }}"{% endif %}>
+  {% if not chat.timeline %}
+  <div class="chat-empty">
+    <div class="chips">{% for e in chat.examples %}<button type="button" class="chip" data-example>{{ e }}</button>{% endfor %}</div>
+  </div>
+  {% endif %}
+  {% for t in chat.timeline %}
+    {% if t.kind == 'msg' and t.role == 'user' %}<div class="bubble me">{{ t.text }}</div>
+    {% elif t.kind == 'msg' %}<div class="bubble them">{{ t.html }}</div>
+    {% else %}{% set p = t.p %}
+    <div class="proposal {{ p.status }}">
+      <span class="tag {{ 'approved' if p.status == 'done' else '' }}">{{ {'create_rule': 'New badge or event', 'update_rule': 'Change a rule', 'pause_rule': 'Pause a rule',
+        'resume_rule': 'Restart a rule', 'delete_rule': 'Delete a rule', 'double_points': 'Double points', 'reward': 'New reward',
+        'display_message': 'Display message'}.get(p.action, p.action) }}</span>
+      <b class="summary">{{ p.summary }}</b>
+      {% if p.action in ('create_rule', 'update_rule') %}<details><summary>The rule</summary><pre class="mono small">{{ (p.payload|fromjson).rule|noicon|tojson(indent=2) }}</pre></details>{% endif %}
+      {% if p.status == 'pending' %}
+      <div class="actions">
+        <form class="inline" method="post" action="/ask/apply/{{ p.id }}">{{ backf }}<button class="primary">Do it</button></form>
+        <form class="inline" method="post" action="/ask/dismiss/{{ p.id }}" data-inplace>{{ backf }}<button>No thanks</button></form>
+      </div>
+      {% else %}<div class="small muted">{{ 'Done' if p.status == 'done' else 'Not done' }}{% if p.done_at %} · {{ p.done_at|local }}{% endif %}</div>{% endif %}
+    </div>
+    {% endif %}
+  {% endfor %}
+  <div id="end"></div>
+</div>
+
+<form class="ask-box" method="post" action="/ask" data-ask>{{ backf }}
+  <textarea name="text" rows="1" placeholder="Ask Fizz anything about the stall…" required {{ 'disabled' if not chat.enabled }} enterkeyhint="send"
+    aria-label="Your question"></textarea>
+  <button class="primary" {{ 'disabled' if not chat.enabled }} aria-label="Send">Send</button>
+</form>

@@ -1,5 +1,7 @@
 {% extends "base.html" %}{% block title %}Money{% endblock %}
+{% import "_subtabs.html" as sub with context %}
 {% block body %}
+{{ sub.money() }}
 <div class="pagehead"><div><h1>Money</h1>
   <div class="meta">{{ start.strftime('%-d %b %Y') }} to {{ end.strftime('%-d %b %Y') }}</div></div>
   <form class="actions period" method="get" action="/money" style="margin:0">

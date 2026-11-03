@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}{{ title }}{% endblock %}
 {% block body %}
-<div class="pagehead"><div><div class="meta noprint"><a href="/tools">Tools</a> /</div><h1>{{ title }}</h1>{% if note %}<div class="meta">{{ note }}</div>{% endif %}</div>
+<div class="pagehead"><div><div class="meta noprint"><a href="{{ crumb[0] if crumb else '/tools' }}">{{ crumb[1] if crumb else 'Tools' }}</a> /</div><h1>{{ title }}</h1>{% if note %}<div class="meta">{{ note }}</div>{% endif %}</div>
   <button class="noprint" onclick="print()">Print</button></div>
 <div class="panel"><div class="scroll"><table>
   <tr>{% for h in headers %}<th class="{{ 'n' if numeric[loop.index0] }}">{{ h }}</th>{% endfor %}</tr>

@@ -608,20 +608,22 @@ def register(app):
 
     # ---- dashboard -----------------------------------------------------------------------
 
-    @app.get("/", response_class=HTMLResponse)
-    def dashboard(request: Request, who=Depends(staff), conn=Depends(get_conn)):
-        cfg = logic.settings(conn)
-        now = datetime.now(timezone.utc)
+    def tab_overview(conn, now=None):
+        """Who owes: totals, every overdue charge and every one due in the next 2 days (dashboard and Tabs)."""
+        now = now or datetime.now(timezone.utc)
         soon = now + timedelta(days=2)
         with_tab = conn.execute(
             "SELECT DISTINCT c.* FROM customers c JOIN tab_charges t ON t.customer_id = c.id WHERE c.kind IS NOT 'test'"
         ).fetchall()
         total_owed = total_overdue = 0
-        overdue, due_soon = [], []
+        overdue, due_soon, owing = [], [], []
         for c in with_tab:
             led = logic.tab_ledger(conn, c["id"], now)
             total_owed += led["owing_cents"]
             total_overdue += led["overdue_cents"]
+            if led["owing_cents"] > 0:
+                owing.append({"customer": c, "owing_cents": led["owing_cents"], "overdue_cents": led["overdue_cents"],
+                              "due_at": min((ch["due_at"] for ch in led["charges"] if ch["unpaid_cents"] > 0), default=None)})
             for ch in led["charges"]:
                 if ch["unpaid_cents"] <= 0:
                     continue
@@ -632,10 +634,19 @@ def register(app):
                     due_soon.append(row)
         overdue.sort(key=lambda r: r["charge"]["due_at"])
         due_soon.sort(key=lambda r: r["charge"]["due_at"])
-
+        owing.sort(key=lambda r: (-r["overdue_cents"], r["due_at"] or ""))
         tabs_off = conn.execute(
             "SELECT COUNT(*) FROM customers WHERE tab_decision IN ('rejected', 'revoked') AND archived_at IS NULL AND kind IS NOT 'test'"
         ).fetchone()[0]
+        return {"total_owed": total_owed, "total_overdue": total_overdue, "overdue": overdue, "due_soon": due_soon,
+                "owing": owing, "tabs_off": tabs_off}
+
+    @app.get("/", response_class=HTMLResponse)
+    def dashboard(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+        cfg = logic.settings(conn)
+        tv = tab_overview(conn)
+        total_owed, total_overdue, overdue, due_soon, tabs_off = (tv[k] for k in ("total_owed", "total_overdue", "overdue", "due_soon", "tabs_off"))
+
         top = conn.execute(
             "SELECT c.id, c.name, SUM(p.delta) AS points, SUM(p.spend_cents) AS spent FROM customers c "
             "JOIN points_ledger p ON p.customer_id = c.id WHERE c.archived_at IS NULL AND c.kind IS NOT 'test' "
@@ -658,7 +669,26 @@ def register(app):
             if unlinked_tabs else [],
             live_rewards=rewards.active(conn), events_on=events.on(conn), events_soon=events.upcoming(conn, 7),
             sales=(sales := stats.dashboard(conn)), backup=backup_health(conn), closed=_closed_today(conn, sales),
+            chat=ask.chat(conn, who, limit=40), tool_ctx=tools.form_ctx(conn),
         )
+
+    # ---- tabs ----------------------------------------------------------------------------
+
+    @app.get("/tabs", response_class=HTMLResponse)
+    def tabs_page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+        """Everything about tabs as a whole: who owes, the rules, and the tools for every tab at once."""
+        tv = tab_overview(conn)
+        waiting = conn.execute(
+            "SELECT COUNT(*) FROM customers WHERE tab_decision IS NULL AND archived_at IS NULL AND kind IS NOT 'test'").fetchone()[0]
+        return render(request, "tabs.html", **tv, cfg=logic.settings(conn), tabs_paused=logic.settings(conn)["tabs_paused"],
+                      tabs_on=waiting, tool_ctx=tools.form_ctx(conn))
+
+    # ---- sales: Transactions and Square, two sub-tabs of one page ------------------------
+
+    @app.get("/sales")
+    def sales_page(request: Request, who=Depends(staff)):
+        q = request.url.query
+        return RedirectResponse("/transactions" + (f"?{q}" if q else ""), status_code=303)
 
     def _closed_today(conn, sales):
         """When the stall isn't open today (a weekend or a day marked closed) and nothing's sold, the
@@ -824,7 +854,7 @@ def register(app):
     # ---- customers ----------------------------------------------------------------------
 
     @app.get("/customers", response_class=HTMLResponse)
-    def customer_list(request: Request, q: str = "", who=Depends(staff), conn=Depends(get_conn)):
+    def customer_list(request: Request, q: str = "", add: str = "", who=Depends(staff), conn=Depends(get_conn)):
         cfg = logic.settings(conn)
         if q:
             rows = customers.search(conn, q, 50)
@@ -839,8 +869,15 @@ def register(app):
         count = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL").fetchone()[0]
         not_in_square = conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL "
                                      "AND square_customer_id IS NULL AND kind IS NOT 'test'").fetchone()[0]
+        # Add customer, started from what was searched for (or a card scan with nobody on it): a student number
+        # fills in their school email, anything else the name.
+        start = " ".join((add or (q if q and not results else "")).split())[:120]
+        sid = start.lower() if re.fullmatch(r"(rns)?\d{8}", start.lower()) else ""
+        new_person = {"email": f"{sid if sid.startswith('rns') else 'rns' + sid}@{customers.SCHOOL_DOMAIN}"} if sid else (
+            {"name": start} if start else {})
         return render(request, "customers.html", q=q, results=results, count=count, not_in_square=not_in_square,
-                      can_reward=rewards.can_redeem_any(conn) if results else set())
+                      can_reward=rewards.can_redeem_any(conn) if results else set(), add=start, new_person=new_person,
+                      tool_ctx=tools.form_ctx(conn))
 
     @app.get("/api/index")
     def api_index(who=Depends(staff), conn=Depends(get_conn)):
@@ -857,7 +894,9 @@ def register(app):
         c = conn.execute("SELECT id FROM customers WHERE email LIKE ? ORDER BY archived_at IS NOT NULL LIMIT 1",
                          (sid.replace("%", "").replace("_", "") + "@%",)).fetchone() if re.fullmatch(r"rns\d{8}", sid) else None
         if c is None:
-            return back(request, "/", f"No one with student number {sid.upper()} yet. Add them on Tools, Add a customer.", "bad")
+            if not re.fullmatch(r"rns\d{8}", sid):
+                return back(request, "/", f"No one with student number {sid.upper()}.", "bad")
+            return back(request, f"/customers?add={sid}#add_customer", f"No one with student number {sid.upper()} yet. Add them here.", "bad")
         return RedirectResponse(f"/customers/{c['id']}", status_code=303)
 
     @app.get("/api/search")
@@ -905,7 +944,7 @@ def register(app):
                       offers=(offers := rewards.offers_for(conn, cid, s["points"])),
                       display_msg={"type": "show", "customer": display.payload(conn, c, s, offers)},
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
-                      passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None)
+                      passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None, tool_ctx=tools.form_ctx(conn))
 
     @app.get("/customers/{cid:int}/claim", response_class=HTMLResponse)
     def claim_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):
@@ -1141,7 +1180,10 @@ def register(app):
 
     @app.get("/import", response_class=HTMLResponse)
     def import_form(request: Request, who=Depends(staff)):
-        return render(request, "import.html", preview=None)
+        """The school list import lives on Customers now (its preview, step 2, is still import.html)."""
+        if wants_json(request):
+            return render(request, "import.html", preview=None)
+        return RedirectResponse("/customers#import", status_code=303)
 
     @app.post("/import", response_class=HTMLResponse)
     async def import_csv(request: Request, file: UploadFile, confirm: str = Form(""), who=Depends(staff),
@@ -1188,7 +1230,7 @@ def register(app):
             webhook_on=bool(config.SQUARE_WEBHOOK_KEY), people=people,
             item_errors=json.loads(db.get_setting(conn, "square_item_errors") or "[]"),
             conflicts=json.loads(db.get_setting(conn, "square_customer_conflicts") or "[]"),
-            unclaimed=len(square.unclaimed(conn, hours=24 * 7, limit=1000)),
+            unclaimed=len(square.unclaimed(conn, hours=24 * 7, limit=1000)), tool_ctx=tools.form_ctx(conn),
         )
 
     @app.get("/square/payments/{pid}", response_class=PlainTextResponse)
@@ -1281,25 +1323,26 @@ def register(app):
                       new_link=take(request, "new_device_link"),
                       link_minutes=devices.LINK_MINUTES,
                       last_backup=db.get_setting(conn, "last_backup"),
-                      last_backup_path=db.get_setting(conn, "last_backup_path"), backup_dir=config.BACKUP_DIR)
+                      last_backup_path=db.get_setting(conn, "last_backup_path"), backup_dir=config.BACKUP_DIR,
+                      tool_ctx=tools.form_ctx(conn))
 
     @app.post("/settings")
     def save_settings(request: Request, tab_limit: str = Form(...), due_days: int = Form(...),
                       min_score: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
         if not 1 <= due_days <= 365:
-            return back(request, "/settings", "Days to pay must be between 1 and 365.", "bad")
+            return back(request, "/tabs#rules", "Days to pay must be between 1 and 365.", "bad")
         try:
             minimum = int(min_score) if min_score.strip() else logic.settings(conn)["tab_min_score"]
         except ValueError:
             minimum = -1
         if not 0 <= minimum <= 100:
-            return back(request, "/settings", "The minimum tab score must be a whole number from 0 to 100.", "bad")
+            return back(request, "/tabs#rules", "The minimum tab score must be a whole number from 0 to 100.", "bad")
         new = {"tab_limit_cents": cents(tab_limit), "tab_due_days": due_days, "tab_min_score": minimum}
         for k, v in new.items():
             db.set_setting(conn, k, v)
         db.audit(conn, who, "settings", None, json.dumps(new))
         conn.commit()
-        return back(request, "/settings", "Saved.")
+        return back(request, "/tabs#rules", "Saved.")
 
     @app.post("/settings/terms")
     def save_terms(request: Request, terms: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):

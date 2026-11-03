@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse
 from markupsafe import Markup, escape
 
 from . import config, db, events, rewards, rules, stats
-from .web import back, get_conn, money, render, staff
+from .web import back, get_conn, money, render, safe_back, staff
 
 router = APIRouter()
 
@@ -315,7 +315,7 @@ def _call(contents, system, tools=True):
     except httpx.HTTPError as e:
         raise AskError(f"Couldn't reach Gemini ({e.__class__.__name__}). Try again.")
     if r.status_code in (400, 401, 403) and "key" in r.text.lower():
-        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Ask. (Google said: {r.text[:200]})")
+        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Fizz. (Google said: {r.text[:200]})")
     if r.status_code == 429:
         raise AskError("Gemini says too many requests right now. Wait a minute and try again.")
     if r.status_code >= 400:
@@ -372,7 +372,7 @@ def _stream(contents, system, tools=True):
 
 def _raise_for(status, text):
     if status in (400, 401, 403) and "key" in text.lower():
-        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Ask. (Google said: {text[:200]})")
+        raise AskError(f"Gemini didn't accept the API key. Check it in Settings, Fizz. (Google said: {text[:200]})")
     if status == 429:
         raise AskError("Gemini says too many requests right now. Wait a minute and try again.")
     raise AskError(f"Gemini returned an error ({status}): {text[:300]}")
@@ -415,7 +415,7 @@ def steps(conn, who, text, stream=True, stop=lambda: False):
     ("delta", next bit of the answer), ("reset", None) when a draft turns into lookups, and
     finally ("done", whole answer). Everything is saved as it goes."""
     if not enabled():
-        raise AskError("Ask isn't set up: add a Gemini API key in Settings, Ask.")
+        raise AskError("Fizz isn't set up: add a Gemini API key in Settings, Fizz.")
     text = text.strip()[:4000]
     if not text:
         raise AskError("Type a question first.")
@@ -497,7 +497,7 @@ def apply(conn, pid, who):
                        payload.get("limit"), who)
     elif a == "display_message":
         db.set_setting(conn, "display_message", " ".join(payload["text"].split())[:120])
-        db.audit(conn, who, "settings", None, f"display message (via Ask): {payload['text'][:120]}")
+        db.audit(conn, who, "settings", None, f"display message (via Fizz): {payload['text'][:120]}")
     conn.execute("UPDATE ask_proposals SET status = 'done', done_at = ? WHERE id = ?", (db.now_iso(), pid))
     if a in ("create_rule", "update_rule", "resume_rule"):
         _pay_everyone(conn)
@@ -540,8 +540,15 @@ def md(text):
     return Markup(html)
 
 
-@router.get("/ask", response_class=HTMLResponse)
-def page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+EXAMPLES = ["How did each item sell this month compared to last month?",
+            "Which day of the week is slowest, and what sells then?",
+            "Make a badge for buying 20 Chi Forest and 10 milk teas in a term, worth 500 points",
+            "Every 5th noodles a student buys gets 100 bonus points",
+            "Who hasn't bought anything in two weeks but used to come every week?"]
+
+
+def chat(conn, who, limit=80):
+    """This person's conversation, for the chat box (the dashboard's, or the full-screen /ask)."""
     pend = pending(who)   # before the messages: an answer finishing in between is then in the timeline, and joining it finds it done
     msgs = conn.execute("SELECT * FROM ask_messages WHERE staff = ? AND shown IS NOT NULL ORDER BY id DESC LIMIT 60", (who,)).fetchall()
     props = conn.execute("SELECT * FROM ask_proposals WHERE staff = ? ORDER BY id DESC LIMIT 30", (who,)).fetchall()
@@ -549,24 +556,34 @@ def page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
                  "html": md(m["shown"]) if m["role"] == "model" else None, "text": m["shown"]} for m in msgs]
     timeline += [{"at": p["created_at"], "n": (1, p["id"]), "kind": "proposal", "p": p} for p in props]
     timeline.sort(key=lambda t: (t["at"], t["n"]))  # oldest first; a card after the words on the same second
-    return render(request, "ask.html", timeline=timeline[-80:], enabled=enabled(), model=model(), pending=pend,
-                  examples=["How did each item sell this month compared to last month?",
-                            "Which day of the week is slowest, and what sells then?",
-                            "Make a badge for buying 20 Chi Forest and 10 milk teas in a term, worth 500 points",
-                            "Every 5th noodles a student buys gets 100 bonus points",
-                            "Who hasn't bought anything in two weeks but used to come every week?"])
+    return {"timeline": timeline[-limit:], "enabled": enabled(), "model": model(), "pending": pend, "examples": EXAMPLES}
+
+
+def _done(request, back_to, msg=None, kind="ok"):
+    """Back to the chat it was sent from: the dashboard's box (a normal Turbo page, so #ask is kept as
+    data-jump) or the full-screen /ask (always a full load: the browser keeps #end itself)."""
+    to = safe_back(back_to)
+    if to and to != "/ask":
+        return back(request, f"{to}#ask", msg, kind)
+    return back(request, "/ask#end", msg, kind, jump=False)
+
+
+@router.get("/ask", response_class=HTMLResponse)
+def page(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+    """Full screen. The everyday way in is the chat box on the dashboard."""
+    return render(request, "ask.html", **chat(conn, who))
 
 
 @router.post("/ask")
-def send(request: Request, text: str = Form(""), who=Depends(staff), conn=Depends(get_conn)):
+def send(request: Request, text: str = Form(""), back_to: str = Form("", alias="back"), who=Depends(staff), conn=Depends(get_conn)):
     """The plain form (no script): waits for the whole answer."""
     if pending(who):
-        return back(request, "/ask#end", "Still answering your last question. Wait for it, then ask again.", "bad", jump=False)
+        return _done(request, back_to, "Still answering your last question. Wait for it, then ask again.", "bad")
     try:
         ask(conn, who, text)
     except AskError as e:
-        return back(request, "/ask#end", str(e), "bad", jump=False)
-    return back(request, "/ask#end", jump=False)
+        return _done(request, back_to, str(e), "bad")
+    return _done(request, back_to)
 
 
 # ---- answering in the background ------------------------------------------------------------------------
@@ -712,33 +729,35 @@ def _sse(obj):
 
 
 @router.post("/ask/clear")
-def clear(request: Request, who=Depends(staff), conn=Depends(get_conn)):
+def clear(request: Request, back_to: str = Form("", alias="back"), who=Depends(staff), conn=Depends(get_conn)):
     """A clean slate: the words and the suggestion cards both go. What a card did (a rule, a reward, a
     double points day) stays, and the activity log still says who pressed Do it."""
+    to = safe_back(back_to)
+    to = f"{to}#ask" if to and to != "/ask" else "/ask"
     if pending(who):   # the answer would land in the new conversation
-        return back(request, "/ask", "Still answering your last question. Wait for it, then start a new chat.", "bad")
+        return back(request, to, "Still answering your last question. Wait for it, then start a new chat.", "bad")
     conn.execute("DELETE FROM ask_messages WHERE staff = ?", (who,))
     conn.execute("DELETE FROM ask_proposals WHERE staff = ?", (who,))
     conn.commit()
-    return back(request, "/ask", "Started a new conversation.")
+    return back(request, to, "Started a new conversation.")
 
 
 @router.post("/ask/apply/{pid:int}")
-def do_it(request: Request, pid: int, who=Depends(staff), conn=Depends(get_conn)):
+def do_it(request: Request, pid: int, back_to: str = Form("", alias="back"), who=Depends(staff), conn=Depends(get_conn)):
     try:
         summary = apply(conn, pid, who)
     except (AskError, rules.RuleError, KeyError, ValueError) as e:
         conn.rollback()
-        return back(request, "/ask#end", f"Couldn't do that: {e}", "bad", jump=False)
+        return _done(request, back_to, f"Couldn't do that: {e}", "bad")
     conn.commit()
-    return back(request, "/ask#end", f"Done: {summary}", jump=False)
+    return _done(request, back_to, f"Done: {summary}")
 
 
 @router.post("/ask/dismiss/{pid:int}")
-def dismiss(request: Request, pid: int, who=Depends(staff), conn=Depends(get_conn)):
+def dismiss(request: Request, pid: int, back_to: str = Form("", alias="back"), who=Depends(staff), conn=Depends(get_conn)):
     conn.execute("UPDATE ask_proposals SET status = 'dismissed' WHERE id = ? AND status = 'pending'", (pid,))
     conn.commit()
-    return back(request, "/ask#end", jump=False)
+    return _done(request, back_to)
 
 
 # ---- the key, from Settings ---------------------------------------------------------------------------------
@@ -751,7 +770,7 @@ def save_key(request: Request, key: str = Form(""), model_name: str = Form(""), 
         db.set_setting(conn, "gemini_key_enc", "")
         db.audit(conn, who, "settings", None, "Gemini key removed")
         conn.commit()
-        return back(request, "/settings#ask", "Key removed. Ask is off.")
+        return back(request, "/settings#ask", "Key removed. Fizz is off.")
     if key:
         if not re.fullmatch(r"[A-Za-z0-9_.\-]{20,300}", key):  # "AIza..." keys, and Google's newer "AQ." style
             return back(request, "/settings#ask", "That doesn't look like a Gemini API key. Copy it again from aistudio.google.com.", "bad")
@@ -763,7 +782,7 @@ def save_key(request: Request, key: str = Form(""), model_name: str = Form(""), 
     db.set_setting(conn, "gemini_model", m)
     db.audit(conn, who, "settings", None, "Gemini key saved" if key else f"Gemini model: {m or 'default'}")
     conn.commit()
-    return back(request, "/settings#ask", "Saved. Ask is on." if key else "Saved.")
+    return back(request, "/settings#ask", "Saved. Fizz is on." if key else "Saved.")
 
 
 # ---- managing rules by hand (Rewards page) ----------------------------------------------------------------

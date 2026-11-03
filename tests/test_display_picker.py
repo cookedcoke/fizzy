@@ -40,7 +40,7 @@ def test_every_staff_page_has_the_display_menu(client):
         sel = re.search(r"<select[^>]*>", box).group(0)
         assert "data-display-mode" in sel and 'aria-label="' in sel and 'autocomplete="off"' in sel, path
         assert "name=" not in sel, path                       # not part of any form: nothing is sent to Fizzy
-        assert re.findall(r'<option value="([a-z]+)"', box) == ["auto", "hello", "menu", "popular", "leaders", "soon", "rotate", "hide"]
+        assert re.findall(r'<option value="([a-z]+)"', box) == ["auto", "hello", "menu", "popular", "leaders", "soon", "rotate", "hide", "edit"]
         assert "selected" not in box, path                    # the device's own choice is set by app.js, never guessed here
         assert "Display" in box and "Hidden" in box and "Auto" in box
         assert header.index("data-clock") < header.index('class="dmode"') < header.index('action="/switch"')   # by the clock
@@ -59,7 +59,9 @@ def test_the_same_choices_everywhere():
     base = (ROOT / "fizzy/templates/base.html").read_text()
     assert _js_list(app, "DISPLAY_MODES") == MODES
     assert _js_list(disp, "MODES") == MODES
-    assert sorted(re.findall(r'<option value="([a-z]+)"', _picker(base))) == sorted(MODES)
+    # ...and last, Edit message, which isn't a mode: it opens the display's settings
+    assert sorted(re.findall(r'<option value="([a-z]+)"', _picker(base))) == sorted(MODES + ["edit"])
+    assert 'dsel.value === "edit"' in app and "/display/settings" in app
     # slide names: each held slide is one of the display's own
     slides = re.findall(r'class="slide" data-s="([a-z]+)"', disp)
     assert slides == MODES[3:]
@@ -86,7 +88,7 @@ def test_the_header_makes_room_for_it():
     fit = base.split("function fit() {", 1)[1].split("\n    }\n", 1)[0]
     steps = re.search(r"var steps = \[(.*?)\];", fit).group(1)
     assert re.findall(r'\[(\w+), "(\w+)"\]', steps) == [("dm", "tight"), ("h", "tight"), ("h", "fold"), ("clock", "squeezed"), ("dm", "squeezed")]
-    assert fit.index("var steps") < fit.index("more.hidden = false")
+    assert fit.index("var steps") < fit.index("menu.insertBefore")
     assert 'h.classList.remove("tight", "fold")' in fit       # undone each time: wider again shows it all again
     assert 'document.addEventListener("turbo:render", fit)' in base and 'document.removeEventListener("turbo:render", fit)' in base
     css = (ROOT / "fizzy/static/style.css").read_text()

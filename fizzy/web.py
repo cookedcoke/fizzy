@@ -156,7 +156,8 @@ def wants_json(request):
 
 
 # Never sent to the app, even though the templates get them: secrets, and big blobs no page shows.
-HIDDEN_KEYS = {"passcode_enc", "token_hash", "public_key", "credential_id", "raw_json", "lock_rules"}
+HIDDEN_KEYS = {"passcode_enc", "token_hash", "public_key", "credential_id", "raw_json", "lock_rules",
+               "tool_ctx"}   # what a page needs to draw tool forms (tools.form_ctx): the whole customer list
 # Anything named like a secret goes too, so a secret added to a page later isn't sent by accident.
 # ("key" on its own is an item or sale key, not a secret.)
 SECRET_NAME = re.compile(r"(^|_)(secret|token|password|passwd|hash|api_?key|private)($|_)|_enc$", re.I)
@@ -239,6 +240,18 @@ def back(request, url, msg=None, kind="ok", jump=True):
     else:
         request.session.pop("jump", None)
     return RedirectResponse(url, status_code=303)
+
+
+def safe_back(value):
+    """Where a form asks to be sent back to (its hidden "back" field): a path on this site, with its query,
+    or None. Never another site ("//evil", "https://...", "/\\evil"), and never a # part (the caller adds that)."""
+    v = (value or "").strip()
+    if not v or len(v) > 500 or not v.startswith("/") or v.startswith("//") or "\\" in v or re.search(r"[\x00-\x20]", v):
+        return None
+    parts = urlsplit(v)
+    if parts.scheme or parts.netloc:
+        return None
+    return parts.path + (f"?{parts.query}" if parts.query else "")
 
 
 MAX_DOLLARS = 10_000

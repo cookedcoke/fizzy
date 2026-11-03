@@ -1,4 +1,5 @@
 {% extends "base.html" %}{% block title %}{{ c.name }}{% endblock %}
+{% import "_tools.html" as tl with context %}
 {% block body %}
 <script type="application/json" id="lock-customer">{{ {"id": c.id, "kind": c.kind or "", "levels": kind_levels}|tojson }}</script>
 {% macro repay_form(boxed) %}
@@ -206,6 +207,12 @@
 <div class="col cust-side">
   {% if owing_panel %}{{ repay_form(true) }}{% endif %}
   {{ tab_form() }}
+  {# This person's tab by hand: the same tools as on Tools, already pointed at them. #}
+  {% set me = {'customer': c.name ~ ' <' ~ c.email ~ '>', 'customer_fixed': True, 'customer_name': c.name} %}
+  {% set here = '/customers/' ~ c.id %}
+  {% if not c.archived_at %}<section class="panel tools-here" id="tab-tools"><h2>Tab by hand</h2>
+    {{ tl.tool('manual_charge', back=here, prefill=me) }}{{ tl.tool('extend_due', back=here, prefill=me) }}{{ tl.tool('write_off', back=here, prefill=me) }}
+  </section>{% endif %}
   {% set sc = st.score %}
   <div class="panel score-panel" id="score"><h2>Tab score</h2>
     <div class="score-head">
@@ -219,6 +226,7 @@
       <div style="flex:2 1 180px"><label for="pt-note">Reason</label><input id="pt-note" type="text" name="note" placeholder="Required" required></div></div>
     <div class="actions"><button class="primary" title="Enter in either box also applies">Apply</button></div>
   </form>
+  {% if not c.archived_at %}{{ tl.datalist() }}<div class="panel tools-here" id="points-tools">{{ tl.tool('transfer_points', back=here, prefill={'from': c.name ~ ' <' ~ c.email ~ '>'}) }}</div>{% endif %}
 </div>
 </div>
 {% if not c.archived_at %}

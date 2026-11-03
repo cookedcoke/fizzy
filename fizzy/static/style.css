@@ -863,3 +863,41 @@ header .dmode.squeezed select option, header .dmode.squeezed select optgroup { c
 header .dmode.squeezed svg { position: absolute; left: 9px; top: 50%; margin-top: -8px; pointer-events: none; color: #E8EAED }
 header .dmode.squeezed.held svg { color: #FFC23D }
 header .dmode.held select:focus { border-color: #fff }
+
+/* ---- where things live: sub-tabs, tool rows on their own pages, the Tools index ---- */
+/* Sales (Transactions, Square) and Money (Money, Profit): one page each, with a switch at the top. */
+.subtabs { display: inline-flex; gap: 2px; padding: 3px; margin-bottom: var(--s4); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: var(--shadow-card) }
+.subtabs a { display: inline-flex; align-items: center; height: 30px; padding: 0 16px; border-radius: 6px; color: var(--muted);
+  text-decoration: none; font-weight: 600; font-size: 13.5px }
+.subtabs a:hover { color: var(--fg); background: var(--hover) }
+.subtabs a.on { background: var(--ink); color: var(--on-ink) }
+.subtabs a:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink) }
+/* Tool rows (_tools.html) on the page they belong to: the same rows as on Tools. */
+.tools-here { padding-bottom: var(--s2) }
+.tools-here > h2 + details.tool { border-top: none }
+.tools-here > .hint { margin: var(--s2) 0 var(--s1) }
+#add-box details.tool, #points-tools details.tool { border-top: none }
+#add-box, #points-tools { padding-top: 0; padding-bottom: 0 }
+.empty-add { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s4) }
+/* Tools: every action, narrowed by the box at the top */
+.find { width: 100%; height: 42px; font-size: 15px; margin-bottom: var(--s3) }
+.actions-index { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 2px var(--s4) }
+.actions-index li { display: flex; flex-direction: column; padding: 7px 0; border-top: 1px solid var(--line); min-width: 0 }
+.actions-index a { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); text-decoration: none }
+.actions-index a:hover b { text-decoration: underline }
+.actions-index .where { flex: none; color: var(--muted); font-size: 12px }
+/* Dashboard: the noticeboard's form (opened by Add a note) and the Ask box */
+.notebox:not([open]) { display: none }
+.notebox > summary { font-weight: 650; cursor: pointer; margin-bottom: var(--s2) }
+.askpanel > h2 { display: flex; align-items: center; gap: var(--s2) }
+.askpanel > h2 > a.aside { margin-left: auto; float: none }
+.askpanel > h2 > form.aside { margin: 0 }
+.askpanel .chat { max-height: 420px; overflow-y: auto; padding: 2px 2px var(--s2); overscroll-behavior: contain }
+.askpanel .bubble { max-width: 92% } .askpanel .bubble.them { max-width: 100% }
+.askpanel .proposal { width: 100% }
+.askpanel .ask-box { position: static; padding: var(--s2) 0 0; background: none }
+.askpanel .ask-box textarea { font-size: 14px }
+.askpanel .chat-empty .chip { font-size: 13px; padding: 8px 12px }
+.askpanel > .notice { margin-bottom: var(--s3) }
+@media (pointer: coarse) { .askpanel .ask-box textarea { font-size: 16px } }

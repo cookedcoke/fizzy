@@ -73,7 +73,7 @@ def test_forms_and_links_that_need_a_full_page_load(client):
     login(client)
     dash = client.get("/").text
     assert 'data-turbo="false"' in _tag(dash, r'action="/logout"')
-    assert 'data-turbo="false"' in _tag(dash, r'<a href="/ask"')
+    assert 'data-turbo="false"' in _tag(dash, r'href="/ask"')   # Ask full screen, from the dashboard's chat box
     login_page = client.get("/login").text
     assert 'data-turbo="false"' in _tag(login_page, r'action="/login"')
     assert 'data-turbo="false"' in _tag(login_page, r'action="/login/passkey"')
@@ -230,8 +230,11 @@ def test_nav_links_keep_their_order_for_the_more_menu(client):
     """Turbo's copy of a page has the overflow tabs inside the More menu already: the header script
     gathers them from both places, in their first order (data-i)."""
     login(client)
-    nav = client.get("/rewards").text.split("<nav>", 1)[1].split("</nav>", 1)[0]
-    assert re.findall(r'data-i="(\d+)"', nav) == [str(i) for i in range(12)]
+    header = client.get("/rewards").text.split("<header>", 1)[1].split("</header>", 1)[0]
+    nav = header.split("<nav>", 1)[1].split("</nav>", 1)[0]
+    menu = header.split('<div class="nav-menu">', 1)[1].split("</div>", 1)[0]
+    assert re.findall(r'data-i="(\d+)"', nav) == [str(i) for i in range(6)]
+    assert re.findall(r'data-i="(\d+)" data-fixed', menu) == ["6", "7", "8"]   # Settings, Log, Tools: always in More
     assert 'querySelectorAll("nav a, .nav-menu a")' in (ROOT / "templates" / "base.html").read_text()
 
 

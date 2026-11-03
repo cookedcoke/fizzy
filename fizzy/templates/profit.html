@@ -1,5 +1,7 @@
 {% extends "base.html" %}{% block title %}Profit{% endblock %}
+{% import "_subtabs.html" as sub with context %}
 {% block body %}
+{{ sub.money() }}
 <div class="pagehead"><div><h1>Profit</h1>
   <div class="meta">Type in what one of each thing costs us and Fizzy works out the rest.</div></div>
   <div class="actions" style="margin:0">{% for k, (l, _) in ranges.items() %}<a class="btn {{ 'primary' if k == range }}" href="/profit?range={{ k }}">{{ l }}</a>{% endfor %}</div>

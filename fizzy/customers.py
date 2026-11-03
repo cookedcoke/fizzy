@@ -6,6 +6,7 @@ import re
 from . import fuzzy
 from .db import audit, now_iso
 
+SCHOOL_DOMAIN = "reddamnorthshore.nsw.edu.au"
 EMAIL_RE = re.compile(r"^rns\d+@reddamnorthshore\.nsw\.edu\.au$")
 
 

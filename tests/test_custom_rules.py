@@ -184,7 +184,7 @@ def test_key_from_settings(client, owner, monkeypatch):
     login(client)
     assert "Enter the passcode" in client.post("/settings/ask", data={"key": "AIza" + "x" * 35}).text   # owner only
     _unlock(client, "owner-pw", 2)
-    assert "Ask is on" in client.post("/settings/ask", data={"key": "AIza" + "x" * 31 + "WXYZ"}).text
+    assert "Fizz is on" in client.post("/settings/ask", data={"key": "AIza" + "x" * 31 + "WXYZ"}).text
     assert ask.api_key().endswith("WXYZ") and ask.enabled()
     page = client.get("/settings").text
     assert "ends <code>WXYZ</code>" in page and "AIzaxxxx" not in page                                 # never shown back
@@ -192,7 +192,7 @@ def test_key_from_settings(client, owner, monkeypatch):
     assert "AIza" not in conn.execute("SELECT value FROM settings WHERE key = 'gemini_key_enc'").fetchone()[0]  # encrypted
     conn.close()
     assert "doesn" in client.post("/settings/ask", data={"key": "hello"}).text
-    assert "Ask is on" in client.post("/settings/ask", data={"key": "AQ.Ab8RN6" + "x" * 40}).text   # Google's newer style
+    assert "Fizz is on" in client.post("/settings/ask", data={"key": "AQ.Ab8RN6" + "x" * 40}).text   # Google's newer style
     client.post("/settings/ask", data={"remove": "1"})
     assert not ask.enabled()
 

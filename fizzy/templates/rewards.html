@@ -1,4 +1,5 @@
 {% extends "base.html" %}{% block title %}Rewards{% endblock %}
+{% import "_tools.html" as tl with context %}
 {% block body %}
 <div class="pagehead"><div><h1>Rewards</h1>
   </div></div>
@@ -16,7 +17,7 @@
         <td class="n">{{ r.used }}{% if r.used %}<br><span class="muted small">{{ r.people }} {{ 'person' if r.people == 1 else 'people' }}</span>{% endif %}</td>
         <td class="n"><form class="inline" method="post" action="/rewards/{{ r.id }}/end">
           <button class="sm danger" data-confirm="End “{{ r.name }}”? It stops showing on customer pages.">End</button></form></td></tr>{% endfor %}
-    </table></div>{% else %}<p class="empty">No rewards running. Start one with the form.</p>{% endif %}
+    </table></div>{% else %}<p class="empty">No rewards running. Start one under <a href="#new-reward" data-open="new-reward">Start a reward</a>.</p>{% endif %}
   </div>
   {% if rules %}<div class="panel"><h2>Every week <span class="count">{{ rules|length }}</span></h2>
     <div class="scroll"><table>{% for r in rules %}<tr><td><b>{{ r.name }}</b> <span class="muted">· ×{{ '%g'|format(r.multiplier) }}</span></td>
@@ -33,7 +34,7 @@
       <div class="actions" style="margin:0;flex:none">
         <form class="inline" method="post" action="/rules/{{ r.id }}/{{ 'resume' if r.paused else 'pause' }}"><button class="sm">{{ 'Restart' if r.paused else 'Pause' }}</button></form>
         <form class="inline" method="post" action="/rules/{{ r.id }}/delete"><button class="sm danger" data-confirm="Delete {{ r.name }}? Points already given stay.">Delete</button></form></div>
-    </div>{% else %}<p class="empty">None yet. Make one in <a href="/ask" data-turbo="false">Ask</a>.</p>{% endfor %}
+    </div>{% else %}<p class="empty">None yet. Make one with Fizz, on the <a href="/#ask">dashboard</a>.</p>{% endfor %}
   </div>
   {% if events %}<div class="panel" id="events"><h2>Double points days <span class="count">{{ events|length }}</span></h2>
     {% if events %}<div class="scroll"><table>
@@ -54,6 +55,32 @@
       <td class="small">{{ r.created_at|local('%-d %b') }} – {{ r.ended_at|local('%-d %b') }}</td><td class="n">{{ r.used }}{% if r.used %}<br><span class="muted small">{{ r.people }} {{ 'person' if r.people == 1 else 'people' }}</span>{% endif %}</td></tr>{% endfor %}
   </table></div></div>
   {% endif %}
+</div>
+<div class="col">
+  <form class="panel" id="new-reward" method="post" action="/rewards"><h2>Start a reward</h2>
+    <label>Name<input type="text" name="name" placeholder="e.g. Free Coke, $2 off" required></label>
+    <label>Points it costs<input type="number" name="points" min="1" max="1000000" step="1" placeholder="e.g. 1000" required></label>
+    <label>What to do in Square<input type="text" name="square_note" placeholder="e.g. Points: Free Coke discount"></label>
+    <label>Limit per customer <span class="muted">(optional)</span><input type="number" name="limit" min="1" max="1000" step="1" placeholder="No limit"></label>
+    {% if discord_on %}<label class="check"><input type="checkbox" name="announce" value="1" checked> Announce on Discord</label>{% endif %}
+    <div class="actions"><button class="primary">Start</button></div>
+  </form>
+  <form class="panel" id="new-event" method="post" action="/events"><h2>Schedule double points</h2>
+    <label>Name<input type="text" name="name" value="Double points" required></label>
+    <div class="row"><div><label for="ev-mult">Multiplier</label><input id="ev-mult" type="number" name="multiplier" value="2" min="1.1" max="5" step="0.1"></div>
+      <div><label for="ev-start">First day</label><input id="ev-start" type="date" name="start" value="{{ today }}" min="{{ today }}" required></div>
+      <div><label for="ev-end">Last day</label><input id="ev-end" type="date" name="end" min="{{ today }}" placeholder="Same day"></div></div>
+    <label class="check"><input type="checkbox" name="weekly" value="1"> Repeat every week (e.g. every Friday)</label>
+    {% if discord_on %}<label class="check"><input type="checkbox" name="announce" value="1" checked> Announce on Discord</label>{% endif %}
+    <div class="actions"><button class="primary">Schedule</button></div>
+  </form>
+  <section class="panel tools-here" id="more"><h2>More</h2>
+    {{ tl.tool('bonus_points', back='/rewards') }}{{ tl.tool('leaderboard', back='/rewards') }}{{ tl.tool('raffle', back='/rewards') }}
+    <details class="tool" id="points-export"><summary><span>Export points history</span>
+        <span class="tip" tabindex="0" data-tip="Every points change, as a spreadsheet." aria-label="Every points change, as a spreadsheet." onclick="event.preventDefault()">i</span></summary>
+      <div class="tool-body">{{ tl.exports(['points']) }}</div></details>
+    {{ tl.tool('reset_points', back='/rewards') }}
+  </section>
 </div>
 </div>
 {% endblock %}

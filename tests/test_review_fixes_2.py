@@ -251,10 +251,10 @@ def test_pick_display_menu_items(client, owner):
     _unlock(client, "owner-pw", 2)
     menu = client.get("/api/display/idle").json()["menu"]
     assert menu == [{"name": "Coke", "price": "$2.00"}, {"name": "Fanta", "price": "$3.00"}]   # no variations, nothing unpriced
-    assert 'value="i-Fanta" checked' in client.get("/settings").text
+    assert 'value="i-Fanta" checked' in client.get("/display/settings").text
     client.post("/settings/display", data={"message": "", "owing": "1", "menu": "1", "show": ["i-Coke"]})
     assert [m["name"] for m in client.get("/api/display/idle").json()["menu"]] == ["Coke"]
-    assert 'value="i-Fanta" >' in client.get("/settings").text                                 # unticked now
+    assert 'value="i-Fanta" >' in client.get("/display/settings").text                                 # unticked now
 
 
 @pytest.mark.badge_points

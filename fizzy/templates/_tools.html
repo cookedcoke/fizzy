@@ -1,0 +1,120 @@
+{#- Tool forms, drawn the same on Tools and on each tool's own page (README, "Where things live").
+    Import with context; the page needs tool_ctx (tools.form_ctx). Every form posts to /tools/<id>, so its
+    passcode level and handler are the same wherever it's drawn. back: the page to come back to afterwards
+    (a hidden field, checked by the server); prefill: values to start the boxes with ({"customer": "Name <email>"}
+    hides the customer box, for a customer's own page). -#}
+
+{% macro datalist() -%}
+<datalist id="people">{% for p in tool_ctx.people %}<option value="{{ p.name }} <{{ p.email }}>">{% endfor %}</datalist>
+{%- endmacro %}
+
+{% macro who(name='customer', label='Customer', prefill={}, list='people') -%}
+{% set v = prefill.get(name) %}
+{% if v and prefill.get(name ~ '_fixed') %}<input type="hidden" name="{{ name }}" value="{{ v }}"><p class="small muted" style="margin:0">For <b>{{ prefill.get(name ~ '_name') or v }}</b></p>
+{% else %}<label>{{ label }}<input type="text" name="{{ name }}" list="{{ list }}" placeholder="Type a name…" autocomplete="off" required{% if v %} value="{{ v }}"{% endif %}></label>{% endif %}
+{%- endmacro %}
+{% macro dates(start=None, end=None) -%}
+<div class="row"><div><label>From<input type="date" name="start" value="{{ start or tool_ctx.week_ago }}" required></label></div>
+<div><label>To<input type="date" name="end" value="{{ end or tool_ctx.today }}" required></label></div></div>
+{%- endmacro %}
+{% macro note(label='Note (optional)', required=False) -%}
+<label>{{ label }}<input type="text" name="note" {{ 'required' if required }}></label>
+{%- endmacro %}
+{% macro confirm(word) -%}
+<label>Type <b>{{ word }}</b> to confirm<input type="text" name="confirm" autocomplete="off" required></label>
+{%- endmacro %}
+
+{% macro exports(names=None) -%}
+<p class="row">{% for e in names or tool_ctx.exports %}<a class="btn sm" href="/tools/export/{{ e }}.csv" data-turbo="false">{{ tool_ctx.export_labels.get(e, e.replace('_', ' ')) }}</a>{% endfor %}</p>
+{%- endmacro %}
+
+{% macro form(id, back=None, prefill={}) %}
+{% set T = tool_ctx %}
+{% if id == 'export' %}
+  {{ exports() }}
+{% elif id == 'download_backup' %}
+  <p><a class="btn sm" href="/tools/backup.db" data-turbo="false">Download fizzy.db</a></p>
+{% else %}
+{# Tools that answer with a page of results (not a redirect) load it the classic way. #}
+<form method="post" action="/tools/{{ id }}"{% if id in T.page_tools %} data-turbo="false"{% endif %}>
+{% if back %}<input type="hidden" name="back" value="{{ back }}">{% endif %}
+{% if id == 'bulk_points' %}
+  <div class="row"><div><label>Points (+ add / − take)<input type="number" name="delta" required></label></div></div>
+  {{ note('Reason (required)', True) }}
+  <label>People - one per line (names, emails or student numbers)<textarea name="people" rows="4"></textarea></label>
+  <label class="check"><input type="checkbox" name="everyone" value="1"> Everyone (all active customers) instead</label>
+{% elif id == 'bonus_points' %}
+  <div class="row"><div><label>Multiplier<input type="number" name="multiplier" value="2" min="1.1" step="0.1" required></label></div></div>
+  {{ dates(T.today, T.today) }}{{ note() }}
+{% elif id == 'transfer_points' %}
+  {{ who('from', 'From', prefill) }}{{ who('to', 'To', prefill) }}
+  <label>Points<input type="number" name="points" min="1" required></label>{{ note() }}
+{% elif id == 'reset_points' %}
+  {{ note('Reason', False) }}{{ confirm('RESET') }}
+{% elif id == 'pause_tabs' %}
+  <p>Tabs are currently <b class="{{ 'red' if T.cfg.tabs_paused }}">{{ 'PAUSED' if T.cfg.tabs_paused else 'on' }}</b>.</p>
+  <input type="hidden" name="paused" value="{{ '0' if T.cfg.tabs_paused else '1' }}">{{ note() }}
+  <p><button class="{{ 'primary' if T.cfg.tabs_paused else 'danger' }} sm">{{ 'Turn tabs back on' if T.cfg.tabs_paused else 'Pause all tabs' }}</button></p>
+{% elif id == 'revoke_all' %}
+  {{ note('Reason') }}{{ confirm('REVOKE') }}
+{% elif id == 'manual_charge' %}
+  {{ who('customer', 'Customer', prefill) }}<label>Amount ($)<input type="text" name="amount" inputmode="decimal" required></label>
+  <label>Items<input type="text" name="items"></label>
+{% elif id == 'write_off' %}
+  {{ who('customer', 'Customer', prefill) }}<label>Amount ($) - leave blank for everything owed<input type="text" name="amount" inputmode="decimal"></label>
+  {{ note('Reason (required)', True) }}
+{% elif id == 'extend_due' %}
+  {{ who('customer', 'Customer', prefill) }}<label>Extra days<input type="number" name="days" value="7" min="1" required></label>{{ note() }}
+{% elif id == 'add_customer' %}
+  <label>Name<input type="text" name="name" required value="{{ prefill.get('name', '') }}"></label>
+  <label>Email<input type="text" name="email" inputmode="email" required value="{{ prefill.get('email', '') }}"></label>
+{% elif id == 'test_accounts' %}
+  <label>How many<input type="number" name="n" min="1" max="20" value="1" required></label>
+{% elif id == 'delete_test_accounts' %}
+  {{ confirm('DELETE') }}
+{% elif id == 'merge' %}
+  {{ who('keep', 'Keep this one', prefill) }}{{ who('dup', 'Merge this duplicate into it', prefill) }}
+{% elif id == 'bulk_archive' %}
+  <label>People - one per line<textarea name="people" rows="4" required></textarea></label>{{ note() }}
+{% elif id == 'restore' %}
+  <label>People - one per line ({{ T.archived|length }} archived)<textarea name="people" rows="3"></textarea></label>
+  <label class="check"><input type="checkbox" name="all" value="1"> Restore everyone archived</label>
+{% elif id == 'takings' %}
+  {{ dates(T.today, T.today) }}
+{% elif id == 'chase' or id == 'balances' or id == 'integrity' %}
+{% elif id == 'leaderboard' %}
+  <label>How many<input type="number" name="n" value="10" min="1"></label>
+{% elif id == 'raffle' %}
+  <label>Who's in the draw<select name="pool"><option value="bought">Bought something between these dates</option>
+    <option value="points">Anyone with points</option><option value="all">Every active customer</option></select></label>
+  {{ dates() }}
+  <div class="row"><div><label>Winners<input type="number" name="n" value="1" min="1"></label></div></div>
+  <label class="check"><input type="checkbox" name="weighted" value="1"> Weight by points</label>
+{% elif id == 'sync_now' %}
+  {% if not T.square_on %}<p class="red small">Square isn't configured.</p>{% endif %}
+{% elif id == 'resync' %}
+  <label>From<input type="date" name="start" value="{{ T.week_ago }}" required></label>
+{% elif id == 'history' %}
+  <label>Fizzy's launch date <span class="muted">(sales before this earn nothing)</span><input type="date" name="launch" value="{{ T.history_before or T.today }}" required></label>
+  <label>Import from<input type="date" name="start" value="2024-01-01" required></label>
+{% elif id == 'find_payment' %}
+  <label>Square payment ID<input type="text" name="payment_id" required></label>
+{% elif id == 'notice' %}
+  <label>Message (empty to clear)<textarea name="notice" rows="3">{{ T.notice.split('\n— ')[0] if T.notice }}</textarea></label>
+{% elif id == 'sign_out_all' %}
+  {{ confirm('SIGN OUT') }}
+{% endif %}
+{% if id != 'pause_tabs' %}<div class="actions"><button class="{{ 'danger' if id in T.danger else 'primary' }}">{{ prefill.get('button') or 'Run' }}</button></div>{% endif %}
+</form>
+{% endif %}
+{% endmacro %}
+
+{#- One tool as a row that opens: its name, the "i" tip, and the form. -#}
+{% macro tool(id, back=None, prefill={}, label=None, open=False) %}
+{% set info = tool_ctx.info[id] %}
+<details class="tool{{ ' danger' if id in tool_ctx.danger }}" id="{{ id }}"{{ ' open' if open }}>
+  <summary><span>{{ label or info.label }}</span>
+    <span class="tip" tabindex="0" data-tip="{{ info.tip }}" aria-label="{{ info.tip }}" onclick="event.preventDefault()">i</span></summary>
+  <div class="tool-body">{{ form(id, back, prefill) }}</div>
+</details>
+{% endmacro %}

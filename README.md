@@ -198,7 +198,7 @@ search box, Enter still opens the student).
 | Tab on (shown as *Tab $5.00*) | Tab score at or over the minimum | **Yes**, up to the limit their score gives |
 | Score too low | Tab score under the minimum (late payments, write-offs) | No. Comes back as the score does |
 | Blocked (overdue) | Has a charge past its due date | No. Clears itself when paid |
-| Paused (all tabs) | Tabs are paused for everyone (Tools) | No |
+| Paused (all tabs) | Tabs are paused for everyone (Tabs, Pause all tabs) | No |
 | Tab off | Staff turned it off | No, until staff turn it back on |
 
 - **Nobody waits for approval.** Everyone has a tab sized by their tab score, from their first
@@ -358,7 +358,7 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 
 - **Forgot the discount**, so a tab sale was charged as a normal sale: refund it in Square
   and ring it up again with the discount. Or, if the money really wasn't paid, use
-  **Tools → Add tab charge by hand**.
+  **Tab by hand → Add tab charge by hand** on their page.
 - **Forgot to attach the customer (or attached the wrong one):** type the right person into
   the **Assign to…** box next to the payment, then press `Enter`. Tab sales and repayments
   with no customer show that box right on the dashboard under **Needs attention**; any
@@ -378,19 +378,29 @@ way, including any refunds. **Raw** shows exactly what Square sent.
 
 ## 4. Pages
 
+### Where things live
+
+Every action is on the page of the thing it changes: something for one person is on their page,
+something for customers as a whole is on Customers, and so on. Rare or dangerous ones sit lower down on
+that page, under **More**. The header has six tabs, then **More** (Settings, Log, Tools). **Tools**
+lists every action Fizzy has, with a search box, each linking to where it lives; every tool form is on
+Tools too, so you can run it from either place (from its own page, you land back there afterwards).
+
 | Page | What's on it |
 |---|---|
-| **Dashboard** | Search; noticeboard; warnings (Square not connected, tabs paused). **Today's sales:** sold, taken, orders and average, customers, put on tabs and repaid; sold by hour against the same day last week; the last 7 school days; top items; latest sales. It refreshes itself every minute while nobody's touching it. **Tabs:** totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers; people waiting for tab approval |
-| **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend; record repayment; tab limit (pick a band or set a score adjustment, turn the tab off or on); tab score with every line explained; adjust points; tab charges with due dates and status; repayments; points history; Square payments; tab history; activity log; edit (name, Square ID, archive) |
-| **Customers** | Search with a results table; download the Square import CSV |
+| **Dashboard** | Search; noticeboard (**Add a note** / **Edit note**); warnings (Square not connected, tabs paused). **Fizz**, a small chat about the stall (see Fizz below; **Full screen** opens `/ask`). **Today's sales:** sold, taken, orders and average, customers, put on tabs and repaid; sold by hour against the same day last week; the last 7 school days; top items; latest sales. It refreshes itself every minute while nobody's touching it (not while a note or a question is being written, or an answer is coming). **Tabs:** totals owed and overdue; **Needs attention** (rule breaks, tab sales with no customer); overdue list; due in the next 2 days; top customers |
+| **Customers** | Search with a results table; **+ Add customer** (a search that finds nobody offers *Add "what you typed"*, and a card scan nobody has lands here with their school email filled in). **More:** import the school list (preview, then confirm), exports (new people for Square, everyone for Square, the customers spreadsheet), give points to many, merge duplicates, archive many, restore archived, make and delete test accounts |
+| **Customer** | Can-they-use-a-tab answer; points, owing, overdue, spend; record repayment; tab limit (pick a band or set a score adjustment, turn the tab off or on); **Tab by hand** (add a tab charge by hand, give more time to pay, write off a debt, all already pointed at them); tab score with every line explained; adjust points; **Move points** to someone else; tab charges with due dates and status; repayments; points history; Square payments; tab history; activity log; edit (name, Square ID, archive) |
 | **Claim sale** (button on a customer) | Gives this customer the Square sale rung up in the 30 seconds before the press, or waits for Square to send it (the bar under the header, with Undo) |
 | **Pick a sale** (button on a customer) | The latest Square sales with no customer; click one to give it to this customer |
-| **Rewards** | Start and end reward events; see how many were redeemed |
-| **Square** | Connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer; **No account** on a sale with nobody on it (it still counts, nobody gets it), with **Undo** |
-| **Tools** | Occasional jobs (next section) |
-| **Import** | Upload the school CSV: preview, then confirm |
-| **Settings** | Tab limit, days to pay, spend threshold; backups (back up now, download a copy) |
-| **Log** | Every action by every staff member, newest first; export to CSV |
+| **Sales** | Two sub-tabs. **Sales** (`/transactions`, below): every checkout, plus the **Takings report**. **Square** (`/square`): connection status, last sync, **Sync now**; how payments are recognised; recent payments with the **Counted as** override and raw data; filter to payments with no customer; **No account** on a sale with nobody on it (it still counts, nobody gets it), with **Undo**; under More, re-sync from a date, import sales history, find a Square payment, export Square payments. `/sales` goes to Sales |
+| **Tabs** | Who owes (everyone owing, most overdue first), overdue, due in the next 2 days; **Who to chase**; **Tab rules** (tab limit, days to pay, minimum tab score); under More, all balances, exports (tab charges, repayments, tab decisions), pause all tabs, turn off all tabs |
+| **Rewards** | Live rewards and how many were redeemed; **Start a reward**; **Schedule double points** (one day, a few, or every week); weekly double points; custom badges and events; under More, bonus points for a period, points leaderboard, random winner, export points history, reset all points |
+| **Money** | Two sub-tabs: **Money** (restocks and payouts) and **Profit** (item costs, section 5) |
+| **Settings** (More) | Set-once things: who can do what, updates, Fizz's Gemini key, term dates, closed days, PIN, maintenance mode, backups (back up now, download a copy), health check, sign everyone out, security keys, devices. Links to Tab rules (on Tabs) and the customer display message |
+| **Customer display** (header Display menu, *Edit message*; `/display/settings`) | The message between customers, what's on the shelf, show what they owe |
+| **Log** (More) | Every action by every staff member, newest first; export to CSV |
+| **Tools** (More) | Every action, searchable, each linking to its home; and every tool form (section 8) |
 
 **The sales numbers**, all worked out from what Square sync has stored:
 - **Sold:** the value of goods sold, including what went on tabs.
@@ -405,7 +415,7 @@ The desktop header also shows the time (and the date on wider screens).
 
 ### Transactions
 
-**Transactions** in the top bar lists every Square checkout with who it was, what they got, how
+**Sales** in the top bar (its **Sales** sub-tab, `/transactions`) lists every Square checkout with who it was, what they got, how
 they paid, any tab or refund, and the points it earned, which Square's own list can't show.
 Pick dates (today by default), filter to sales, tab sales, tab repayments or ones with no
 customer, and search by customer or item. Checkouts with nobody on them have an "Assign to…"
@@ -434,7 +444,7 @@ The pages are kept to labels and buttons. What they used to explain:
 - **Maintenance mode.** Everyone, staff and students, gets a "Back soon" page until it's turned off on that page with the owner password. Square sales still come in.
 - **Updates.** "Update now" restarts Fizzy (down for about a minute) and rolls back by itself if the new version doesn't start. "Can't read the updater's status": update the updater script and restart it, or `chmod 644 update-status/*`. "Updater isn't running": update on the home PC (see Updating).
 - **Customer display.** The message shows between customers. Ticked items show on its menu (up to 12). "Show what they owe" includes anything overdue.
-- **Ask.** Use a paid Gemini key from aistudio.google.com (on the free tier Google may train on the data). Stored encrypted, owner password only, never shown again. Model blank means the default. Nothing changes until you press *Do it*.
+- **Fizz** (Ask). Use a paid Gemini key from aistudio.google.com (on the free tier Google may train on the data). Stored encrypted, owner password only, never shown again. Model blank means the default. Nothing changes until you press *Do it*.
 - **Term dates** are for badges and events that work by term. **Closed days** make cookedcoke.co show "Closed" and the dashboard show a recap.
 - **Security keys.** A key or passkey signs in instead of the staff password, so one key can be shared. You still pick who's on the counter, and the PIN and owner password work the same. A key only works on the address it was added on.
 - **Devices.** With `FIZZY_ACCESS_HOST` set, registered devices open the main address directly and everything else goes through Cloudflare Access; both still need the staff password. Device links work once.
@@ -512,7 +522,7 @@ earns the extra points by itself, within a minute; something bought on the tab g
 when it's paid off, even weeks later, and a refund takes the bonus back. Students see it
 coming on the student site, and the dashboard shows it while it's on. **Delete** removes one
 that hasn't started; **End** stops one straight away (bonus already earned stays). For
-past days, use Tools → *Bonus points for a period*.
+past days, use *Bonus points for a period* (Rewards, More).
 
 **Every week.** Tick *Repeat every week* when scheduling and it repeats on that weekday, e.g.
 double points every Friday. Fizzy sets up the next two weeks ahead, so students and the website
@@ -525,16 +535,17 @@ as `<@&ROLE_ID>`). Starting a reward or scheduling double points then shows an *
 Discord* box, ticked by default. The post is sent by Fizzy on the home PC, never by the counter
 device's browser, so it works even where the school wifi blocks Discord.
 
-### Ask (Gemini)
+### Fizz (Gemini)
 
-The **Ask** tab is a chat with Gemini that knows the stall. Ask it anything about sales, customers
+**Fizz** is a chat with Gemini that knows the stall: a box on the dashboard, or full screen at `/ask`
+(the addresses, settings and permission names still say "ask"). Ask it anything about sales, customers
 and tabs ("what sells best at lunch on Fridays?", "who used to come every week but stopped?"); it
 looks things up itself (read-only: it can't change the database). It can also set things up:
 custom badges and events, double points days, rewards and the display message. Those come back as a
-card with **Do it**, which needs the owner password by default (Who can do what, Ask) and is logged.
+card with **Do it**, which needs the owner password by default (Who can do what, Fizz) and is logged.
 
 Answers are written in the background: leaving the page, closing the tab or losing the connection
-doesn't lose one. Open Ask again and it joins the answer where it's up to (the app too); once done, it's
+doesn't lose one. Open the dashboard (or `/ask`) again and it joins the answer where it's up to (the app too); once done, it's
 in the saved conversation. One question at a time per person.
 
 **Custom badges and events** are how weird ideas happen without anyone writing code: describe it
@@ -548,7 +559,7 @@ or when a page is opened), never take points back, and show on the student site.
 on the **Rewards** page. Terms come from **Settings, Term dates**. If an idea needs a building block
 that doesn't exist, Gemini says so: ask for it to be added to `fizzy/rules.py`.
 
-Set up: paste a key in **Settings, Ask** (owner password; a paid key, since sales and student data are
+Set up: paste a key in **Settings, Fizz** (owner password; a paid key, since sales and student data are
 sent to Google). It's stored encrypted and never shown again. `GEMINI_API_KEY` in `.env` works too and
 wins if both are set. The model can be changed there as well (default `gemini-flash-latest`).
 
@@ -624,38 +635,40 @@ isn't affected by the device lock. Without `FIZZY_PUBLIC_HOST`, the student page
 
 ## 8. Tools
 
-**Tools** in the top bar holds the occasional jobs. Hover or tap **i** to see what a tool
-does, and click its name to open it. Tools in red change a lot at once or can't be undone,
+Each tool lives on the page of what it changes (the **Home** column) and is also on **Tools** (header,
+More), which starts with a searchable list of every action in Fizzy, linking to its home. Hover or tap
+**i** to see what a tool does, and click its name to open it. Run from its home page, a tool comes back
+to that page with its message; run from Tools, back to Tools. Tools in red change a lot at once or can't be undone,
 and the biggest ones make you type a word (`RESET`, `REVOKE`, `SIGN OUT`) to confirm.
 Everything is written to the activity log. Wherever a tool needs a customer, the box
 suggests names as you type. Pick from that list (it fills in "Name <email>"), or type an exact
 name, email or student number. Anything less exact never acts on its own: the tool stops and
 says who you might mean, so a typo can't hit the wrong student.
 
-| Section | Tool | Use it for |
-|---|---|---|
-| Points | Give points to many | Event prizes: a list of names/emails/student numbers, or everyone |
-| | Bonus points for a period | Double-points day: tops up points on purchases between two dates. Tab purchases count by the date they were bought, for the part already repaid. Don't run the same dates twice |
-| | Move points | Points went to the wrong person |
-| | Reset all points | End of year. Spend history and tab eligibility are kept |
-| Tabs | Pause all tabs | Holidays, end of term. Approvals come back when unpaused |
-| | Turn off all tabs | End of year |
-| | Add tab charge by hand | Only if the sale isn't in Square at all; otherwise it'd be counted twice |
-| | Write off a debt | Clear some or all of what someone owes. Earns no points |
-| | Give more time to pay | Push back the due date on all of someone's unpaid charges |
-| Customers | Add a customer | New student, teacher, anyone not in the school list |
-| | Merge duplicates | Two records for one person: everything moves to the one you keep, including the duplicate's Square profile (its future sales land on the kept person) and its tab approval if the kept one had none |
-| | Archive many | Left school or graduated: hidden from search, history kept |
-| | Restore archived | Bring them back |
-| Reports | Takings summary | Counting up: Square sales, what went on tabs, tab repayments, refunds, items returned from tabs (not money), and anything recorded without Square |
-| | Who to chase | Everyone owing, oldest first, with their emails ready to copy |
-| | All balances | Everyone who owes or is in credit |
-| | Points leaderboard | Printable top-N for events |
-| Fun | Random winner | Giveaway draw from buyers in a date range, anyone with points, or everyone. Can be weighted by points |
-| Square | Sync now / Re-sync from a date / Find a payment | After an outage, to backfill, or to look up one payment |
-| Data | Export CSV / Download backup / Health check | Spreadsheets, a copy of the database, and a list of things to tidy up |
-| Staff | Noticeboard | A message for the others at the top of the dashboard |
-| | Sign everyone out | A device was lost. Also change `FIZZY_PASSWORD` if the password leaked |
+| Section | Tool | Home | Use it for |
+|---|---|---|---|
+| Points | Give points to many | Customers | Event prizes: a list of names/emails/student numbers, or everyone |
+| | Bonus points for a period | Rewards | Double-points day: tops up points on purchases between two dates. Tab purchases count by the date they were bought, for the part already repaid. Don't run the same dates twice |
+| | Move points | Customer | Points went to the wrong person |
+| | Reset all points | Rewards | End of year. Spend history and tab eligibility are kept |
+| Tabs | Pause all tabs | Tabs | Holidays, end of term. Approvals come back when unpaused |
+| | Turn off all tabs | Tabs | End of year |
+| | Add tab charge by hand | Customer | Only if the sale isn't in Square at all; otherwise it'd be counted twice |
+| | Write off a debt | Customer | Clear some or all of what someone owes. Earns no points |
+| | Give more time to pay | Customer | Push back the due date on all of someone's unpaid charges |
+| Customers | Add a customer | Customers | New student, teacher, anyone not in the school list |
+| | Merge duplicates | Customers | Two records for one person: everything moves to the one you keep, including the duplicate's Square profile (its future sales land on the kept person) and its tab approval if the kept one had none |
+| | Archive many | Customers | Left school or graduated: hidden from search, history kept |
+| | Restore archived | Customers | Bring them back |
+| Reports | Takings summary | Sales | Counting up: Square sales, what went on tabs, tab repayments, refunds, items returned from tabs (not money), and anything recorded without Square |
+| | Who to chase | Tabs | Everyone owing, oldest first, with their emails ready to copy |
+| | All balances | Tabs | Everyone who owes or is in credit |
+| | Points leaderboard | Rewards | Printable top-N for events |
+| Fun | Random winner | Rewards | Giveaway draw from buyers in a date range, anyone with points, or everyone. Can be weighted by points |
+| Square | Sync now / Re-sync from a date / Import sales history / Find a payment | Sales, Square | After an outage, to backfill, or to look up one payment |
+| Data | Export CSV / Download backup / Health check | Each table's page; Settings | Spreadsheets, a copy of the database, and a list of things to tidy up |
+| Staff | Noticeboard | Dashboard | A message for the others at the top of the dashboard |
+| | Sign everyone out | Settings | A device was lost. Also change `FIZZY_PASSWORD` if the password leaked |
 
 ---
 
@@ -692,7 +705,7 @@ Matching works like [fzf](https://github.com/junegunn/fzf), plus typo tolerance:
 | `0830937` or `rns0830937` | that student | Student number |
 
 Matched letters are underlined in the results. The search in the top bar, on the Customers
-page and in the Tools customer boxes all use the same matching. The Python
+page and in the tools' customer boxes all use the same matching. The Python
 (`fizzy/fuzzy.py`) and browser (`fizzy/static/fuzzy.js`) copies are tested to rank
 identically.
 
@@ -905,7 +918,7 @@ thing with **registered devices**:
 
 - **What counts as registered** is that browser on that device. Another browser, a private
   window, or clearing site data means registering again.
-- **Lost or replaced device:** Settings → Devices → **Remove**. Also use **Tools → Sign
+- **Lost or replaced device:** Settings → Devices → **Remove**. Also use **Settings → Sign
   everyone out** if it was signed in.
 - **Turning it off:** remove `FIZZY_ACCESS_HOST`, then `docker compose up -d` (a plain
   `restart` doesn't re-read `.env`). Everything goes back to
@@ -1020,7 +1033,7 @@ Most customers are under 18, so Fizzy keeps the minimum:
   copy of the database or a backup alone doesn't reveal them. They're never written to the
   logs. Changing `FIZZY_SECRET_KEY` makes existing passcodes unreadable: set new ones.
 - **Never committed to git:** `.env`, the database, backups and CSVs (see `.gitignore`).
-- **Leaving school:** archive them (Tools → Archive many). Their history stays for the
+- **Leaving school:** archive them (Customers → More → Archive many). Their history stays for the
   records, hidden from search.
 
 ---
@@ -1037,7 +1050,7 @@ On a customer's page, **Edit customer → Account type** (owner only):
   in the same action). They're left out of leaderboards, top customers, raffles, "Who to chase"
   and the Square import file.
 
-**Tools → Make test accounts** makes up to 20 at a time, and **Delete test accounts** (owner)
+**Customers → More → Make test accounts** makes up to 20 at a time, and **Delete test accounts** (owner)
 removes them and everything done to them; Square sales put on them go back to "no customer".
 Both rules are rows in **Who can do what**, so the owner can change them.
 
@@ -1084,7 +1097,7 @@ Square). Each address gets its own, shown three ways:
 | Counter device keeps getting sent to `fizzy-remote` | Its registration was lost (browser data cleared, different browser) or removed. Register it again |
 | "Cloudflare Access required" on `fizzy-remote` | Check `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` match the Access application, and that Access is actually in front of that hostname |
 | Everything slow at the counter | Fizzy pages render in ~5 ms; check the PC is awake and the tunnel is up (`docker compose logs cloudflared`) |
-| Something looks wrong with the data | **Tools → Health check** |
+| Something looks wrong with the data | **Settings → Health check** |
 
 ---
 
@@ -1110,7 +1123,8 @@ no build step. Runs comfortably on a Raspberry Pi.
 | `fizzy/static/fuzzy.js` | Browser copy of `fuzzy.py`. **Change both together**; a test compares them |
 | `fizzy/static/app.js` | In-browser search, card scans, confirm and passcode boxes, the New sale pop-up |
 | `fizzy/static/turbo.js` | Turbo 8.0.12, unmodified (MIT, © 37signals). Staff site only, not the student site or the customer display |
-| `fizzy/tools.py` | The Tools page: each tool is a `TOOLS` entry plus an `h_<id>` handler |
+| `fizzy/tools.py` | The tools: each is a `TOOLS` entry plus an `h_<id>` handler, with its home in `HOMES`; `index()` is the list on Tools, `form_ctx()` what a page needs to draw tool forms |
+| `fizzy/templates/_tools.html` | Tool forms, drawn the same on Tools and on each tool's own page |
 | `fizzy/app.py` | Routes, login, background jobs |
 | `fizzy/customers.py` | CSV import, search, Square export |
 | `fizzy/db.py` | Schema, settings, audit log, backups |
@@ -1142,6 +1156,14 @@ scripts in `<head>` from page to page; only `<body>` is swapped. So:
   before Turbo, since any page can show points, tabs or who's on the counter that changed elsewhere.
 - A control that sends its form as soon as it changes keeps the saved value in `data-was`; if the
   passcode box for that form is cancelled, `app.js` puts it back.
+
+**Where things live** (README, section 4). A new action goes on the page of what it changes; rare or
+dangerous ones under that page's More. A tool form on another page is `{{ tl.tool(id, back='/that/page') }}`
+from `_tools.html` (the page passes `tool_ctx=tools.form_ctx(conn)`, which never goes to the app as JSON):
+it posts to the same `/tools/<id>`, so its passcode level is the same, and its hidden `back` (a path on
+this site only, `web.safe_back`) sends the answer back to that page at `#<id>`. Add new ones to `HOMES` or
+`PAGE_ACTIONS` in `tools.py` so Tools lists them. The header's tabs are in `base.html` (`tabs`, `more_tabs`);
+Settings, Log and Tools always sit in the More menu (`data-fixed`), and tabs that don't fit join them above.
 
 **No account.** `POST /square/no-account` with `key` (a checkout key from Pick a sale) marks every row of
 that checkout (`square_payments.no_account` = when, `no_account_by` = who); `POST /square/no-account/undo`

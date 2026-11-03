@@ -107,7 +107,7 @@
         var r = h[0];
         return '<a class="hit" href="/customers/' + r.id + '"><span><span class="nm">' + highlight(r.name, h[1]) + '</span><span class="em">' + esc(r.sid) + "</span></span>" +
           '<span class="facts"><span>' + r.points.toLocaleString() + " pts</span><span>owes " + money(r.owing) + "</span>" + (r.reward ? '<span class="tag reward" title="Can redeem a reward">Reward</span>' : "") + '<span class="tag ' + esc(r.status) + '">' + esc(r.label) + "</span></span></a>";
-      }).join("") : '<div class="none">No one matches “' + esc(q) + "”.</div>";
+      }).join("") : '<div class="none">No one matches “' + esc(q) + '”. <a href="/customers?add=' + encodeURIComponent(q) + '#add_customer">Add “' + esc(q) + "”</a></div>";
       mark();
     }
     listen(box, "input", render);
@@ -206,6 +206,21 @@
     e.preventDefault(); e.stopImmediatePropagation();
     fizzyAsk(b.dataset.confirm, function () { passed = b; b.click(); });
   }, true);
+
+  // ---- buttons that open a section of this page (once) ---------------------------------------------
+  // data-open="id" (Add customer, Add a note, More): opens that <details>, brings it into view and puts the
+  // cursor in its first box. A link with it (href="#id") does the same instead of jumping.
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-open]");
+    if (!b || e.defaultPrevented) return;
+    var el = document.getElementById(b.dataset.open);
+    if (!el) return;
+    e.preventDefault();
+    if (el.tagName === "DETAILS") el.open = true;
+    el.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    var box = el.querySelector("input:not([type=hidden]):not([type=checkbox]), textarea");
+    if (box && el.tagName === "DETAILS") try { box.focus({ preventScroll: true }); } catch (err) { box.focus(); }
+  });
 
   // ---- passcodes (once) ---------------------------------------------------------------------------
   // Anything above "anyone signed in" asks in a box first, then carries on. The rules come from the
@@ -554,7 +569,13 @@
   function autoRefresh(el) {
     var idle = Number(el.dataset.autorefresh) * 1000, last = Date.now();
     // An empty search box that's only focused (it's autofocused on load) doesn't count as typing.
-    var busy = function () { var a = document.activeElement; return typing() && !(a.matches("[data-search]") && !a.value); };
+    // Nor while a form it holds is open (the noticeboard), or the Ask box has a question in it or an answer coming.
+    var busy = function () {
+      var a = document.activeElement, ask = $("[data-ask-chat]");
+      if (typing() && !(a.matches("[data-search], [data-ask] textarea") && !a.value)) return true;
+      if ($("details.hold[open]")) return true;
+      return !!ask && (!!$("[data-ask][data-busy]", ask) || !!($("[data-ask] textarea", ask) || {}).value);
+    };
     ["keydown", "pointerdown", "pointermove", "input", "scroll", "wheel"].forEach(function (ev) {
       listen(window, ev, function () { last = Date.now(); }, { passive: true, capture: true });
     });
@@ -657,6 +678,296 @@
     if (lines().length) start();
   }
 
+  // ---- a list that narrows as you type (Tools: every action) -----------------------------------
+  // <input data-filter="#list">: rows marked data-filter-item stay if they have every word typed.
+  function filterList(box) {
+    var list = $(box.dataset.filter), none = list && list.parentNode.querySelector("[data-filter-none]");
+    if (!list) return;
+    var rows = $$("[data-filter-item]", list), text = rows.map(function (r) { return r.textContent.toLowerCase(); });
+    function go() {
+      var words = box.value.toLowerCase().split(/\s+/).filter(Boolean), shown = 0;
+      rows.forEach(function (r, i) {
+        var keep = words.every(function (w) { return text[i].indexOf(w) >= 0; });
+        r.hidden = !keep; if (keep) shown++;
+      });
+      if (none) none.hidden = shown > 0;
+    }
+    listen(box, "input", go);
+    listen(box, "keydown", function (e) {
+      if (e.key === "Escape") { box.value = ""; go(); }
+      else if (e.key === "Enter") {  // the first one left
+        e.preventDefault();
+        var first = rows.filter(function (r) { return !r.hidden; })[0], a = first && $("a", first);
+        if (a) a.click();
+      }
+    });
+    if (box.value) go();
+  }
+
+  // ---- Ask: the chat (the dashboard's box, data-ask-chat="box", or full screen on /ask, "page") ---------
+  // Sends without reloading: the question and "Thinking" show straight away, then the answer as it's written.
+  // Fizzy writes the answer in the background, so leaving the page or losing the connection doesn't lose it:
+  // the request only follows along, and joins again (GET) if it's cut off. Opened while an answer is under
+  // way (data-pending), it joins that one. In the box, only the chat scrolls, never the page around it.
+  function needMarked() {
+    if (window.marked || $("script[data-marked]")) return;
+    var sc = document.createElement("script");
+    sc.src = "/static/marked.min.js" + (V ? "?v=" + V : ""); sc.dataset.marked = "";
+    document.head.appendChild(sc);
+  }
+  function askChat(root) {
+    var f = $("[data-ask]", root), chat = $(".chat", root);
+    if (!f || !chat) return;
+    var t = $("textarea", f), b = $("button", f), box = root.dataset.askChat === "box", touch = matchMedia("(pointer: coarse)").matches;
+    var backTo = box ? (($("input[name=back]", f) || {}).value || "") : "", gone = false, reader = null;
+    needMarked();
+    later(function () { gone = true; if (reader) try { reader.cancel(); } catch (e) { /* done already */ } });
+    function end() { return chat.querySelector("#end"); }
+    // Suggestion cards drawn from the full-screen page's copy come back to this box after Do it.
+    function addBack(el) {
+      if (!backTo) return;
+      $$("form", el).forEach(function (form) {
+        if (form.querySelector("input[name=back]")) return;
+        var i = document.createElement("input"); i.type = "hidden"; i.name = "back"; i.value = backTo; form.prepend(i);
+      });
+    }
+    function height() { return box ? chat.scrollHeight - chat.clientHeight : document.documentElement.scrollHeight - innerHeight; }
+    function at() { return box ? chat.scrollTop : scrollY; }
+    function goTo(y, smooth) { if (box) chat.scrollTo({ top: y, behavior: smooth ? "smooth" : "auto" }); else scrollTo({ top: y, behavior: smooth ? "smooth" : "auto" }); }
+    function down(smooth) { if (box) goTo(chat.scrollHeight, smooth); else { var e = end(); if (e) e.scrollIntoView({ block: "end", behavior: smooth ? "smooth" : "auto" }); } }
+    function grow() { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 160) + "px"; }
+    listen(t, "input", grow);
+    listen(root, "click", function (e) {
+      var c = e.target.closest("[data-example]"); if (c && !t.disabled) { t.value = c.textContent; grow(); t.focus(); }
+    });
+    // Desktop: Enter sends, Shift+Enter is a new line. Phone: Enter is a new line, the button sends.
+    listen(t, "keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey && !touch) { e.preventDefault(); if (t.value.trim()) f.requestSubmit(); }
+    });
+    function refresh(html, still) {
+      var doc = new DOMParser().parseFromString(html, "text/html");
+      var fresh = doc.getElementById("chat");
+      if (fresh) { chat.innerHTML = fresh.innerHTML; addBack(chat); }
+      var msg = doc.querySelector("main > .flash, #ask > .flash"), old = $("main > .flash") || $(":scope > .flash", root);
+      if (old) old.remove();
+      if (msg) { var h = box && $(":scope > h2", root); if (h) h.after(msg); else $("main").prepend(msg); }
+      if (!still) down(true);
+    }
+    function post(form, extra) {
+      return fetch(form.action, { method: "POST", body: extra || new FormData(form), credentials: "same-origin" })
+        .then(function (r) { if (r.redirected && /\/login/.test(r.url)) { location.href = r.url; throw 0; } return r.text(); });
+    }
+    // Live: steps ("Adding up sales by weekday...") then the answer revealing itself. Like the open-source
+    // chat apps (Open WebUI, Vercel's chatbot): the text Gemini sends in bursts is buffered and shown at an
+    // even pace, a word at a time, formatted as it goes; it only follows along if you're at the bottom.
+    // Stuck to the bottom until you scroll up yourself; scroll back down and it follows again. Like Vercel's
+    // use-stick-to-bottom: only something you do (wheel, drag, keys) unsticks it, never the text growing.
+    var stuck = true, gliding = false, calm = matchMedia("(prefers-reduced-motion: reduce)").matches, scroller = box ? chat : window;
+    function near() { return at() >= height() - 140; }
+    listen(scroller, "wheel", function (e) { if (e.deltaY < 0) stuck = false; }, { passive: true });
+    listen(scroller, "touchmove", function () { stuck = false; }, { passive: true });
+    if (!box) listen(window, "keydown", function (e) { if (/^(PageUp|ArrowUp|Home)$/.test(e.key) && e.target === document.body) stuck = false; });
+    listen(scroller, "scroll", function () { if (!stuck && near()) stuck = true; }, { passive: true });
+    function glide() {  // ease towards the bottom each frame rather than jumping there
+      var max = height(), gap = max - at();
+      if (gone || !stuck || gap <= 1) { gliding = false; return; }
+      goTo(calm ? max : at() + Math.max(1, gap * 0.22));
+      requestAnimationFrame(glide);
+    }
+    function follow(fn) { fn(); if (stuck && !gliding) { gliding = true; requestAnimationFrame(glide); } }
+    function bubble(cls) { var d = document.createElement("div"); d.className = "bubble them enter " + cls; end().before(d); return d; }
+    // Each new bit of text fades in. The reply is re-drawn every frame, so the fades are kept as ranges of
+    // characters with the time they appeared, and put back (part-way through) on every draw.
+    var FADE = 380;
+    function fadeIn(el, st) {
+      var now = performance.now(), total = el.textContent.length;
+      if (total > st.len) st.fades.push({ from: st.len, to: total, at: now });
+      st.len = total;
+      st.fades = st.fades.filter(function (r) { return now - r.at < FADE; });
+      if (calm || !st.fades.length) return;
+      var walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = [], n, pos = 0;
+      while ((n = walk.nextNode())) nodes.push(n);
+      nodes.forEach(function (node) {
+        var start = pos, len = node.data.length; pos += len;
+        if (!node.data.trim()) return;  // the line breaks between paragraphs: nothing to fade, and no place for a span
+        st.fades.map(function (r) { return { a: Math.max(r.from, start) - start, z: Math.min(r.to, start + len) - start, at: r.at }; })
+          .filter(function (c) { return c.a < c.z; })
+          .sort(function (x, y) { return y.a - x.a; })          // last first, so earlier offsets stay right
+          .forEach(function (c) {
+            if (c.z > node.data.length) c.z = node.data.length;
+            if (c.a >= c.z) return;
+            var mid = node.splitText(c.a); mid.splitText(c.z - c.a);
+            var sp = document.createElement("span"); sp.className = "fi"; sp.style.animationDelay = -(now - c.at) + "ms";
+            mid.before(sp); sp.appendChild(mid);
+          });
+      });
+    }
+    function draw(el, text, caret, st) {
+      var html = window.marked ? marked.parse(text.replace(/&/g, "&amp;").replace(/</g, "&lt;"), { gfm: true, breaks: false })
+        : text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
+      el.innerHTML = html;
+      el.querySelectorAll("a").forEach(function (a) { if (!/^https?:/i.test(a.getAttribute("href") || "")) a.removeAttribute("href"); else a.target = "_blank"; });
+      el.querySelectorAll("td, th").forEach(function (c) { if (/^[\s$%.,+\-\d]+$/.test(c.textContent) && /\d/.test(c.textContent)) c.classList.add("n"); });
+      el.querySelectorAll("table").forEach(function (tb) { var w = document.createElement("div"); w.className = "scroll"; tb.before(w); w.appendChild(tb); });
+      if (caret) {
+        var a = el; while (a.lastElementChild && !/^(BR|HR|IMG)$/.test(a.lastElementChild.tagName)) a = a.lastElementChild;
+        var c = document.createElement("span"); c.className = "caret"; a.appendChild(c);
+      }
+      if (st) fadeIn(el, st);
+    }
+    // Clean up a partial reply so it doesn't flash half-made formatting: an unclosed ** or ` is held back.
+    function tidy(x) {
+      if ((x.match(/\*\*/g) || []).length % 2) x = x.slice(0, x.lastIndexOf("**"));
+      if ((x.match(/`/g) || []).length % 2) x = x.slice(0, x.lastIndexOf("`"));
+      var gap = x.lastIndexOf("\n\n"), blk = x.slice(gap + 2);  // a table only shows once its |---| line is in
+      if (/^\s*\|/.test(blk) && !/\n\s*\|?\s*:?-{3,}/.test(blk)) x = x.slice(0, gap + 2);
+      var nl = x.lastIndexOf("\n");   // half a table row shows as stray pipes: wait for the whole row
+      if (/^\s*\|/.test(x.slice(nl + 1))) x = x.slice(0, nl + 1);
+      if (/^\s*([-*+]|\d+\.)\s*$/.test(x.slice(nl + 1))) x = x.slice(0, nl + 1);  // a bullet with no words yet
+      return x;
+    }
+    listen(f, "submit", function (e) {
+      e.preventDefault();
+      if (f.dataset.busy || !t.value.trim()) return;
+      // Ask for the passcode first if it's needed (this handler runs before the site-wide one).
+      if (window.fizzyPin) window.fizzyPin("POST", "/ask/stream", send); else send();
+    });
+    function send() {
+      if (f.dataset.busy || !t.value.trim()) return;
+      var q = t.value, empty = chat.querySelector(".chat-empty"); if (empty) empty.remove();
+      var me = document.createElement("div"); me.className = "bubble me enter"; me.textContent = q;
+      end().before(me);
+      var data = new FormData(f); t.value = ""; grow();
+      data.append("client", nonce);
+      run(q, me, fetch("/ask/stream", { method: "POST", body: data, credentials: "same-origin" }));
+    }
+    var nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);   // this page's tag for its question
+    var THINK = "<i></i><i></i><i></i><span class=st></span>";
+    function run(q, me, request) {
+      f.dataset.busy = 1; b.disabled = true;
+      var wait = bubble("thinking"); wait.innerHTML = THINK;
+      var out = null, target = "", shown = 0, failed = false, ticking = false, drained = null, st = { len: 0, fades: [] };
+      var before = chat.querySelectorAll(".proposal").length;
+      var jobId = null, joining = !me, rejoined = false, retries = 0, complete = false;
+      follow(function () {});
+      stuck = true;
+      function finish() { delete f.dataset.busy; b.disabled = false; if (!touch && !gone && (!box || root.contains(document.activeElement) || document.activeElement === document.body)) t.focus({ preventScroll: true }); }
+      function fail(msg) {
+        failed = true; complete = true; if (me || !jobId) { t.value = q; grow(); }
+        (out || wait).className = "bubble them err"; (out || wait).textContent = msg; if (out) wait.remove();
+      }
+      function tick() {  // one animation frame: show a few more words, faster the further behind it is
+        var left = target.length - shown;
+        if (left <= 0 || gone) { ticking = false; if (drained) { var d = drained; drained = null; d(); } return; }
+        var step = Math.max(1, Math.ceil(left / 24)), to = Math.min(target.length, shown + step);
+        var sp = target.slice(to).search(/\s/); if (sp >= 0 && sp < 12) to += sp;   // end on a whole word
+        shown = to;
+        follow(function () { draw(out, tidy(target.slice(0, shown)), true, st); });
+        requestAnimationFrame(tick);
+      }
+      function whenShown(fn) { if (!ticking) fn(); else drained = fn; }
+      function settle() { if (out) { draw(out, target, false); out.className = "bubble them"; } }
+      function status(text) {  // the step line cross-fades rather than snapping to the next one
+        var el = wait.querySelector(".st"); if (!el || el.textContent === text) return;
+        el.classList.remove("swap"); void el.offsetWidth; el.textContent = text; el.classList.add("swap");
+      }
+      function restart() {  // joining replays the answer from the start: draw it afresh
+        if (out) { out.remove(); out = null; }
+        target = ""; shown = 0; ticking = false; drained = null; st = { len: 0, fades: [] };
+        if (!wait.isConnected) { wait = bubble("thinking"); wait.innerHTML = THINK; }
+      }
+      function handle(ev) {
+        if (complete) return;
+        if (ev.t === "start") {   // which question this is: ours, or an older one when ours never got there
+          if (jobId ? ev.id !== jobId : (joining ? ev.text !== q : ev.client !== nonce)) {
+            if (jobId) { complete = true; rejoined = true; if (reader) reader.cancel(); }   // ours is done and gone: Fizzy's copy has it
+            else fail("Couldn't reach Fizzy. Check the connection and try again.");
+            return;
+          }
+          jobId = ev.id;
+        }
+        else if (ev.t === "status") follow(function () { status(ev.text); });
+        else if (ev.t === "delta") {
+          if (!out) { out = document.createElement("div"); out.className = "bubble them streaming"; wait.replaceWith(out); st = { len: 0, fades: [] }; }
+          target += ev.text;
+          if (!ticking) { ticking = true; requestAnimationFrame(tick); }
+        } else if (ev.t === "reset") {  // it wrote a bit, now it's looking things up again
+          if (joining || rejoined) { follow(restart); return; }   // that bit is in Fizzy's copy, drawn at the end
+          shown = target.length; settle(); ticking = false; drained = null;
+          out = null; target = ""; shown = 0; st = { len: 0, fades: [] };
+          follow(function () { wait = bubble("thinking"); wait.innerHTML = THINK; });
+        } else if (ev.t === "done") complete = true;
+        else if (ev.t === "error") fail(ev.text);
+        else if (ev.t === "none") {  // nothing being answered: the question never got there, or Fizzy was restarted
+          if (jobId) complete = true;
+          else fail(joining ? "Fizzy was restarted before it finished. Ask again." : "Couldn't reach Fizzy. Check the connection and try again.");
+        }
+      }
+      function attempt(req) {
+        return req.then(function (r) {
+          var type = r.headers.get("content-type") || "";
+          if (r.redirected && /\/login/.test(r.url)) { location.href = "/login?next=" + (box ? "/" : "/ask"); throw 0; }
+          if (type.indexOf("event-stream") < 0) {  // e.g. still needs the passcode: keep the question, say what Fizzy said
+            if (jobId) throw new Error("not a stream");   // joining again got a proxy's error page: Fizzy still has the question
+            return r.text().then(function (html) {
+              var m = new DOMParser().parseFromString(html, "text/html").querySelector(".flash.bad, .err, main > .flash");
+              if (me) me.remove(); fail(m ? m.textContent.trim() : "Fizzy didn't take that. Try again.");
+            });
+          }
+          if (gone) { try { r.body.cancel(); } catch (e) { /* fine */ } throw 0; }
+          reader = r.body.getReader(); var dec = new TextDecoder(), buf = "";
+          return (function pump() {
+            return reader.read().then(function (res) {
+              if (res.done) return;
+              buf += dec.decode(res.value, { stream: true });
+              var parts = buf.split("\n\n"); buf = parts.pop();
+              parts.forEach(function (chunk) {
+                var line = chunk.split("\n").filter(function (l) { return l.indexOf("data:") === 0; })[0];
+                if (line) { try { handle(JSON.parse(line.slice(5))); } catch (err) {} }
+              });
+              return pump();
+            });
+          })();
+        }).then(function () {
+          if (gone) throw 0;
+          if (!failed && !complete) throw new Error("cut off");   // the stream ended before "done": join again
+        }).catch(function (err) {
+          if (err === 0 || failed || complete || gone) return;
+          if (jobId && retries < 5) {  // Fizzy has the question and is still writing: join again in a moment
+            retries++; rejoined = true;
+            return new Promise(function (ok) { setTimeout(ok, 2000); })
+              .then(function () { if (gone) throw 0; restart(); return attempt(fetch("/ask/stream", { credentials: "same-origin", cache: "no-store" })); })
+              .catch(function (e2) { if (e2 !== 0) fail("Couldn't reach Fizzy. Check the connection and try again."); });
+          }
+          fail("Couldn't reach Fizzy. Check the connection and try again.");
+        });
+      }
+      attempt(request).then(function () {
+        if (failed || gone) return;
+        return new Promise(whenShown).then(function () {
+          settle();  // the reply stays as drawn; only suggestion cards ("Do it") come from Fizzy's copy
+          return fetch("/ask", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.text(); })
+            .then(function (html) {
+              if (gone) return;
+              if (joining || rejoined) { follow(function () { refresh(html, true); }); return; }   // drawn from Fizzy's copy, so nothing shows twice
+              var fresh = new DOMParser().parseFromString(html, "text/html").querySelectorAll("#chat .proposal");
+              follow(function () {
+                for (var i = before; i < fresh.length; i++) { var c = document.importNode(fresh[i], true); c.classList.add("enter"); addBack(c); end().before(c); }
+              });
+            });
+        });
+      }).catch(function () {}).then(finish);
+    }
+    // "No thanks" without a reload too. "Do it" goes the normal way so the passcode box can ask first.
+    listen(chat, "submit", function (e) {
+      var form = e.target; if (!form.matches("[data-inplace]")) return;
+      e.preventDefault(); post(form).then(function (html) { if (!gone) refresh(html); }).catch(function () {});
+    });
+    down(false);
+    if (chat.dataset.pending) run(chat.dataset.pending, null, fetch("/ask/stream", { credentials: "same-origin", cache: "no-store" }));
+    else if (!box && !chat.querySelector(".chat-empty") && !touch && !t.disabled) t.focus();
+  }
+
   // ---- landing on a section -------------------------------------------------------------------
   // A redirect to /settings#pin (or /tools#merge...) followed by Turbo loses the # part, so Fizzy
   // sends it as <body data-jump="pin"> instead (see back() in web.py). A <details> there is opened:
@@ -699,6 +1010,8 @@
       listen(t, "pointerenter", side); listen(t, "focus", side);
     });
     reclip();
+    $$("input[data-filter]").forEach(filterList);
+    var chatBox = $("[data-ask-chat]"); if (chatBox) askChat(chatBox);
     var ck = $("[data-clock]"); if (ck) clock(ck);
     var auto = $("[data-autorefresh]"); if (auto) autoRefresh(auto);
     later(unprerender);
@@ -711,7 +1024,11 @@
       var dsel = $("[data-display-mode]");
       if (dsel) {
         showDisplayMode(dsel);
-        listen(dsel, "change", function () { setDisplayMode(dsel.value); });
+        listen(dsel, "change", function () {
+          // The last item isn't a mode: it opens the display's own settings (its message, the shelf).
+          if (dsel.value === "edit") { showDisplayMode(dsel); if (window.Turbo) Turbo.visit("/display/settings"); else location.href = "/display/settings"; return; }
+          setDisplayMode(dsel.value);
+        });
         // Picked in another tab on this device: show it here too (that tab has told the display already).
         listen(window, "storage", function (e) {
           if (e.key !== DISPLAY_KEY && e.key !== null) return;

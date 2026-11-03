@@ -621,7 +621,7 @@ def preview(conn, rule):
 
 # ---- storing -----------------------------------------------------------------------------------------
 
-def create(conn, rule, staff, source="Ask"):
+def create(conn, rule, staff, source="Fizz"):
     rule = validate(conn, rule)
     for k in ("id", "created_at"):
         rule.pop(k, None)
@@ -631,7 +631,7 @@ def create(conn, rule, staff, source="Ask"):
     return cur.lastrowid
 
 
-def update(conn, rule_id, rule, staff, source="Ask"):
+def update(conn, rule_id, rule, staff, source="Fizz"):
     row = conn.execute("SELECT * FROM rules WHERE id = ? AND deleted_at IS NULL", (rule_id,)).fetchone()
     if row is None:
         raise RuleError("That rule doesn't exist.")
