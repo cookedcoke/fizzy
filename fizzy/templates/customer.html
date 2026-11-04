@@ -93,8 +93,13 @@
 {% endif %}
 
 {% if offers or recent_redemptions %}
-<div class="rewards-strip">
-  {% for o in offers %}{% set r = o.reward %}
+{# Up to 3 rewards they can have now, and the one they're closest to; everything else folds away,
+   so a long list of rewards doesn't push the page down. #}
+{% set ready = offers|selectattr('can_redeem')|sort(attribute='reward.points_cost')|list %}
+{% set waiting = offers|rejectattr('can_redeem')|rejectattr('limit_hit')|sort(attribute='short')|list %}
+{% set shown = ready[:3] + (waiting[:1] if ready|length < 3 else []) %}
+{% set rest = offers|reject('in', shown)|list %}
+{% macro offer(o) %}{% set r = o.reward %}
   <div class="offer {{ 'ready' if o.can_redeem }}">
     <div><b>{{ r.name }}</b> <span class="muted">· {{ '{:,}'.format(r.points_cost) }} pts</span>
       <div class="small muted">{% if o.can_redeem %}{{ c.name.split(' ')[0] }} can have this now.{% if r.square_note %} In Square: {{ r.square_note }}.{% endif %}
@@ -104,12 +109,18 @@
       <button class="primary"
         data-confirm="Redeem {{ r.name }} for {{ c.name }}? Takes {{ '{:,}'.format(r.points_cost) }} points.">Redeem</button></form>{% endif %}
   </div>
-  {% endfor %}
+{%- endmacro %}
+<div class="rewards-strip">
   {% for d in recent_redemptions %}
   <div class="offer done"><div><b>Redeemed {{ d.name }}</b> <span class="muted">· {{ d.created_at|local('%H:%M') }} by {{ d.staff }}</span>
     {% if d.square_note %}<div class="small muted">In Square: {{ d.square_note }}.</div>{% endif %}</div>
     <form method="post" action="/redemptions/{{ d.id }}/undo"><button class="sm" data-confirm="Undo this redemption and give {{ d.points }} points back?">Undo</button></form></div>
   {% endfor %}
+  {% for o in shown %}{{ offer(o) }}{% endfor %}
+  {% if rest %}{% set more_ready = rest|selectattr('can_redeem')|list|length %}
+  <details class="more-rewards"><summary>All rewards <span class="muted">· {{ rest|length }} more{% if more_ready == rest|length %}, {{ c.name.split(' ')[0] }} can have any of them{% elif more_ready %}, {{ more_ready }} {{ c.name.split(' ')[0] }} can have now{% endif %}</span></summary>
+    <div class="rewards-strip">{% for o in rest %}{{ offer(o) }}{% endfor %}</div>
+  </details>{% endif %}
 </div>
 {% endif %}
 

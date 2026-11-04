@@ -167,3 +167,21 @@ def test_server_search_shows_reward_tag(client):
     client.post("/rewards", data={"name": "Free Coke", "points": "1000"})
     page = client.get("/customers?q=rich").text                      # two matches: a results table
     assert page.count('tag reward">Reward') == 1
+
+
+def test_lots_of_rewards_dont_crowd_the_customer_page(client):
+    """At most 3 rewards they can have now (plus the next one) stay out; the rest fold into All rewards."""
+    import re
+    login(client)
+    client.post("/tools/add_customer", data={"name": "Big Spender", "email": "rns7@reddamnorthshore.nsw.edu.au"})
+    client.post("/tools/bulk_points", data={"delta": "500", "note": "seed", "people": "Big Spender"})
+    for i in range(12):   # 5 they can have (100-500), 7 they can't (600-1200)
+        client.post("/rewards", data={"name": f"Reward {i + 1}", "points": str(100 * (i + 1))})
+    page = client.get("/customers/1").text
+    strip = page.split('<div class="rewards-strip">', 1)[1].split("<details", 1)[0]
+    assert len(re.findall(r'class="offer', strip)) == 3 and "Reward 1</b>" in strip and "Reward 3</b>" in strip
+    assert 'class="more-rewards"' in page and "9 more, 2 Big can have now" in page
+    # nothing ready: the closest one stays out, the rest fold away
+    client.post("/tools/bulk_points", data={"delta": "-450", "note": "spent", "people": "Big Spender"})
+    strip = client.get("/customers/1").text.split('<div class="rewards-strip">', 1)[1].split("<details", 1)[0]
+    assert len(re.findall(r'class="offer', strip)) == 1 and "Needs 50 more points" in strip
