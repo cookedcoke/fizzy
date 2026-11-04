@@ -15,16 +15,24 @@ router = APIRouter()
 
 @router.get("/display", response_class=HTMLResponse)
 def display(request: Request, who=Depends(staff)):
-    return templates.TemplateResponse(request, "display.html", {"student_site": config.PUBLIC_HOST, "qr": _qr()})
+    return templates.TemplateResponse(request, "display.html", {"student_site": config.PUBLIC_HOST, "qr": _qr(),
+                                                                "app_qr": _app_qr()})
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=4)
+def _code(url):
+    import segno
+    return segno.make(url, error="m").svg_inline(scale=1, border=2, dark="#1B1A1F", light="#FFFFFF", omitsize=True)
+
+
 def _qr():
     """The student site as a QR code (inline SVG), so a phone in the queue can open it."""
-    if not config.PUBLIC_HOST:
-        return None
-    import segno
-    return segno.make(f"https://{config.PUBLIC_HOST}/", error="m").svg_inline(scale=1, border=2, dark="#1B1A1F", light="#FFFFFF", omitsize=True)
+    return _code(f"https://{config.PUBLIC_HOST}/") if config.PUBLIC_HOST else None
+
+
+def _app_qr():
+    """My CCC on the App Store, beside it, for iPhones."""
+    return _code(config.STUDENT_APP_STORE_URL) if config.STUDENT_APP_STORE_URL else None
 
 
 def menu_items(conn):

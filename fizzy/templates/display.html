@@ -64,7 +64,9 @@
   .progress .bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #FF5A3C, var(--red)); transition: width .8s ease }
   #idle .qr { position: absolute; right: 7vw; bottom: 6vh; display: flex; flex-direction: column; align-items: center; gap: 1.6vh;
               text-align: center; font-size: 2.2vh; color: var(--muted) }
-  #idle .qr > svg { width: 22vh; height: 22vh; background: #fff; border-radius: 2vh; padding: 1.2vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3) }
+  #idle .qr .codes { display: flex; gap: 3vh; align-items: flex-start }
+  #idle .qr figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 1.6vh }
+  #idle .qr figure > svg { width: 22vh; height: 22vh; background: #fff; border-radius: 2vh; padding: 1.2vh; box-shadow: 0 1vh 3vh -2vh rgba(140,30,0,.3) }
   #idle .qr b { color: var(--ink) }
   /* a ring counting down to the next slide */
   .countdown { position: relative; width: 22vh; height: 22vh; margin-bottom: 1.5vh; display: grid; place-items: center }
@@ -127,7 +129,10 @@
   <div class="slide" data-s="soon"><h2>Coming <span>up</span></h2><div class="big-list" id="s-soon"></div></div>
   <div class="dots" id="dots"></div>
   <div class="qr"><div class="countdown" id="countdown" aria-hidden="true"><svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="46"/><circle class="ring" id="cd-ring" cx="50" cy="50" r="46" pathLength="100"/></svg><span id="cd-n">9</span></div>
-    {% if student_site %}{% if qr %}{{ qr|safe }}{% endif %}<p>Scan to see your points<br><b>{{ student_site }}</b></p>{% endif %}</div>
+    <div class="codes">
+      {% if app_qr %}<figure>{{ app_qr|safe }}<p>Get the app<br><b>My CCC · iPhone</b></p></figure>{% endif %}
+      {% if student_site %}<figure>{% if qr %}{{ qr|safe }}{% endif %}<p>Scan to see your points<br><b>{{ student_site }}</b></p></figure>{% endif %}
+    </div></div>
 </section>
 
 <section class="screen" id="cust" aria-live="polite">

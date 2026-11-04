@@ -35,6 +35,8 @@ PUBLIC_HOST = _env("FIZZY_PUBLIC_HOST").lower()                  # e.g. my.cooke
 LINK_HOST = _env("FIZZY_LINK_HOST").lower()                      # e.g. link.cookedcoke.co
 APPLE_TEAM_ID = _env("FIZZY_APPLE_TEAM_ID", "9MQ6DTJYXF")
 STUDENT_APP_ID = _env("FIZZY_STUDENT_APP_ID", "co.cookedcoke.student")
+# My CCC on the App Store, as a QR code on the customer display. Set it blank to leave the code off.
+STUDENT_APP_STORE_URL = _env("FIZZY_STUDENT_APP_STORE_URL", "https://apps.apple.com/au/app/id6829730460")
 # Discord announcements for new rewards and double points days (see discord.py). Off unless set.
 DISCORD_WEBHOOK_URL = _env("DISCORD_WEBHOOK_URL")
 DISCORD_MENTION = _env("DISCORD_MENTION")                        # e.g. @everyone, or <@&ROLE_ID>
