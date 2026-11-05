@@ -19,7 +19,7 @@ The spec keys (all optional, checked in validate_extras):
 import json
 import random
 import re
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 
 from . import config
 from .db import audit
@@ -145,20 +145,32 @@ def get_run(conn, rid, who):
 
 
 def found(conn, who, rid):
-    """Codes counted so far, in no order."""
+    """Codes counted in this player's current run, in no order. Scans from before the run started (an
+    earlier test, or the hunt before it was timed) don't count."""
     if who[0] == "c":
-        rows = conn.execute("SELECT step_code FROM challenge_scans WHERE customer_id = ? AND rule_id = ?", (who[1], rid))
+        rows = conn.execute("SELECT step_code, scanned_at FROM challenge_scans WHERE customer_id = ? AND rule_id = ?", (who[1], rid))
     else:
-        rows = conn.execute("SELECT step_code FROM guest_scans WHERE guest = ? AND rule_id = ?", (who[1], rid))
-    return {r[0] for r in rows}
+        rows = conn.execute("SELECT step_code, scanned_at FROM guest_scans WHERE guest = ? AND rule_id = ?", (who[1], rid))
+    rows = rows.fetchall()
+    run = get_run(conn, rid, who)
+    if run is None:
+        return {r[0] for r in rows}
+    since = _aware(_parse(run["started_at"]))
+    return {r[0] for r in rows if _aware(_parse(r[1])) >= since}
+
+
+def _aware(t):
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
 
 
 def _record(conn, who, rid, code, at):
     if who[0] == "c":
-        conn.execute("INSERT OR IGNORE INTO challenge_scans(customer_id, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?)",
+        conn.execute("INSERT INTO challenge_scans(customer_id, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?) "
+                     "ON CONFLICT(customer_id, rule_id, step_code) DO UPDATE SET scanned_at = excluded.scanned_at",
                      (who[1], rid, code, at))
     else:
-        conn.execute("INSERT OR IGNORE INTO guest_scans(guest, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?)",
+        conn.execute("INSERT INTO guest_scans(guest, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?) "
+                     "ON CONFLICT(guest, rule_id, step_code) DO UPDATE SET scanned_at = excluded.scanned_at",
                      (who[1], rid, code, at))
 
 
@@ -281,8 +293,8 @@ def set_name(conn, who, nickname, klass):
         return "Pick a nickname (at least 2 letters)."
     if not cls:
         return "Add your class or year, so staff can find you if you win."
-    conn.execute("UPDATE hunt_runs SET nickname = ?, klass = ? WHERE player = ?", (nick, cls, _key(who)))
-    return None
+    cur = conn.execute("UPDATE hunt_runs SET nickname = ?, klass = ? WHERE player = ?", (nick, cls, _key(who)))
+    return None if cur.rowcount else "Scan the start poster first."
 
 
 # ---- what the apps draw -------------------------------------------------------------------------------------

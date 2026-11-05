@@ -634,6 +634,8 @@ async def hunt_name(request: Request, conn=Depends(get_conn)):
     form = await request.form()
     c = current(request, conn)
     guest = request.session.get("guest")
+    if c is not None and guest:
+        runs.adopt(conn, guest, c["id"])        # started on this phone before signing in
     who = runs.cust_who(c["id"]) if c is not None else runs.guest_who(guest) if guest else None
     err = "Scan the start poster first." if who is None else runs.set_name(conn, who, form.get("nickname"), form.get("klass"))
     conn.commit()

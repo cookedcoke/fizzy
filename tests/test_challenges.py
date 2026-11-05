@@ -633,6 +633,25 @@ def test_clue_chain_only_counts_the_next_stop(conn, clock):
     assert ok and "already found" in msg
 
 
+def test_scans_from_before_the_run_dont_count(conn, clock):
+    rid, codes = timed(conn)
+    for label in ("Pottery", "Print shop", "Cafe"):                                    # an earlier test, before it was timed
+        conn.execute("INSERT INTO guest_scans(guest, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?)",
+                     ("p1", rid, codes[label], "2026-11-01T10:00:00+00:00"))
+    ok, msg, _ = challenges.guest_scan(conn, "p1", codes["Foundry"])
+    assert ok and "1 of 4 found" in msg
+    card = challenges.guest_cards(conn, "p1")[0]
+    assert card["progress"]["done"] == 1 and not card["run"]["finished"]
+    msg = run_in_order(conn, clock, "p2", codes)
+    assert "That's everything" in msg
+    order = json.loads(conn.execute("SELECT order_json FROM hunt_runs WHERE player = 'g:p1'").fetchone()[0])
+    for c in order:
+        clock.tick(25)
+        ok, msg, _ = challenges.guest_scan(conn, "p1", c)
+        assert ok, msg
+    assert "That's everything" in msg
+
+
 def test_a_clue_chain_never_gives_away_unfound_stops(conn, cust, clock):
     rid, codes = timed(conn)
     c = cust()
