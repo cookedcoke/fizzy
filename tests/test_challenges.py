@@ -429,6 +429,24 @@ def test_link_host_sends_browsers_to_the_student_site(client, monkeypatch):
     assert r["ok"] and "finished" in r["message"]
 
 
+def test_the_clip_can_save_a_nickname_on_the_link_host(client, monkeypatch, clock):
+    from fizzy import db
+    setup_student(client, points=0)
+    conn = db.connect()
+    rid, codes = timed(conn)
+    conn.commit()
+    client.post("/logout")
+    monkeypatch.setattr(config, "LINK_HOST", "link.cookedcoke.co")
+    monkeypatch.setattr(config, "PUBLIC_HOST", "my.cookedcoke.co")
+    card = client.get(f"http://link.cookedcoke.co/{codes['Foundry']}", headers=J).json()["cards"][0]
+    assert card["run"]["needs_name"] is True
+    r = client.post("http://link.cookedcoke.co/hunt/name", data={"nickname": "Zed", "klass": "9C"}, headers=J)
+    assert r.status_code == 200 and r.json()["ok"]
+    card = client.get("http://link.cookedcoke.co/hunt", headers=J).json()["cards"][0]
+    assert card["run"]["nickname"] == "Zed" and card["run"]["needs_name"] is False
+    assert client.post("http://link.cookedcoke.co/hunt/name", data={"nickname": "Z", "klass": ""}, headers=J).json()["ok"] is False
+
+
 def test_printed_codes_use_the_link_host(client, monkeypatch):
     login(client)
     client.post("/challenges", data={"name": "Market Day", "stops": "Library\nGym", "prize_text": "A free drink"})

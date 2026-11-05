@@ -76,6 +76,27 @@ final class Hunt {
         return root.appendingPathComponent(host.hasPrefix("link.") || host.hasPrefix("my.") ? "hunt" : "me/hunt")
     }
 
+    /// A timed hunt asks for a nickname (all the board shows) and a class, so staff can find a winner. Returns an error to show, or nil.
+    func saveName(nickname: String, klass: String) async -> String? {
+        guard let base else { return "Scan a hunt poster first." }
+        var req = URLRequest(url: Self.huntPage(base).appendingPathComponent("name"))
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        var form = URLComponents()
+        form.queryItems = [URLQueryItem(name: "nickname", value: nickname), URLQueryItem(name: "klass", value: klass)]
+        req.httpBody = form.percentEncodedQuery?.data(using: .utf8)
+        do {
+            restoreCookies(for: req.url!)
+            let (data, _) = try await session.data(for: req)
+            saveCookies(for: req.url!)
+            let answer = try JSONDecoder().decode(J.self, from: data)
+            if answer.ok.bool { await refresh(); return nil }
+            return answer.message.optString ?? "Couldn't save that. Try again."
+        } catch {
+            return isOffline(error) ? "No signal. Try again when there is." : "Couldn't reach Cooked Coke. Try again."
+        }
+    }
+
     /// `base`: where to come back to for progress, saved once this answer has been read.
     private func fetch(_ url: URL, base newBase: URL?) async {
         latest += 1
@@ -148,7 +169,7 @@ struct HuntView: View {
                         .foregroundStyle(hunt.ok ? .green : .red)
                 }
                 ForEach(Array(hunt.cards.enumerated()), id: \.offset) { _, card in
-                    HuntSection(card: card)
+                    HuntSection(card: card, hunt: hunt)
                 }
                 if hunt.cards.isEmpty && !hunt.loading && hunt.problem == nil {
                     ContentUnavailableView("Scan a hunt code", systemImage: "qrcode.viewfinder",
@@ -197,6 +218,11 @@ struct HuntView: View {
 /// One hunt: its stops with ticks, then the claim code once they're all found.
 private struct HuntSection: View {
     let card: J
+    let hunt: Hunt
+    @State private var nickname = ""
+    @State private var klass = ""
+    @State private var nameProblem: String?
+    @State private var saving = false
 
     var body: some View {
         let steps = card.steps.array
@@ -226,6 +252,25 @@ private struct HuntSection: View {
                         Text("\(done) of \(total) found").font(.headline).monospacedDigit()
                         Text("Find them all for \(card.prize.string.lowercased())").font(.subheadline).foregroundStyle(.secondary)
                     }
+                }
+                .padding(.vertical, 4)
+            }
+            if card.run.needs_name.bool {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Add your nickname").font(.headline)
+                    Text("Only your nickname shows on the board. Your class or year is so staff can find you if you win.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    TextField("Nickname", text: $nickname).textFieldStyle(.roundedBorder).autocorrectionDisabled()
+                    TextField("Class or year (e.g. 8B)", text: $klass).textFieldStyle(.roundedBorder).autocorrectionDisabled()
+                    if let nameProblem { Text(nameProblem).font(.footnote).foregroundStyle(.red) }
+                    Button {
+                        saving = true
+                        Task {
+                            nameProblem = await hunt.saveName(nickname: nickname, klass: klass)
+                            saving = false
+                        }
+                    } label: { Text("Save").frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent).disabled(saving || nickname.count < 2 || klass.isEmpty)
                 }
                 .padding(.vertical, 4)
             }

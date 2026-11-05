@@ -319,6 +319,10 @@ def create_app(background=True):
                 # which signing in there moves over). This host's cookie never reaches the student site.
                 where = "hunt" if code == "hunt" else "c/" + quote(code, safe="")
                 return RedirectResponse(f"https://{config.PUBLIC_HOST}/{where}", status_code=303)
+            if path == "/hunt/name":   # a timed hunt's nickname, from the App Clip
+                request.scope["path"] = "/me/hunt/name"
+                request.state.public = True
+                return await call_next(request)
             if code == "hunt":   # what this phone has found (the App Clip, opened without a code)
                 request.scope["path"] = "/me/hunt"
                 request.state.public = True
