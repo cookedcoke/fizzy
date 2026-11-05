@@ -323,7 +323,7 @@ def create_app(background=True):
                 request.scope["path"] = "/me/hunt/name"
                 request.state.public = True
                 resp = await call_next(request)
-                log.info("hunt name in: %s %s -> %s %s", dict((k, v[:40]) for k, v in request.headers.items() if k not in ("cookie",)),
+                logging.getLogger("uvicorn.error").info("hunt name in: %s %s -> %s %s", dict((k, v[:40]) for k, v in request.headers.items() if k not in ("cookie",)),
                          "cookie" in request.headers, resp.status_code, resp.headers.get("location"))
                 return resp
             if code == "hunt":   # what this phone has found (the App Clip, opened without a code)
