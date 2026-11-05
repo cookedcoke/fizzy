@@ -40,3 +40,41 @@
 <p class="next-poster"><span class="np-ico">{{ icon('camera') }}</span>
   <span><b>Scan the next poster.</b> Open your camera and point it at the code. You can scan in the My CCC app too.</span></p>
 {%- endmacro %}
+
+{# A timed hunt's panel: the nickname form until they've given one, a running clock, then the finish time, place and a live clock. #}
+{% macro run_panel(k, action) -%}
+{% set run = k.run %}
+{% if run %}
+<div class="run-panel {{ 'is-fin' if run.finished }}">
+  {% if run.finished %}
+    <div class="run-k">Your time</div>
+    <div class="run-time">{{ run.elapsed }}</div>
+    {% if run.rank %}<div class="run-rank">#{{ run.rank }} so far{% if run.top %} <small>Fastest {{ run.top }} decided at close</small>{% endif %}</div>{% endif %}
+    <div class="run-now" data-live-clock>--:--:--</div>
+  {% else %}
+    <div class="run-k">Your clock</div>
+    <div class="run-time" data-run-clock="{{ run.started_ms }}">0:00</div>
+    {% if run.clue %}<div class="run-clue"><small>Your next clue</small>{{ run.clue }}</div>{% endif %}
+  {% endif %}
+  {% if run.needs_name %}
+  <form class="run-name" method="post" action="{{ action }}">
+    <p><b>{{ 'Add your nickname' if not run.finished else 'Add your nickname so you are on the board' }}</b> (only the nickname is shown) and your class or year, so staff can find you if you win.</p>
+    <input name="nickname" maxlength="20" placeholder="Nickname" autocomplete="off" required>
+    <input name="klass" maxlength="12" placeholder="Class / year (e.g. 8B)" autocomplete="off" required>
+    <button class="go" type="submit">Save</button>
+  </form>
+  {% elif run.nickname %}<p class="tab-sub center">On the board as <b>{{ run.nickname }}</b> ({{ run.klass }})</p>{% endif %}
+</div>
+<script>
+(function () {
+  function f(s) { s = Math.max(0, Math.floor(s)); var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60;
+    return (h ? h + ":" + (m < 10 ? "0" : "") + m : m) + ":" + (x < 10 ? "0" : "") + x; }
+  function tick() {
+    document.querySelectorAll("[data-run-clock]").forEach(function (e) { e.textContent = f((Date.now() - +e.dataset.runClock) / 1000); });
+    document.querySelectorAll("[data-live-clock]").forEach(function (e) { e.textContent = new Date().toLocaleTimeString([], { hour12: false }); });
+  }
+  tick(); setInterval(tick, 500);
+})();
+</script>
+{% endif %}
+{%- endmacro %}

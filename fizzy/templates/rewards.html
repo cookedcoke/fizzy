@@ -30,7 +30,8 @@
       <div><b>{{ r.name }}</b> <span class="tag">{{ {'badge': 'Badge', 'event': 'Event', 'challenge': 'Challenge'}[r.kind] }}</span>{% if r.paused %} <span class="tag">Paused</span>{% endif %}
         <div class="small">{{ r.summary }}{% if r.kind == 'badge' %} · {{ r.spec.points }} points{% if r.spec.repeat and r.spec.repeat != 'once' %} each {{ r.spec.repeat }}{% endif %}{% endif %}</div>
         {% if r.challenge %}<div class="small">{{ r.challenge.steps }} step{{ '' if r.challenge.steps == 1 else 's' }} · prize: {{ r.challenge.prize }} · {{ r.challenge.started }} started, {{ r.challenge.finished }} finished{% if r.challenge.finished %} ({{ r.challenge.given }} given){% endif %}
-          {% if r.challenge.codes %} · <a href="/challenges/{{ r.id }}/codes">Print the codes</a>{% endif %}</div>{% endif %}
+          {% if r.challenge.codes %} · <a href="/challenges/{{ r.id }}/codes">Print the codes</a>{% endif %}
+          · <a href="/challenges/{{ r.id }}/run">{{ 'Timed hunt: winners and settings' if r.challenge.timed else 'Make it a timed hunt' }}</a></div>{% endif %}
         <div class="small muted">{{ r.students }} student{{ '' if r.students == 1 else 's' }} · {{ '{:,}'.format(r.points) }} points given · made by {{ r.created_by }} {{ r.created_at|local('%-d %b') }}</div>
         <details class="small"><summary>The rule</summary><pre class="mono">{{ r.spec|tojson(indent=2) }}</pre></details></div>
       <div class="actions" style="margin:0;flex:none">

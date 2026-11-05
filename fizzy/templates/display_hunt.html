@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hunt board · Cooked Coke Co.</title>
+<style>
+  @font-face { font-family: "Bricolage"; font-weight: 400 800; font-display: swap; src: url(/static/bricolage-latin.woff2?v={{ V }}) format("woff2") }
+  :root { --cream: #FFF7EE; --ink: #1B1A1F; --muted: #6E6660; --red: #FE0001; --sun: #FFC23D; --display: "Bricolage", ui-rounded, system-ui, sans-serif }
+  * { box-sizing: border-box; margin: 0 }
+  html, body { height: 100% }
+  body { background: var(--cream); color: var(--ink); font: 2.4vh/1.4 system-ui, sans-serif; padding: 5vh 7vw; cursor: none }
+  h1 { font-family: var(--display); font-weight: 800; font-size: 8vh; letter-spacing: -.03em; line-height: 1 } h1 span { color: var(--red) }
+  .sub { color: var(--muted); font-size: 3vh; margin: 1.4vh 0 3vh }
+  ol { list-style: none; padding: 0; display: grid; gap: 1.2vh }
+  li { display: flex; align-items: center; gap: 2vh; font-size: 4.4vh; font-weight: 650 }
+  li em { width: 8vh; height: 8vh; border-radius: 50%; display: grid; place-items: center; font: 800 4.4vh var(--display); background: #E9E6E3 }
+  li:nth-child(1) em { background: var(--sun) } li:nth-child(3) em { background: #F2C29B }
+  li span { margin-left: auto; font: 800 5vh var(--display); font-variant-numeric: tabular-nums }
+  .none { color: var(--muted); font-size: 3.6vh }
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script>
+  var out = document.getElementById("out");
+  function load() {
+    fetch("/api/display/hunt", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      out.textContent = "";
+      if (!d.hunts.length) { var n = document.createElement("p"); n.className = "none"; n.textContent = "No timed hunt is on."; out.appendChild(n); return; }
+      d.hunts.forEach(function (h) {
+        var t = document.createElement("h1"); t.textContent = h.name + " "; var s = document.createElement("span"); s.textContent = "fastest times"; t.appendChild(s);
+        var sub = document.createElement("p"); sub.className = "sub";
+        sub.textContent = h.finished + " finished, " + h.running + " still running" + (h.closed ? " - closed" : "");
+        var ol = document.createElement("ol");
+        h.rows.forEach(function (x) { var li = document.createElement("li"), e = document.createElement("em"), n = document.createElement("b"), p = document.createElement("span");
+          e.textContent = x.rank; n.textContent = x.name; p.textContent = x.time; li.append(e, n, p); ol.appendChild(li); });
+        out.append(t, sub, ol);
+        if (!h.rows.length) { var no = document.createElement("p"); no.className = "none"; no.textContent = "Nobody has finished yet. Be the first!"; out.appendChild(no); }
+      });
+    }).catch(function () {});
+  }
+  load(); setInterval(load, 5000);
+</script>
+</body>
+</html>

@@ -19,7 +19,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from . import config, stats
+from . import config, runs, stats
 from .db import audit, now_iso
 from .web import back, get_conn, render, staff
 
@@ -54,6 +54,8 @@ def validate(conn, rule):
                 step["hint"] = hint
             if isinstance(s.get("code"), str) and CODE_RE.match(s["code"]):
                 step["code"] = s["code"]   # kept on an edit, so codes already printed still work
+            if s.get("start") is True:
+                step["start"] = True       # the poster that starts the clock (shuffled hunts)
         elif "need" in s:
             _check_condition(s["need"])
             step = {"label": label, "need": s["need"]}
@@ -74,7 +76,9 @@ def validate(conn, rule):
         p["text"] = text
     if not p:
         raise RuleError("The prize needs points, text (e.g. \"A free drink\"), or both.")
-    rule = dict(rule, steps=out, prize=p)
+    extras = runs.validate_extras(rule, out)   # the clue chain's keys: checked, or dropped when blank
+    rule = {k: v for k, v in rule.items() if k not in ("order", "hours", "prize_top", "scan_gap")}
+    rule = dict(rule, steps=out, prize=p, **extras)
     if "icon" in rule and (not isinstance(rule["icon"], str) or len(rule["icon"]) > 8):
         rule.pop("icon")
     return rule
@@ -216,6 +220,14 @@ def scan(conn, cid, text):
         return False, f"{rule['name']} has finished."
     if _won(conn, cid, rule["id"]):
         return True, f"You've already finished {rule['name']}."
+    if runs.ordered(rule):
+        def finish(c):
+            award(c, cid)
+            return _collect(rule["prize"])
+        return runs.scan(conn, rule, i, runs.cust_who(cid), finish)
+    late = runs.gate(rule, False)
+    if late:
+        return False, late
     added = conn.execute("INSERT OR IGNORE INTO challenge_scans(customer_id, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?)",
                          (cid, rule["id"], rule["steps"][i]["code"], now_iso())).rowcount
     label = rule["steps"][i]["label"]
@@ -266,13 +278,22 @@ def card(conn, cid, rule, ps=None, ctx=None):
         steps.append({"label": s["label"], "detail": s.get("hint", ""), "done": t,
                       "kind": "scan" if s.get("scan") else "buy"})
     can_scan = (not won and not soon and any(s.get("scan") and not t for s, t in zip(rule["steps"], ticks)))
-    return {
+    out = {
         "id": f"challenge:{rule['id']}", "kicker": "Challenge", "title": rule["name"], "text": rule["summary"],
         "icon": rule.get("icon") or FLAG, "when": when, "steps": steps,
         "progress": {"done": sum(ticks), "total": len(ticks)}, "prize": prize_line(rule["prize"]),
         "done": bool(won), "status": status,
         "actions": [{"kind": "scan", "label": "Scan a code"}] if can_scan else [],
     }
+    if runs.ordered(rule) and not soon:
+        # A clue chain names only the stops already found and the current clue, never the rest.
+        v = runs.view(conn, rule, runs.cust_who(cid))
+        out.update(steps=v["steps"], progress=v["progress"], run=v["run"], text=v["text"] or rule["summary"])
+        if won:
+            out["progress"] = {"done": len(rule["steps"]), "total": len(rule["steps"])}
+    elif runs.ordered(rule):
+        out["steps"] = []
+    return out
 
 
 def cards(conn, cid):
@@ -323,6 +344,12 @@ def guest_scan(conn, guest, text):
         return False, f"{rule['name']} starts on {a.strftime('%A %-d %b')}. Come back then.", rule
     if b and today > b:
         return False, f"{rule['name']} has finished.", rule
+    if runs.ordered(rule):
+        ok, msg = runs.scan(conn, rule, i, runs.guest_who(guest), lambda c: f"Show your claim code {_claim_for(c, guest, rule['id'])} at the stall.")
+        return ok, msg, rule
+    late = runs.gate(rule, False)
+    if late:
+        return False, late, rule
     added = conn.execute("INSERT OR IGNORE INTO guest_scans(guest, rule_id, step_code, scanned_at) VALUES (?, ?, ?, ?)",
                          (guest, rule["id"], rule["steps"][i]["code"], now_iso())).rowcount
     label = rule["steps"][i]["label"]
@@ -358,6 +385,12 @@ def guest_cards(conn, guest):
         if not done:
             continue
         fin = conn.execute("SELECT * FROM guest_finishes WHERE guest = ? AND rule_id = ?", (guest, rule["id"])).fetchone()
+        if runs.ordered(rule):
+            v = runs.view(conn, rule, runs.guest_who(guest))
+            out.append({"title": rule["name"], "text": v["text"] or rule["summary"], "prize": prize_line(rule["prize"]),
+                        "steps": v["steps"], "progress": v["progress"], "run": v["run"],
+                        "claim": fin["claim"] if fin else None, "claimed": bool(fin and fin["claimed_at"])})
+            continue
         steps = [{"label": s["label"], "detail": s.get("hint", ""), "done": bool(s.get("code")) and s["code"] in done}
                  for s in rule["steps"]]
         out.append({"title": rule["name"], "text": rule["summary"], "prize": prize_line(rule["prize"]), "steps": steps,
@@ -384,6 +417,7 @@ def merge_guest(conn, guest, cid, rule_id=None):
                      (cid, guest, r["rule_id"], r["step_code"]))
     conn.execute(f"UPDATE guest_finishes SET customer_id = ? WHERE guest = ?{only} AND customer_id IS NULL AND claimed_at IS NULL",
                  (cid,) + args)
+    runs.adopt(conn, guest, cid, rule_id)
     return award(conn, cid)
 
 
@@ -447,7 +481,7 @@ def staff_info(conn, rule_id, spec, base=None):
     codes = [{"label": s["label"], "hint": s.get("hint", ""), "url": code_url(s["code"], base)}
              for s in spec.get("steps", []) if s.get("scan") and s.get("code")]
     return {"finished": won[0], "given": won[1], "started": started, "codes": codes,
-            "prize": prize_line(spec.get("prize") or {}), "steps": len(spec.get("steps", []))}
+            "prize": prize_line(spec.get("prize") or {}), "steps": len(spec.get("steps", [])), "timed": runs.ordered(spec)}
 
 
 def new_hunt(name, summary, start, end, stops, prize_text, prize_points):
@@ -499,6 +533,85 @@ def challenge_codes(request: Request, rid: int, who=Depends(staff), conn=Depends
     for c in info["codes"]:
         c["svg"] = segno.make(c["url"], error="m").svg_inline(scale=1, border=2, dark="#1B1A1F", light="#FFFFFF", omitsize=True)
     return render(request, "challenge_codes.html", rule=dict(spec, id=rid), info=info)
+
+
+def _challenge_row(conn, rid):
+    row = conn.execute("SELECT * FROM rules WHERE id = ? AND kind = 'challenge' AND deleted_at IS NULL", (rid,)).fetchone()
+    if row is None:
+        raise HTTPException(404)
+    return row, dict(json.loads(row["spec"]), id=rid)
+
+
+@router.get("/challenges/{rid:int}/run", response_class=HTMLResponse)
+def challenge_run(request: Request, rid: int, who=Depends(staff), conn=Depends(get_conn)):
+    """A timed hunt: its settings (clue chain, hours, the fastest-N prize) and the winners to give it to."""
+    row, spec = _challenge_row(conn, rid)
+    winners, dupes = runs.staff_rows(conn, spec) if runs.ordered(spec) else ([], [])
+    counts = conn.execute("SELECT COUNT(*) AS n, COALESCE(SUM(finished_at IS NOT NULL), 0) AS done FROM hunt_runs WHERE rule_id = ? "
+                          "AND void_at IS NULL", (rid,)).fetchone()
+    return render(request, "challenge_run.html", rule=spec, winners=winners, dupes=dupes, counts=counts,
+                  closed=runs.closed(spec), hours=spec.get("hours") or {}, top=spec.get("prize_top") or {})
+
+
+@router.post("/challenges/{rid:int}/run")
+async def challenge_run_save(request: Request, rid: int, who=Depends(staff), conn=Depends(get_conn)):
+    from . import rules
+    row, spec = _challenge_row(conn, rid)
+    form = await request.form()
+    if form.get("order"):
+        spec["order"] = "shuffled"
+        for st in spec["steps"]:
+            st.pop("start", None)
+        chosen = form.get("start")
+        for st in spec["steps"]:
+            if st.get("code") == chosen:
+                st["start"] = True
+    else:
+        spec.pop("order", None)
+        for st in spec["steps"]:
+            st.pop("start", None)
+    spec["hours"] = {k: str(form.get(k) or "").strip() for k in ("open", "last_start", "close")}
+    count = str(form.get("top_count") or "").strip()
+    if count:
+        spec["prize_top"] = {"count": int(count) if count.isdigit() else count, "text": str(form.get("top_text") or "")}
+    else:
+        spec.pop("prize_top", None)
+    gap_s = str(form.get("scan_gap") or "").strip()
+    if gap_s:
+        spec["scan_gap"] = int(gap_s) if gap_s.isdigit() else gap_s
+    else:
+        spec.pop("scan_gap", None)
+    try:
+        rules.update(conn, rid, spec, who, source="Rewards")
+    except rules.RuleError as e:
+        return back(request, f"/challenges/{rid}/run", f"Hunt settings: {e}", "bad")
+    conn.commit()
+    return back(request, f"/challenges/{rid}/run", "Saved.")
+
+
+@router.post("/challenges/{rid:int}/run/{run_id:int}/given")
+def challenge_top_given(request: Request, rid: int, run_id: int, who=Depends(staff), conn=Depends(get_conn)):
+    run = conn.execute("SELECT * FROM hunt_runs WHERE id = ? AND rule_id = ?", (run_id, rid)).fetchone()
+    if run is None:
+        raise HTTPException(404)
+    undo = run["top_given_at"] is not None
+    conn.execute("UPDATE hunt_runs SET top_given_at = ?, top_given_by = ? WHERE id = ?",
+                 (None if undo else now_iso(), None if undo else who, run_id))
+    audit(conn, who, "hunt_top_unmarked" if undo else "hunt_top_given", run["customer_id"], f"{run['nickname']} ({run['klass']})")
+    conn.commit()
+    return back(request, f"/challenges/{rid}/run", "Marked as not given." if undo else f"Marked given to {run['nickname'] or 'them'}.")
+
+
+@router.post("/challenges/{rid:int}/run/{run_id:int}/remove")
+def challenge_run_remove(request: Request, rid: int, run_id: int, who=Depends(staff), conn=Depends(get_conn)):
+    run = conn.execute("SELECT * FROM hunt_runs WHERE id = ? AND rule_id = ?", (run_id, rid)).fetchone()
+    if run is None:
+        raise HTTPException(404)
+    back_on = run["void_at"] is not None
+    conn.execute("UPDATE hunt_runs SET void_at = ? WHERE id = ?", (None if back_on else now_iso(), run_id))
+    audit(conn, who, "hunt_run_restored" if back_on else "hunt_run_removed", run["customer_id"], f"{run['nickname']} ({run['klass']})")
+    conn.commit()
+    return back(request, f"/challenges/{rid}/run", "Put back on the board." if back_on else "Taken off the board.")
 
 
 @router.post("/customers/{cid:int}/claim-prize")

@@ -27,6 +27,7 @@
       <p class="what">{{ k.text }}</p>
       {{ hunt.progress(k.progress.done, k.progress.total) }}
     {% endif %}
+    {{ hunt.run_panel(k, me_url('/hunt/name')) }}
     {% if k.claim %}
       <details class="more"><summary><span class="c">See all {{ k.steps|length }} stops</span><span class="o">Hide the stops</span></summary>{{ hunt.stops(k.steps) }}</details>
     {% else %}

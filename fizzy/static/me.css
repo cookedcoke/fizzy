@@ -297,3 +297,13 @@ a.pill { display: inline-flex; align-items: center; text-decoration: none; min-h
 }
 .hunt-page .note a { color: var(--red-deep); font-weight: 600 }
 @media (min-width: 600px) { .stops { grid-template-columns: repeat(3, minmax(0, 1fr)) } }
+
+/* timed hunts */
+.run-panel { margin: 14px 0 4px; padding: 14px 16px; border-radius: 18px; background: var(--card-2, #F6F2EF); text-align: center }
+.run-panel .run-k { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em }
+.run-panel .run-time { font: 800 clamp(44px, 16vw, 68px)/1.05 var(--display); font-variant-numeric: tabular-nums; margin: 2px 0 }
+.run-panel .run-rank { font: 800 22px/1.2 var(--display) } .run-panel .run-rank small { display: block; font: 500 13px/1.3 var(--body, inherit); color: var(--muted) }
+.run-panel .run-now { margin-top: 8px; font: 600 15px ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); font-variant-numeric: tabular-nums }
+.run-panel .run-clue { margin-top: 6px; font-size: 20px; font-weight: 700; line-height: 1.3 } .run-clue small { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em }
+.run-name { margin-top: 14px; display: grid; gap: 8px; text-align: left } .run-name p { margin: 0; font-size: 13.5px; color: var(--muted) }
+.run-name input { font: inherit; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line, #ddd); min-height: 44px }

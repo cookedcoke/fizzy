@@ -21,7 +21,7 @@ import anyio
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from . import badges, challenges, config, events, logic, rewards, rules, stats
+from . import badges, challenges, config, events, logic, rewards, rules, runs, stats
 from .db import audit, now_iso
 from .web import get_conn, staff, templates, wants_json
 
@@ -628,6 +628,22 @@ def scan_link(request: Request, code: str, conn=Depends(get_conn)):
     return _page(request, "me_hunt.html", note=msg, ok=ok, cards=challenges.guest_cards(conn, guest), signin=_signin())
 
 
+@router.post("/me/hunt/name")
+async def hunt_name(request: Request, conn=Depends(get_conn)):
+    """Their nickname (all the board shows) and class/year (for staff to find winners), for a timed hunt."""
+    form = await request.form()
+    c = current(request, conn)
+    guest = request.session.get("guest")
+    who = runs.cust_who(c["id"]) if c is not None else runs.guest_who(guest) if guest else None
+    err = "Scan the start poster first." if who is None else runs.set_name(conn, who, form.get("nickname"), form.get("klass"))
+    conn.commit()
+    if wants_json(request):
+        return _json({"ok": err is None, "message": err or "Saved."}, 200 if err is None else 400)
+    request.session["me_note"] = err or "Saved. Your nickname is on the board once you finish."
+    request.session["me_note_ok"] = err is None
+    return RedirectResponse(_url("/") if c is not None else _url("/hunt"), status_code=303)
+
+
 @router.get("/me/hunt")
 def hunt_page(request: Request, conn=Depends(get_conn)):
     """What this phone has found so far, without signing in."""
@@ -638,8 +654,9 @@ def hunt_page(request: Request, conn=Depends(get_conn)):
     return _page(request, "me_hunt.html", note=None, ok=True, cards=cards, signin=_signin())
 
 
-_FOUND = re.compile(r"^Found it: (?P<label>.+?)\. (?P<rest>\d+ of \d+ (?:done|found)\.)$")
-_AGAIN = re.compile(r"^You've already found (?P<label>.+?)\. (?P<rest>\d+ of \d+ (?:done|found)\.)$")
+_FOUND = re.compile(r"^Found it: (?P<label>.+?)\. (?P<rest>\d+ of \d+ (?:done|found)\.(?: Your next clue: .+)?)$")
+_GO = re.compile(r"^Found it: (?P<label>.+?)\. Your clock is running! (?P<rest>.+)$")
+_AGAIN = re.compile(r"^You've already found (?P<label>.+?)\. (?P<rest>\d+ of \d+ (?:done|found)\.(?: Your next clue: .+)?)$")
 _ALL = re.compile(r"^Found it: (?P<label>.+?)\. That's everything[ -]*!?\s*(?P<rest>.*)$")
 
 
@@ -655,6 +672,11 @@ def scan_result(ok, message):
         if m:
             rest = m["rest"][:1].upper() + m["rest"][1:]
             return {"kind": "done", "title": "You found them all!", "line": rest, "label": m["label"]}
+        m = _GO.match(msg)
+        if m:
+            return {"kind": "found", "title": "Go! Your clock is running", "line": m["rest"], "label": m["label"]}
+        if msg.startswith("You've already started"):
+            return {"kind": "already", "title": "Already started", "line": msg.split(": ", 1)[-1], "label": None}
         m = _FOUND.match(msg)
         if m:
             return {"kind": "found", "title": f"Found it: {m['label']}", "line": m["rest"], "label": m["label"]}
@@ -665,6 +687,16 @@ def scan_result(ok, message):
         if msg.startswith("You've already finished"):
             return {"kind": "already", "title": "Already finished", "line": msg, "label": None}
         return {"kind": "info", "title": None, "line": msg, "label": None}
+    if msg.startswith("Not this one"):
+        return {"kind": "bad", "title": "Not this one", "line": msg.split(" - ", 1)[-1][0].upper() + msg.split(" - ", 1)[-1][1:], "label": None}
+    if msg.startswith("Hold on"):
+        return {"kind": "bad", "title": "Hold on a sec", "line": msg.split(" - ", 1)[-1][0].upper() + msg.split(" - ", 1)[-1][1:], "label": None}
+    if msg.startswith("Scan the start code"):
+        return {"kind": "bad", "title": "Start first", "line": msg, "label": None}
+    if msg.startswith("Too late to start") or " has closed for today" in msg:
+        return {"kind": "over", "title": "Too late", "line": msg, "label": None}
+    if " opens at " in msg:
+        return {"kind": "soon", "title": "Not open yet", "line": msg, "label": None}
     if " starts on " in msg:
         return {"kind": "soon", "title": "Not started yet", "line": msg, "label": None}
     if msg.endswith(" has finished."):

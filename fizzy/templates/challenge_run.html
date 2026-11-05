@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% block title %}Timed hunt: {{ rule.name }}{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>{{ rule.name }}</h1>
+  <div class="meta">{{ counts.n }} started · {{ counts.done }} finished{% if closed %} · closed for today{% endif %}</div></div>
+  <div class="actions" style="margin:0"><a class="btn" href="/display/hunt" target="_blank">Stall screen</a><a class="btn" href="/rewards#rules">Back to Rewards</a></div></div>
+
+<form class="panel" method="post" action="/challenges/{{ rule.id }}/run"><h2>Settings</h2>
+  <label class="check"><input type="checkbox" name="order" value="1" {{ 'checked' if rule.order == 'shuffled' }}> Clue chain: each player gets the stops in their own random order, timed from the start poster</label>
+  <label>Start poster (the one at our stall)
+    <select name="start">{% for s in rule.steps %}<option value="{{ s.code }}" {{ 'selected' if s.start }}>{{ s.label }}</option>{% endfor %}</select></label>
+  <div class="row">
+    <div><label>Opens <span class="muted">(HH:MM)</span><input type="text" name="open" value="{{ hours.open or '' }}" placeholder="12:30"></label></div>
+    <div><label>Last start<input type="text" name="last_start" value="{{ hours.last_start or '' }}" placeholder="13:10"></label></div>
+    <div><label>Closes<input type="text" name="close" value="{{ hours.close or '' }}" placeholder="13:25"></label></div>
+  </div>
+  <div class="row">
+    <div><label>Seconds between scans that count<input type="number" name="scan_gap" min="0" max="300" value="{{ rule.scan_gap if rule.scan_gap is defined else 20 }}"></label></div>
+    <div><label>Fastest how many get the extra prize <span class="muted">(blank = none)</span><input type="number" name="top_count" min="1" max="100" value="{{ top.count or '' }}"></label></div>
+  </div>
+  <label>Extra prize text <span class="muted">(e.g. the coupon; can be filled in later)</span><input type="text" name="top_text" maxlength="80" value="{{ top.text or '' }}"></label>
+  <p class="hint">Times are school time, on the days the hunt runs. A run started before the last start can carry on until it closes.</p>
+  <div class="actions"><button class="primary">Save</button></div>
+</form>
+
+{% if rule.order == 'shuffled' %}
+<div class="panel"><h2>Fastest {{ top.count or 10 }}{% if top.text %}: {{ top.text }}{% endif %}</h2>
+  {% if not closed %}<p class="hint">The hunt is still open, so places can still change. Decide the winners after it closes.</p>{% endif %}
+  {% if dupes %}<p class="hint"><b>Check these:</b> the same nickname and class twice: {{ dupes|join(', ') }}. It might be one person with two phones.</p>{% endif %}
+  {% if winners %}<div class="scroll"><table>
+    <tr><th class="n">#</th><th>Nickname</th><th>Class</th><th class="n">Time</th><th>Claim code</th><th></th></tr>
+    {% for w in winners %}<tr>
+      <td class="n">{{ w.rank }}</td><td><b>{{ w.name }}</b>{% if w.account %}<br><span class="muted small">{{ w.account }}</span>{% endif %}</td><td>{{ w.klass }}</td><td class="n">{{ w.time }}</td>
+      <td class="mono">{{ w.claim or '–' }}{% if w.claimed %} <span class="muted small">(drink given)</span>{% endif %}</td>
+      <td class="n">
+        <form class="inline" method="post" action="/challenges/{{ rule.id }}/run/{{ w.run }}/given"><button class="sm">{{ 'Given ' ~ (w.given|local('%a %-d %b')) if w.given else 'Mark given' }}</button></form>
+        <form class="inline" method="post" action="/challenges/{{ rule.id }}/run/{{ w.run }}/remove"><button class="sm danger" data-confirm="Take {{ w.name }} off the board? Use this for cheating or a rude nickname.">Remove</button></form></td></tr>{% endfor %}
+  </table></div>{% else %}<p class="empty">Nobody has finished yet.</p>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -543,3 +543,267 @@ def test_hunt_pages_show_the_scan_progress_and_prize(client):
     assert "Nora Le Fevre" in page and ">rns5<" in page and "Show this at the counter for a free drink" in page
     page = client.get("/me/c/NOTACODE1234", follow_redirects=True).text
     assert "is-bad" in page and "Not a hunt code" in page
+
+
+# ---- timed clue-chain hunts (fizzy/runs.py) ----------------------------------------------------------------------
+
+from datetime import datetime, timedelta  # noqa: E402
+
+from fizzy import runs  # noqa: E402
+
+
+class Clock:
+    def __init__(self, h=12, m=40):
+        self.t = datetime(2026, 11, 5, h, m, tzinfo=config.TZ)
+
+    def __call__(self):
+        return self.t
+
+    def tick(self, s):
+        self.t += timedelta(seconds=s)
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    c = Clock()
+    monkeypatch.setattr(runs, "_now", c)
+    return c
+
+
+def timed(conn, **extra):
+    rule = {"kind": "challenge", "name": "Market Day", "summary": "Find every stall", "order": "shuffled",
+            "steps": [{"label": "Foundry", "scan": True, "start": True, "hint": "Start here"},
+                      {"label": "Pottery", "scan": True, "hint": "Where clay gets fired"},
+                      {"label": "Print shop", "scan": True, "hint": "Where your name turns into a keyring"},
+                      {"label": "Cafe", "scan": True, "hint": "Smells of toast"}],
+            "prize": {"text": "A free drink", "points": 100}}
+    rule.update(extra)
+    rid = make(conn, rule)
+    spec = json.loads(conn.execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])
+    return rid, {s["label"]: s["code"] for s in spec["steps"]}
+
+
+def run_in_order(conn, clock, guest, codes, secs=25, name=None):
+    """Play a whole run for a phone, a stop every `secs` seconds. Returns the last message."""
+    ok, msg, _ = challenges.guest_scan(conn, guest, codes["Foundry"])
+    assert ok, msg
+    order = json.loads(conn.execute("SELECT order_json FROM hunt_runs WHERE player = ?", (f"g:{guest}",)).fetchone()[0])
+    for c in order:
+        clock.tick(secs)
+        ok, msg, _ = challenges.guest_scan(conn, guest, c)
+        assert ok, msg
+    return msg
+
+
+def test_clue_chain_only_counts_the_next_stop(conn, clock):
+    rid, codes = timed(conn)
+    ok, msg, _ = challenges.guest_scan(conn, "p1", codes["Pottery"])                 # before the start code
+    assert not ok and "start code first" in msg and "Foundry" in msg
+    ok, msg, _ = challenges.guest_scan(conn, "p1", codes["Foundry"])
+    assert ok and "clock is running" in msg and "Your next clue:" in msg
+    order = [k for c in json.loads(conn.execute("SELECT order_json FROM hunt_runs").fetchone()[0])
+             for k, v in codes.items() if v == c]
+    assert sorted(order) == ["Cafe", "Pottery", "Print shop"] and "Foundry" not in order
+    wrong = next(k for k in codes if k not in ("Foundry", order[0]))
+    clock.tick(30)
+    ok, msg, _ = challenges.guest_scan(conn, "p1", codes[wrong])
+    assert not ok and msg.startswith("Not this one - your clue is:")                  # no penalty, doesn't count
+    assert challenges.guest_cards(conn, "p1")[0]["progress"]["done"] == 1
+    ok, msg, _ = challenges.guest_scan(conn, "p1", codes[order[0]])
+    assert ok and "2 of 4 found" in msg
+    ok, msg, _ = challenges.guest_scan(conn, "p1", codes[order[0]])                  # scanning it again is harmless
+    assert ok and "already found" in msg
+
+
+def test_a_clue_chain_never_gives_away_unfound_stops(conn, cust, clock):
+    rid, codes = timed(conn)
+    c = cust()
+    challenges.guest_scan(conn, "p1", codes["Foundry"])
+    card = challenges.guest_cards(conn, "p1")[0]
+    shown = json.dumps(card)
+    assert len(card["steps"]) == 2 and card["steps"][0]["done"] and not card["steps"][1]["done"]
+    assert card["steps"][1]["detail"] == "Your next clue"
+    for label in ("Pottery", "Print shop", "Cafe"):
+        assert label not in shown                                                       # only clues are shown, never the names
+    assert card["progress"] == {"done": 1, "total": 4}
+    ok, _ = challenges.scan(conn, c["id"], codes["Foundry"])
+    mine = challenges.cards(conn, c["id"])[0]
+    assert ok and all(l not in json.dumps(mine) for l in ("Pottery", "Print shop", "Cafe"))
+    assert mine["run"]["clue"] and mine["progress"]["done"] == 1
+
+
+def test_scans_that_count_need_a_gap(conn, clock):
+    rid, codes = timed(conn)
+    challenges.guest_scan(conn, "p1", codes["Foundry"])
+    order = json.loads(conn.execute("SELECT order_json FROM hunt_runs").fetchone()[0])
+    clock.tick(8)
+    ok, msg, _ = challenges.guest_scan(conn, "p1", order[0])
+    assert not ok and "Hold on" in msg and "13 more seconds" in msg
+    assert challenges.guest_cards(conn, "p1")[0]["progress"]["done"] == 1
+    clock.tick(13)
+    assert challenges.guest_scan(conn, "p1", order[0])[0]
+    ok, msg, _ = challenges.guest_scan(conn, "p1", order[1])                           # the next one is held up too
+    assert not ok and "Hold on" in msg
+
+
+def test_the_time_window(conn, clock):
+    rid, codes = timed(conn, hours={"open": "12:45", "last_start": "13:10", "close": "13:25"})
+    ok, msg, _ = challenges.guest_scan(conn, "early", codes["Foundry"])
+    assert not ok and "opens at 12:45pm" in msg
+    clock.tick(6 * 60)                                                                  # 12:46
+    assert challenges.guest_scan(conn, "a", codes["Foundry"])[0]
+    clock.t = clock.t.replace(hour=13, minute=11)                                       # past the last start
+    ok, msg, _ = challenges.guest_scan(conn, "late", codes["Foundry"])
+    assert not ok and "Too late to start" in msg and "1:10pm" in msg
+    order = json.loads(conn.execute("SELECT order_json FROM hunt_runs WHERE player = 'g:a'").fetchone()[0])
+    assert challenges.guest_scan(conn, "a", order[0])[0]                                # a run already going carries on
+    clock.t = clock.t.replace(hour=13, minute=26)
+    ok, msg, _ = challenges.guest_scan(conn, "a", order[1])
+    assert not ok and "closed for today" in msg
+    kind = lambda m: __import__("fizzy.portal", fromlist=["x"]).scan_result(False, m)["kind"]
+    assert kind("Market Day opens at 12:45pm today.") == "soon" and kind(msg) == "over"
+    # an ordinary hunt with hours uses open and close too
+    rid2, codes2 = hunt(conn, hours={"open": "09:00", "close": "10:00"})
+    assert not challenges.guest_scan(conn, "z", codes2[0])[0]
+
+
+def test_ranking_and_ties(conn, clock):
+    rid, codes = timed(conn)
+    # a: 3 stops at 25 s = 75 s. b: the same, but starts later and finishes later. c: slower. d: quickest.
+    for g, secs in (("a", 25), ("b", 25), ("c", 40), ("d", 12)):
+        clock.t = clock.t.replace(hour=12, minute=41)       # all begin together, so a finishes before b: the tie goes to a
+        challenges.guest_scan(conn, g, codes["Foundry"])
+        order = json.loads(conn.execute("SELECT order_json FROM hunt_runs WHERE player = ?", (f"g:{g}",)).fetchone()[0])
+        conn.execute("UPDATE rules SET spec = json_set(spec, '$.scan_gap', 0) WHERE id = ?", (rid,))
+        for c in order:
+            clock.tick(secs)
+            assert challenges.guest_scan(conn, g, c)[0]
+    rows = runs.board(conn, rid, 10)
+    names = [r["player"] for r in rows]
+    assert names == ["g:d", "g:a", "g:b", "g:c"]                                        # a and b tie on 75 s: a finished first
+    assert [r["elapsed_ms"] for r in rows] == [36000, 75000, 75000, 120000]
+    assert [runs.rank_of(conn, r) for r in rows] == [1, 2, 3, 4]
+    assert runs.fmt_ms(75000) == "1:15" and runs.fmt_ms(3725000) == "1:02:05"
+    assert challenges.guest_cards(conn, "b")[0]["run"]["rank"] == 3
+    assert "You're #3 so far" in challenges.guest_cards(conn, "b")[0]["text"]
+
+
+def test_one_run_per_person(conn, cust, clock):
+    rid, codes = timed(conn, scan_gap=0)
+    challenges.guest_scan(conn, "p1", codes["Foundry"])
+    started = conn.execute("SELECT started_at FROM hunt_runs").fetchone()[0]
+    clock.tick(300)
+    ok, msg, _ = challenges.guest_scan(conn, "p1", codes["Foundry"])                    # scanning the start again doesn't restart it
+    assert ok and "already started" in msg
+    assert conn.execute("SELECT started_at FROM hunt_runs").fetchone()[0] == started
+    assert conn.execute("SELECT COUNT(*) FROM hunt_runs").fetchone()[0] == 1
+    run_in_order(conn, clock, "p2", codes)
+    clock.tick(60)
+    ok, msg, _ = challenges.guest_scan(conn, "p2", codes["Foundry"])                    # finished: no replay for a better time
+    assert ok and "already finished" in msg
+    assert conn.execute("SELECT COUNT(*) FROM hunt_runs WHERE player = 'g:p2'").fetchone()[0] == 1
+    before = conn.execute("SELECT elapsed_ms FROM hunt_runs WHERE player = 'g:p2'").fetchone()[0]
+    clock.tick(60)
+    challenges.guest_scan(conn, "p2", codes["Foundry"])
+    assert conn.execute("SELECT elapsed_ms FROM hunt_runs WHERE player = 'g:p2'").fetchone()[0] == before
+    # signing in moves the phone's run onto the account, once
+    c = cust()
+    challenges.merge_guest(conn, "p1", c["id"])
+    assert conn.execute("SELECT player FROM hunt_runs WHERE rule_id = ? AND customer_id = ?", (rid, c["id"])).fetchone()[0] == f"c:{c['id']}"
+
+
+def test_finishing_pays_the_prize_and_gives_a_claim_code(conn, cust, clock):
+    rid, codes = timed(conn)
+    msg = run_in_order(conn, clock, "p1", codes)
+    assert "claim code" in msg and "Your time: 1:15" in msg
+    fin = conn.execute("SELECT * FROM guest_finishes WHERE guest = 'p1'").fetchone()
+    assert fin and fin["claim"] in msg
+    c = cust()
+    ok, note = challenges.claim(conn, fin["claim"], c["id"], "Will")                    # staff claim: the drink and the points
+    assert ok and "free drink" in note.lower()
+    assert conn.execute("SELECT SUM(delta) FROM points_ledger WHERE customer_id = ? AND rule_key = ?", (c["id"], f"rule:{rid}")).fetchone()[0] == 100
+    # a signed-in player's own run pays at the finish
+    c2 = cust(name="Other", email="b@x.edu", sq="SQ2")
+    clock.tick(500)
+    assert challenges.scan(conn, c2["id"], codes["Foundry"])[0]
+    order = json.loads(conn.execute("SELECT order_json FROM hunt_runs WHERE player = ?", (f"c:{c2['id']}",)).fetchone()[0])
+    for code in order:
+        clock.tick(25)
+        ok, msg = challenges.scan(conn, c2["id"], code)
+        assert ok, msg
+    assert "free drink" in msg and "Your time: 1:15" in msg
+    assert conn.execute("SELECT COUNT(*) FROM prizes WHERE customer_id = ?", (c2["id"],)).fetchone()[0] == 1
+
+
+def test_top_prize_page_nickname_and_removal(client, monkeypatch):
+    clock = Clock()
+    monkeypatch.setattr(runs, "_now", clock)
+    from fizzy import db
+    setup_student(client)
+    conn = db.connect()
+    try:
+        rid, codes = timed(conn, prize_top={"count": 2, "text": "Coupon from a friend"})
+        conn.commit()
+        client.post("/logout")
+        for n, secs in ((1, 20), (2, 25), (3, 30)):
+            client.cookies.clear()
+            assert "Your clock is running" in client.get(f"/me/c/{codes['Foundry']}", follow_redirects=True).text
+            assert "Add your nickname" in client.get("/me/hunt").text
+            client.post("/me/hunt/name", data={"nickname": f"Runner{n}", "klass": f"8{n}"})
+            order = [r for r in json.loads(db.connect().execute("SELECT order_json FROM hunt_runs ORDER BY id DESC LIMIT 1").fetchone()[0])]
+            for c in order:
+                clock.tick(secs)
+                page = client.get(f"/me/c/{c}", follow_redirects=True).text
+            assert "Your time" in client.get("/me/hunt").text or "You found them all" in page
+        assert client.post("/me/hunt/name", data={"nickname": "x", "klass": ""}).status_code in (200, 303)
+        client.post("/me/login", data={"who": "rns5", "passcode": PC})
+        client.post("/logout")
+        login(client)
+        page = client.get(f"/challenges/{rid}/run").text
+        assert "Runner1" in page and "Runner2" in page and "Runner3" not in page and "Coupon from a friend" in page
+        board = client.get("/api/display/hunt").json()["hunts"][0]
+        assert [r["name"] for r in board["rows"]] == ["Runner1", "Runner2"] and board["finished"] == 3       # the board is the prize's top 2
+        first = db.connect().execute("SELECT id FROM hunt_runs WHERE nickname = 'Runner1'").fetchone()[0]
+        client.post(f"/challenges/{rid}/run/{first}/given")
+        assert "Given" in client.get(f"/challenges/{rid}/run").text
+        client.post(f"/challenges/{rid}/run/{first}/remove")
+        page = client.get(f"/challenges/{rid}/run").text
+        assert "Runner1" not in page and "Runner3" in page                                  # next in line moves up
+        # settings: times in order, and the hunt stays valid
+        client.post(f"/challenges/{rid}/run", data={"order": "1", "start": codes["Foundry"], "open": "13:00", "close": "12:00"})
+        assert "hours" not in json.loads(db.connect().execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])   # refused
+        client.post(f"/challenges/{rid}/run", data={"order": "1", "start": codes["Foundry"], "open": "12:30", "last_start": "13:10",
+                                                    "close": "13:25", "top_count": "10", "top_text": "Coupon v2"})
+        spec = json.loads(db.connect().execute("SELECT spec FROM rules WHERE id = ?", (rid,)).fetchone()[0])
+        assert spec["hours"] == {"open": "12:30", "last_start": "13:10", "close": "13:25"}
+        assert spec["prize_top"] == {"count": 10, "text": "Coupon v2"} and spec["steps"][0]["start"] is True
+    finally:
+        conn.close()
+
+
+def test_timed_hunt_settings_are_checked(conn):
+    base = {"kind": "challenge", "name": "T", "summary": "s", "prize": {"text": "x"}}
+    two = [{"label": "A", "scan": True, "start": True}, {"label": "B", "scan": True}]
+    with pytest.raises(rules.RuleError):
+        rules.validate(conn, dict(base, order="shuffled", steps=[{"label": "A", "scan": True}, {"label": "B", "scan": True}]))   # no start
+    with pytest.raises(rules.RuleError):
+        rules.validate(conn, dict(base, steps=two))                                      # a start step without the chain
+    with pytest.raises(rules.RuleError):
+        rules.validate(conn, dict(base, order="shuffled", steps=two, hours={"open": "13:00", "close": "12:00"}))
+    with pytest.raises(rules.RuleError):
+        rules.validate(conn, dict(base, order="shuffled", steps=two, hours={"open": "noon"}))
+    ok = rules.validate(conn, dict(base, order="shuffled", steps=two, hours={"close": "13:25"}, prize_top={"count": 10}))
+    assert ok["prize_top"] == {"count": 10, "text": ""}                                   # coupon text can come later
+
+
+def test_timed_hunt_levels(client):
+    from fizzy import db, pin
+    conn = db.connect()
+    try:
+        db.init(conn)
+        pin.set_pin(conn, "4821", "t")
+        assert pin.required(conn, "POST", "/challenges/3/run", {}) == pin.PIN
+        assert pin.required(conn, "POST", "/challenges/3/run/9/given", {}) == pin.PIN
+        assert pin.required(conn, "POST", "/challenges/3/run/9/remove", {}) == pin.PIN
+    finally:
+        conn.close()

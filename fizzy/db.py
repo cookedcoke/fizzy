@@ -356,6 +356,25 @@ CREATE TABLE IF NOT EXISTS guest_finishes (
     UNIQUE (guest, rule_id)
 );
 
+-- Clue-chain hunts (runs.py): one timed run per player (a phone's guest id, or a signed-in student).
+CREATE TABLE IF NOT EXISTS hunt_runs (
+    id INTEGER PRIMARY KEY,
+    rule_id INTEGER NOT NULL,
+    player TEXT NOT NULL,                    -- 'g:<guest id>' or 'c:<customer id>'
+    customer_id INTEGER,
+    nickname TEXT NOT NULL DEFAULT '',       -- the only name the board shows
+    klass TEXT NOT NULL DEFAULT '',          -- class/year: for staff to find winners
+    started_at TEXT NOT NULL,
+    order_json TEXT NOT NULL,                -- the other stops' codes, in this player's random order
+    last_scan_at TEXT NOT NULL,
+    finished_at TEXT,
+    elapsed_ms INTEGER,
+    void_at TEXT,                            -- staff took it off the board
+    top_given_at TEXT,
+    top_given_by TEXT,
+    UNIQUE (rule_id, player)
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);

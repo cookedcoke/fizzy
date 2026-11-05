@@ -7,7 +7,7 @@ from functools import lru_cache
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from . import badges, config, db, events, logic, portal, rewards, stats
+from . import badges, config, db, events, logic, portal, rewards, runs, stats
 from .web import back, get_conn, local, money, render, staff, templates
 
 router = APIRouter()
@@ -17,6 +17,17 @@ router = APIRouter()
 def display(request: Request, who=Depends(staff)):
     return templates.TemplateResponse(request, "display.html", {"student_site": config.PUBLIC_HOST, "qr": _qr(),
                                                                 "app_qr": _app_qr()})
+
+
+@router.get("/display/hunt", response_class=HTMLResponse)
+def hunt_screen(request: Request, who=Depends(staff)):
+    """The timed hunt's fastest times, for a screen at the stall (refreshes every few seconds)."""
+    return templates.TemplateResponse(request, "display_hunt.html", {})
+
+
+@router.get("/api/display/hunt")
+def hunt_board(who=Depends(staff), conn=Depends(get_conn)):
+    return JSONResponse({"hunts": runs.live_boards(conn)}, headers={"Cache-Control": "no-store"})
 
 
 @lru_cache(maxsize=4)
