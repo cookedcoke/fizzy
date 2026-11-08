@@ -304,6 +304,15 @@ def create_app(background=True):
         served on the staff hosts. Added last, so it runs before the device gate."""
         host = (request.headers.get("host") or "").split(":")[0].strip().rstrip(".").lower()
         path = request.url.path
+        if "hunt" in path:   # temporary: why the clip's nickname save fails
+            resp = await _public_host(request, call_next, host, path)
+            logging.getLogger("uvicorn.error").info("hunt req: %s %s%s app=%s accept=%s ua=%s -> %s %s", request.method, host, path,
+                request.headers.get("x-fizzy-format"), request.headers.get("accept"), (request.headers.get("user-agent") or "")[:50],
+                resp.status_code, resp.headers.get("location"))
+            return resp
+        return await _public_host(request, call_next, host, path)
+
+    async def _public_host(request, call_next, host, path):
         if config.LINK_HOST and host == config.LINK_HOST:
             # Hunt posters' short links: /<code> is a code to scan; Apple's file lets the App Clip open them.
             if path == "/.well-known/apple-app-site-association":
