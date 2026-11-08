@@ -289,8 +289,17 @@ struct CardSection: View {
 
     var body: some View {
         let steps = card.steps.array, done = card.done.bool
+        // The orange header in a section of its own: sharing one would leave the rows under it square-topped.
         Section {
             HuntHero(card: card)
+        } header: {
+            HStack {
+                Text(card.kicker.optString ?? "")
+                Spacer()
+                if let when = card.when.optString { Text(when).textCase(nil) }
+            }
+        }
+        Section {
             if let text = (card.status.optString ?? card.text.optString) {
                 Text(text).font(.subheadline).foregroundStyle(done ? .green : .secondary)
             }
@@ -301,12 +310,6 @@ struct CardSection: View {
                         Label(action.label.optString ?? "Scan a code", systemImage: "qrcode.viewfinder").bold()
                     }
                 }
-            }
-        } header: {
-            HStack {
-                Text(card.kicker.optString ?? "")
-                Spacer()
-                if let when = card.when.optString { Text(when).textCase(nil) }
             }
         }
     }

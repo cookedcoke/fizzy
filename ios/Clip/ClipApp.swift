@@ -167,10 +167,6 @@ struct HuntView: View {
                 if let problem = hunt.problem {
                     Label(problem, systemImage: "wifi.exclamationmark").foregroundStyle(.red)
                 }
-                if let message = hunt.message {
-                    Label(message, systemImage: hunt.ok ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                        .foregroundStyle(hunt.ok ? .green : .red)
-                }
                 ForEach(Array(hunt.cards.enumerated()), id: \.offset) { _, card in
                     HuntSection(card: card, hunt: hunt)
                 }
@@ -188,7 +184,7 @@ struct HuntView: View {
                 // Up top so it's always in reach, however long the list of stops.
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { scanning = true } label: { HStack(spacing: 6) { Image(systemName: "qrcode.viewfinder"); Text("Scan") }.bold() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent).tint(HuntHero.orange)
                 }
             }
             .overlay { if hunt.loading && hunt.cards.isEmpty { ProgressView() } }
@@ -232,6 +228,8 @@ private struct HuntSection: View {
 
     var body: some View {
         let steps = card.steps.array
+        // The orange header in a section of its own: sharing one would leave the rows under it square-topped.
+        Section { HuntHero(card: card) }
         Section {
             if let claim = card.claim.optString, !card.claimed.bool {
                 VStack(spacing: 6) {
@@ -244,8 +242,6 @@ private struct HuntSection: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
             } else if card.claimed.bool {
                 Label("Prize claimed. Nice one!", systemImage: "gift.fill").foregroundStyle(.green)
-            } else {
-                HuntHero(card: card)
             }
             if card.run.needs_name.bool {
                 VStack(alignment: .leading, spacing: 10) {

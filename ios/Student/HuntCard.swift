@@ -19,11 +19,11 @@ struct HuntHero: View {
                 if !run.isNull && !finished && run.started_ms.double > 0 {
                     Clock(startMs: run.started_ms.double)
                 } else if finished, let time = run.elapsed.optString {
-                    Label(time, systemImage: "stopwatch.fill").font(.headline.monospacedDigit())
+                    HStack(spacing: 5) { Image(systemName: "stopwatch.fill"); Text(time) }.font(.headline.monospacedDigit())
                 }
             }
             if let prize = card.prize.optString {
-                Label(prize, systemImage: "gift.fill")
+                HStack(spacing: 6) { Image(systemName: "gift.fill"); Text(prize) }
                     .font(.subheadline.weight(.semibold))
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(.white.opacity(0.22), in: Capsule())
@@ -58,8 +58,10 @@ struct HuntHero: View {
         var body: some View {
             TimelineView(.periodic(from: .now, by: 1)) { tl in
                 let s = max(0, Int(tl.date.timeIntervalSince1970 - startMs / 1000))
-                Label(s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60),
-                      systemImage: "stopwatch.fill")
+                HStack(spacing: 5) {
+                    Image(systemName: "stopwatch.fill")
+                    Text(s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60))
+                }
                     .font(.headline.monospacedDigit())
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(.black.opacity(0.18), in: Capsule())
