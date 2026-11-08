@@ -113,7 +113,7 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
     @ObservationIgnored var read: (String) -> String? = { $0 }
     @ObservationIgnored var found: (String) -> Void = { _ in }
     var denied = false
-    var zoom: CGFloat = 2
+    var zoom: CGFloat = 1
     var torch = false
     var hasTorch = false
     var reads = 0
