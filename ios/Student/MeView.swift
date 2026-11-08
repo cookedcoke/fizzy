@@ -289,47 +289,12 @@ struct CardSection: View {
 
     var body: some View {
         let steps = card.steps.array, done = card.done.bool
-        let total = card.progress.total.int, have = card.progress.done.int
         Section {
-            HStack(alignment: .top, spacing: 12) {
-                if let icon = card.icon.optString {
-                    Text(icon).font(.system(size: 34)).frame(width: 44)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(card.title.string).font(.headline)
-                    if let text = (card.status.optString ?? card.text.optString) {
-                        Text(text).font(.subheadline).foregroundStyle(done ? .green : .secondary)
-                    }
-                    if let prize = card.prize.optString {
-                        Label(prize, systemImage: "gift.fill").font(.subheadline.bold()).foregroundStyle(.pink)
-                    }
-                }
-                if total > 1 && !done {
-                    Spacer(minLength: 8)
-                    // How far along, beside the title rather than as a row of its own.
-                    Gauge(value: Double(have), in: 0...Double(total)) {
-                        EmptyView()
-                    } currentValueLabel: {
-                        Text("\(have)/\(total)").monospacedDigit()
-                    }
-                    .gaugeStyle(.accessoryCircularCapacity)
-                    .tint(.green)
-                }
+            HuntHero(card: card)
+            if let text = (card.status.optString ?? card.text.optString) {
+                Text(text).font(.subheadline).foregroundStyle(done ? .green : .secondary)
             }
-            .padding(.vertical, 2)
-            ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(step.label.string)
-                        if let detail = step.detail.optString, !step.done.bool {
-                            Text(detail).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                } icon: {
-                    Image(systemName: step.done.bool ? "checkmark.circle.fill" : (step.kind.string == "scan" ? "qrcode" : "circle"))
-                        .foregroundStyle(step.done.bool ? Color.green : Color.secondary)
-                }
-            }
+            ForEach(Array(steps.enumerated()), id: \.offset) { _, step in HuntStepRow(step: step) }
             ForEach(Array(card.actions.array.enumerated()), id: \.offset) { _, action in
                 if action.kind.string == "scan" {
                     Button { scan() } label: {

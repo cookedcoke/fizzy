@@ -245,21 +245,7 @@ private struct HuntSection: View {
             } else if card.claimed.bool {
                 Label("Prize claimed. Nice one!", systemImage: "gift.fill").foregroundStyle(.green)
             } else {
-                let done = card.progress.done.int, total = max(card.progress.total.int, 1)
-                HStack(spacing: 14) {
-                    Gauge(value: Double(done), in: 0...Double(total)) {
-                        EmptyView()
-                    } currentValueLabel: {
-                        Text("\(done)").monospacedDigit()
-                    }
-                    .gaugeStyle(.accessoryCircularCapacity)
-                    .tint(.green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(done) of \(total) found").font(.headline).monospacedDigit()
-                        Text("Find them all for \(card.prize.string.lowercased())").font(.subheadline).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
+                HuntHero(card: card)
             }
             if card.run.needs_name.bool {
                 VStack(alignment: .leading, spacing: 10) {
@@ -280,21 +266,7 @@ private struct HuntSection: View {
                 }
                 .padding(.vertical, 4)
             }
-            ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(step.label.string)
-                        if let detail = step.detail.optString, !step.done.bool {
-                            Text(detail).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                } icon: {
-                    Image(systemName: step.done.bool ? "checkmark.circle.fill" : "qrcode")
-                        .foregroundStyle(step.done.bool ? Color.green : Color.secondary)
-                }
-            }
-        } header: {
-            Text(card.title.string)
+            ForEach(Array(steps.enumerated()), id: \.offset) { _, step in HuntStepRow(step: step) }
         } footer: {
             if let text = card.text.optString { Text(text) }
         }
