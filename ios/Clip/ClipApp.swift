@@ -20,6 +20,8 @@ struct ClipApp: App {
 final class Hunt {
     var cards: [J] = []
     var message: String?
+    /// A scan's answer, shown as an alert (as My CCC does) until it's dismissed.
+    var popup: String?
     var ok = true
     var loading = false
     var problem: String?
@@ -113,6 +115,7 @@ final class Hunt {
             if !page.cards.isNull { cards = page.cards.array }
             message = page.message.optString
             ok = page.ok.bool
+            popup = message
             problem = nil
         } catch {
             guard mine == latest else { return }
@@ -198,6 +201,9 @@ struct HuntView: View {
                 }
             }
             // When they've finished, offer the full app (rewards, points and tabs) without leaving the clip.
+            .alert(hunt.ok ? "Scanned" : "Not quite", isPresented: Binding(get: { hunt.popup != nil }, set: { if !$0 { hunt.popup = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: { Text(hunt.popup ?? "") }
             .appStoreOverlay(isPresented: $offerApp) { SKOverlay.AppClipConfiguration(position: .bottom) }
             .onChange(of: hunt.cards.contains { $0.claim.optString != nil }) { _, finished in if finished { offerApp = true } }
         }
