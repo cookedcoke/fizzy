@@ -132,6 +132,9 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
     @ObservationIgnored private let frames = DispatchQueue(label: "co.cookedcoke.scanner.frames", qos: .userInitiated)
     /// On `frames`: when TileReader last started on a frame. It's slow, so about five a second is plenty.
     @ObservationIgnored private var lastTile: CFTimeInterval = 0
+    /// On `frames`: TileReader's last answer. It can make a code out of noise (a dark desk, say), so an
+    /// answer only counts once two frames in a row agree.
+    @ObservationIgnored private var lastTileText: String?
 
     init(posters: Bool) {
         self.posters = posters
@@ -241,7 +244,9 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
         let now = CACurrentMediaTime()
         guard now - lastTile >= 0.2, let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         lastTile = now
-        guard let text = TileReader.read(buffer) else { return }
+        let text = TileReader.read(buffer)
+        defer { lastTileText = text }
+        guard let text, text == lastTileText else { return }
         DispatchQueue.main.async { self.use(text) }
     }
 
