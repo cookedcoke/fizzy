@@ -445,6 +445,9 @@ def test_the_clip_can_save_a_nickname_on_the_link_host(client, monkeypatch, cloc
     card = client.get("http://link.cookedcoke.co/hunt", headers=J).json()["cards"][0]
     assert card["run"]["nickname"] == "Zed" and card["run"]["needs_name"] is False
     assert client.post("http://link.cookedcoke.co/hunt/name", data={"nickname": "Z", "klass": ""}, headers=J).json()["ok"] is False
+    r = client.post("http://link.cookedcoke.co/me/hunt/name", data={"nickname": "Zeddy", "klass": "9C"}, headers=J)
+    assert r.status_code == 200 and r.json()["ok"]                                       # the clip's other spelling
+    assert client.get("http://link.cookedcoke.co/me/hunt", headers=J).json()["cards"][0]["run"]["nickname"] == "Zeddy"
 
 
 def test_printed_codes_use_the_link_host(client, monkeypatch):

@@ -11,7 +11,6 @@ import asyncio
 import base64
 import hashlib
 import hmac
-import logging
 import re
 import secrets
 import time
@@ -635,8 +634,6 @@ async def hunt_name(request: Request, conn=Depends(get_conn)):
     form = await request.form()
     c = current(request, conn)
     guest = request.session.get("guest")
-    logging.getLogger("uvicorn.error").info("hunt name: json=%s signed_in=%s guest=%s ua=%s host=%s", wants_json(request), c is not None,
-             bool(guest), request.headers.get("user-agent", "")[:60], request.headers.get("host"))
     if c is not None and guest:
         runs.adopt(conn, guest, c["id"])        # started on this phone before signing in
     who = runs.cust_who(c["id"]) if c is not None else runs.guest_who(guest) if guest else None

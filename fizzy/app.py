@@ -304,12 +304,6 @@ def create_app(background=True):
         served on the staff hosts. Added last, so it runs before the device gate."""
         host = (request.headers.get("host") or "").split(":")[0].strip().rstrip(".").lower()
         path = request.url.path
-        if "hunt" in path:   # temporary: why the clip's nickname save fails
-            resp = await _public_host(request, call_next, host, path)
-            logging.getLogger("uvicorn.error").info("hunt req: %s %s%s app=%s accept=%s ua=%s -> %s %s", request.method, host, path,
-                request.headers.get("x-fizzy-format"), request.headers.get("accept"), (request.headers.get("user-agent") or "")[:50],
-                resp.status_code, resp.headers.get("location"))
-            return resp
         return await _public_host(request, call_next, host, path)
 
     async def _public_host(request, call_next, host, path):
@@ -321,6 +315,8 @@ def create_app(background=True):
                 return PlainTextResponse("User-agent: *\nDisallow: /\n")
             if path.startswith("/static/") or path == "/manifest.webmanifest":   # the pages' styles, fonts and icons
                 return await call_next(request)
+            if path == "/me/hunt":
+                path = "/hunt"
             code = path.strip("/")
             if code and "/" not in code and config.PUBLIC_HOST and not _from_app(request):
                 # A browser (Safari, when the app and clip don't open it): on to the student site, so the code
@@ -328,13 +324,10 @@ def create_app(background=True):
                 # which signing in there moves over). This host's cookie never reaches the student site.
                 where = "hunt" if code == "hunt" else "c/" + quote(code, safe="")
                 return RedirectResponse(f"https://{config.PUBLIC_HOST}/{where}", status_code=303)
-            if path == "/hunt/name":   # a timed hunt's nickname, from the App Clip
+            if path in ("/hunt/name", "/me/hunt/name"):   # a timed hunt's nickname, from the App Clip (which may use either)
                 request.scope["path"] = "/me/hunt/name"
                 request.state.public = True
-                resp = await call_next(request)
-                logging.getLogger("uvicorn.error").info("hunt name in: %s %s -> %s %s", dict((k, v[:40]) for k, v in request.headers.items() if k not in ("cookie",)),
-                         "cookie" in request.headers, resp.status_code, resp.headers.get("location"))
-                return resp
+                return await call_next(request)
             if code == "hunt":   # what this phone has found (the App Clip, opened without a code)
                 request.scope["path"] = "/me/hunt"
                 request.state.public = True
