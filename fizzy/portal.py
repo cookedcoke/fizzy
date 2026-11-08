@@ -692,7 +692,7 @@ def scan_result(ok, message):
     if msg.startswith("Not this one"):
         return {"kind": "bad", "title": "Not this one", "line": msg.split(" - ", 1)[-1][0].upper() + msg.split(" - ", 1)[-1][1:], "label": None}
     if msg.startswith("Hold on"):
-        return {"kind": "bad", "title": "Hold on a sec", "line": msg.split(" - ", 1)[-1][0].upper() + msg.split(" - ", 1)[-1][1:], "label": None}
+        return {"kind": "bad", "title": "Whoa, speedy!", "line": msg.split(" - ", 1)[-1][0].upper() + msg.split(" - ", 1)[-1][1:], "label": None}
     if msg.startswith("Scan the start code"):
         return {"kind": "bad", "title": "Start first", "line": msg, "label": None}
     if msg.startswith("Too late to start") or " has closed for today" in msg:

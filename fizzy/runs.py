@@ -272,7 +272,10 @@ def scan(conn, rule, i, who, finish):
         return False, f"Not this one - your clue is: {clue_for(rule, nxt)}"
     waited = (now - _parse(run["last_scan_at"])).total_seconds()
     if waited < gap(rule):
-        return False, f"Hold on - give it {int(gap(rule) - waited) + 1} more seconds before the next poster, then scan again."
+        n = int(gap(rule) - waited) + 1
+        quip = random.choice(["are you teleporting?", "the poster isn't going anywhere.", "even Usain Bolt needs a breather.",
+                              "slow down, speedrunner.", "save some legs for the next one."])
+        return False, f"Hold on - {quip} Give it {n} more second{'s' if n != 1 else ''}, then scan again."
     _record(conn, who, rid, code, stamp)
     conn.execute("UPDATE hunt_runs SET last_scan_at = ? WHERE id = ?", (stamp, run["id"]))
     got.add(code)

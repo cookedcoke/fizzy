@@ -100,3 +100,20 @@ struct HuntStepRow: View {
         .padding(.vertical, clue ? 4 : 0)
     }
 }
+
+/// A scan's popup title with a bit of personality, picked from what the server said.
+enum ScanTitle {
+    static func of(_ message: String, ok: Bool) -> String {
+        let m = message.lowercased()
+        if m.hasPrefix("hold on") { return "Whoa, speedy! 🏃" }
+        if m.hasPrefix("not this one") { return "Wrong poster 👀" }
+        if m.contains("start code first") { return "Not so fast 🏁" }
+        if m.contains("that's everything") { return "You did it! 🎉" }
+        if m.contains("clock is running") { return "And you're off! ⏱️" }
+        if m.hasPrefix("you've already") { return "Been there 😉" }
+        if m.contains("closed") || m.contains("too late") { return "Too late 😢" }
+        if m.contains("opens at") { return "Not open yet ⏰" }
+        if m.hasPrefix("found it") { return "Got it! ✅" }
+        return ok ? "Scanned" : "Hmm, that didn't work"
+    }
+}

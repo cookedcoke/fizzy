@@ -678,7 +678,7 @@ def test_scans_that_count_need_a_gap(conn, clock):
     order = json.loads(conn.execute("SELECT order_json FROM hunt_runs").fetchone()[0])
     clock.tick(8)
     ok, msg, _ = challenges.guest_scan(conn, "p1", order[0])
-    assert not ok and "Hold on" in msg and "13 more seconds" in msg
+    assert not ok and "Hold on" in msg and "13 more seconds, then scan again" in msg
     assert challenges.guest_cards(conn, "p1")[0]["progress"]["done"] == 1
     clock.tick(13)
     assert challenges.guest_scan(conn, "p1", order[0])[0]

@@ -29,7 +29,7 @@ struct MeView: View {
         .sheet(isPresented: Binding(get: { scanFor != nil }, set: { if !$0 { scanFor = nil } })) {
             CodeScanner(title: scanFor ?? "", guide: .poster) { code in scanFor = nil; Task { await send(code) } }
         }
-        .alert(failed ? "That didn't work" : "Scanned", isPresented: Binding(get: { result != nil }, set: { if !$0 { result = nil } })) {
+        .alert(ScanTitle.of(result ?? "", ok: !failed), isPresented: Binding(get: { result != nil }, set: { if !$0 { result = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(result ?? "") }
     }

@@ -197,7 +197,7 @@ struct HuntView: View {
                 }
             }
             // When they've finished, offer the full app (rewards, points and tabs) without leaving the clip.
-            .alert(hunt.ok ? "Scanned" : "Not quite", isPresented: Binding(get: { hunt.popup != nil }, set: { if !$0 { hunt.popup = nil } })) {
+            .alert(ScanTitle.of(hunt.popup ?? "", ok: hunt.ok), isPresented: Binding(get: { hunt.popup != nil }, set: { if !$0 { hunt.popup = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: { Text(hunt.popup ?? "") }
             .appStoreOverlay(isPresented: $offerApp) { SKOverlay.AppClipConfiguration(position: .bottom) }
