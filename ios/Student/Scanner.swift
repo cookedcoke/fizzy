@@ -130,7 +130,7 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
     @ObservationIgnored private var stopped = false
     /// Frames for TileReader, for codes packed with no white border round them (the hunt posters).
     @ObservationIgnored private let frames = DispatchQueue(label: "co.cookedcoke.scanner.frames", qos: .userInitiated)
-    /// On `frames`: when TileReader last started on a frame. It's slow, so about five a second is plenty.
+    /// On `frames`: when TileReader last started on a frame.
     @ObservationIgnored private var lastTile: CFTimeInterval = 0
     /// On `frames`: TileReader's last answer. It can make a code out of noise (a dark desk, say), so an
     /// answer only counts once two frames in a row agree.
@@ -242,7 +242,8 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
     /// codes, a few frames a second (late frames are dropped, and so are frames between reads).
     func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer, from connection: AVCaptureConnection) {
         let now = CACurrentMediaTime()
-        guard now - lastTile >= 0.2, let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
+        // About ten a second, but straight on to the next frame once one has read something, to confirm it fast.
+        guard lastTileText != nil || now - lastTile >= 0.1, let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         lastTile = now
         let text = TileReader.read(buffer)
         defer { lastTileText = text }
