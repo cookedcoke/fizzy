@@ -83,11 +83,10 @@ struct CodeScanner: View {
             let locked = camera?.locked ?? false
             ZStack {
                 TimelineView(.animation(paused: locked)) { tl in
-                    Corners(wobble: locked ? Array(repeating: .zero, count: 4)
-                                           : Corners.searching(at: tl.date.timeIntervalSinceReferenceDate, size: size))
+                    Corners()
                         .stroke(locked ? Self.orange : .white, style: StrokeStyle(lineWidth: locked ? 7 : 5, lineCap: .round, lineJoin: .round))
                         .shadow(color: locked ? Self.orange.opacity(0.9) : .black.opacity(0.4), radius: locked ? 12 : 3)
-                        .scaleEffect(locked ? 0.9 : 1)
+                        .scaleEffect(locked ? 0.9 : Self.pulse(tl.date.timeIntervalSinceReferenceDate))
                 }
                 if locked { Tick() }
             }
@@ -99,6 +98,13 @@ struct CodeScanner: View {
     }
 
     static let orange = Color(red: 1, green: 0.42, blue: 0.1)
+
+    /// The system Code Scanner's beat while it looks: the frame shrinks in and springs back out, over and over.
+    static func pulse(_ t: Double) -> CGFloat {
+        let phase = t.truncatingRemainder(dividingBy: 1.0)          // one beat a second
+        let x = sin(phase * .pi)                                    // 0 → 1 → 0
+        return 1 - 0.09 * x * x
+    }
 
     /// The ad's tick: an orange disc pops in with a glow and a ring that flies out.
     private struct Tick: View {
@@ -321,33 +327,14 @@ private struct CameraPreview: UIViewRepresentable {
 
 /// Four L-shaped corners round a rectangle, like the Camera app's code guide.
 private struct Corners: Shape {
-    /// How far each corner (top left, top right, bottom left, bottom right) has wandered from its place.
-    var wobble: [CGPoint] = Array(repeating: .zero, count: 4)
-
     func path(in r: CGRect) -> Path {
         let l = min(36, r.width / 3, r.height / 3)
         var p = Path()
-        for (i, (x, y, dx, dy)) in [(r.minX, r.minY, 1.0, 1.0), (r.maxX, r.minY, -1, 1), (r.minX, r.maxY, 1, -1), (r.maxX, r.maxY, -1, -1)].enumerated() {
-            let w = i < wobble.count ? wobble[i] : .zero
-            let x = x + w.x, y = y + w.y
+        for (x, y, dx, dy) in [(r.minX, r.minY, 1.0, 1.0), (r.maxX, r.minY, -1, 1), (r.minX, r.maxY, 1, -1), (r.maxX, r.maxY, -1, -1)] {
             p.move(to: CGPoint(x: x, y: y + dy * l))
             p.addLine(to: CGPoint(x: x, y: y))
             p.addLine(to: CGPoint(x: x + dx * l, y: y))
         }
         return p
-    }
-
-    /// Like the system's Code Scanner while it looks: each corner drifts on its own, the whole frame
-    /// swells and sways a little, never settling. Smooth (sums of slow sines), so it reads as searching, not shaking.
-    static func searching(at t: Double, size: CGSize) -> [CGPoint] {
-        let a = min(size.width, size.height) * 0.06
-        let breathe = sin(t * 2.4) * a * 0.6          // the whole frame in and out together
-        let sway = CGPoint(x: sin(t * 1.3) * a * 0.5, y: cos(t * 1.1) * a * 0.4)
-        return (0..<4).map { i in
-            let k = Double(i) * 1.7
-            let out = CGPoint(x: i % 2 == 0 ? -1.0 : 1.0, y: i < 2 ? -1.0 : 1.0)   // away from the middle
-            return CGPoint(x: sway.x + out.x * breathe + sin(t * (1.9 + 0.3 * Double(i)) + k) * a * 0.55,
-                           y: sway.y + out.y * breathe + cos(t * (1.6 + 0.25 * Double(i)) + k * 1.3) * a * 0.55)
-        }
     }
 }
