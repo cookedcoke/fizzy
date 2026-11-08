@@ -3,6 +3,11 @@ import SwiftUI
 /// The student site's home page: points, streak, rewards, tab and recent activity.
 struct MeView: View {
     @Environment(Student.self) private var model
+    /// The card whose code is being scanned. Kept here, not on the card's row: a page load rebuilds the
+    /// rows, and a sheet on a rebuilt row closes (it did, on the first scan after opening the app).
+    @State private var scanFor: String?
+    @State private var result: String?
+    @State private var failed = false
 
     var body: some View {
         let p = model.page, tab = p.tab
@@ -12,7 +17,7 @@ struct MeView: View {
         List {
             if urgent { TabSection(tab: tab) }
             WhatsOnSection(page: p)
-            ForEach(p.cards.array, id: \.id.string) { CardSection(card: $0) }
+            ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
             PointsSection(points: p.points.int, owner: p.name.string)
             StreakSection(streak: p.streak)
             if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
@@ -21,6 +26,23 @@ struct MeView: View {
         }
         .navigationTitle("Hey \(p.first.string)")
         .pageChrome()
+        .sheet(isPresented: Binding(get: { scanFor != nil }, set: { if !$0 { scanFor = nil } })) {
+            CodeScanner(title: scanFor ?? "", guide: .poster) { code in scanFor = nil; Task { await send(code) } }
+        }
+        .alert(failed ? "That didn't work" : "Scanned", isPresented: Binding(get: { result != nil }, set: { if !$0 { result = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(result ?? "") }
+    }
+
+    private func send(_ code: String) async {
+        do {
+            result = try await StudentAPI.shared.scan(code)
+            failed = false
+        } catch {
+            failed = true
+            result = isOffline(error) ? "No signal. Scan it again when there is." : error.localizedDescription
+        }
+        await model.load()
     }
 }
 
@@ -263,10 +285,7 @@ private struct ActivitySection: View {
 /// so new cards need no app update. Anything the app doesn't know is left out, not guessed at.
 struct CardSection: View {
     let card: J
-    @Environment(Student.self) private var model
-    @State private var scanning = false
-    @State private var result: String?
-    @State private var failed = false
+    var scan: () -> Void = {}
 
     var body: some View {
         let steps = card.steps.array, done = card.done.bool
@@ -313,7 +332,7 @@ struct CardSection: View {
             }
             ForEach(Array(card.actions.array.enumerated()), id: \.offset) { _, action in
                 if action.kind.string == "scan" {
-                    Button { scanning = true } label: {
+                    Button { scan() } label: {
                         Label(action.label.optString ?? "Scan a code", systemImage: "qrcode.viewfinder").bold()
                     }
                 }
@@ -325,22 +344,5 @@ struct CardSection: View {
                 if let when = card.when.optString { Text(when).textCase(nil) }
             }
         }
-        .sheet(isPresented: $scanning) {
-            CodeScanner(title: card.title.string, guide: .poster) { code in scanning = false; Task { await send(code) } }
-        }
-        .alert(failed ? "That didn't work" : "Scanned", isPresented: Binding(get: { result != nil }, set: { if !$0 { result = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: { Text(result ?? "") }
-    }
-
-    private func send(_ code: String) async {
-        do {
-            result = try await StudentAPI.shared.scan(code)
-            failed = false
-        } catch {
-            failed = true
-            result = isOffline(error) ? "No signal. Scan it again when there is." : error.localizedDescription
-        }
-        await model.load()
     }
 }
