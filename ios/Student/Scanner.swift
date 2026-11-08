@@ -73,19 +73,54 @@ struct CodeScanner: View {
     }
 
     /// Corners to line the code or poster up in. Only a guide: anything in the frame still reads.
+    /// They breathe while looking, then snap in, turn orange and show a tick when a code reads (as in the ad).
     private var guides: some View {
         GeometryReader { geo in
             // a poster: as big as fits above the controls, at A4's shape
             let posterWidth = min(geo.size.width * 0.8, geo.size.height * 0.6 / 1.414)
             let size = guide == .poster ? CGSize(width: posterWidth, height: posterWidth * 1.414)
                                         : CGSize(width: geo.size.width * 0.65, height: geo.size.width * 0.65)
-            Corners()
-                .stroke(.white, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-                .shadow(color: .black.opacity(0.4), radius: 3)
-                .frame(width: size.width, height: size.height)
-                .position(x: geo.size.width / 2, y: geo.size.height * 0.45)
+            let locked = camera?.locked ?? false
+            ZStack {
+                Corners()
+                    .stroke(locked ? Self.orange : .white, style: StrokeStyle(lineWidth: locked ? 7 : 5, lineCap: .round, lineJoin: .round))
+                    .shadow(color: locked ? Self.orange.opacity(0.9) : .black.opacity(0.4), radius: locked ? 12 : 3)
+                    .phaseAnimator([false, true]) { view, out in
+                        view.scaleEffect(locked ? 0.92 : (out ? 1.03 : 0.98))
+                    } animation: { _ in locked ? .spring(response: 0.25, dampingFraction: 0.6) : .easeInOut(duration: 0.9) }
+                if locked { Tick() }
+            }
+            .frame(width: size.width, height: size.height)
+            .position(x: geo.size.width / 2, y: geo.size.height * 0.45)
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: locked)
         }
         .allowsHitTesting(false)
+    }
+
+    static let orange = Color(red: 1, green: 0.42, blue: 0.1)
+
+    /// The ad's tick: an orange disc pops in with a glow and a ring that flies out.
+    private struct Tick: View {
+        @State private var shown = false
+        var body: some View {
+            ZStack {
+                Circle().stroke(CodeScanner.orange, lineWidth: 4)
+                    .frame(width: 96, height: 96)
+                    .scaleEffect(shown ? 2.2 : 0.6).opacity(shown ? 0 : 0.9)
+                    .animation(.easeOut(duration: 0.5), value: shown)
+                Circle().fill(CodeScanner.orange)
+                    .frame(width: 96, height: 96)
+                    .shadow(color: CodeScanner.orange.opacity(0.9), radius: 24)
+                    .overlay {
+                        Image(systemName: "checkmark").font(.system(size: 44, weight: .heavy)).foregroundStyle(Color(white: 0.1))
+                            .scaleEffect(shown ? 1 : 0.2)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.55).delay(0.05), value: shown)
+                    }
+                    .scaleEffect(shown ? 1 : 0.3)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.6), value: shown)
+            }
+            .onAppear { shown = true }
+        }
     }
 
     private func controls(_ camera: Camera) -> some View {
@@ -117,6 +152,8 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
     var torch = false
     var hasTorch = false
     var reads = 0
+    /// A code has read: the guides show the tick for a moment before the scanner hands it over.
+    var locked = false
 
     /// Whole hunt posters: TileReader runs on frames too, for their packed codes. Off for a single code,
     /// which the camera's own reader manages.
@@ -257,7 +294,8 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
         done = true
         reads += 1
         stop()
-        found(value)
+        locked = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { self.found(value) }
     }
 }
 
