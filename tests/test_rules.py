@@ -267,3 +267,28 @@ def test_assigning_a_tab_sale_matches_a_hand_added_charge(conn, cust):
     charges = conn.execute("SELECT * FROM tab_charges").fetchall()
     assert len(charges) == 1 and charges[0]["square_payment_id"] == "order:o1"
     assert logic.tab_ledger(conn, c["id"])["owing_cents"] == 400
+
+
+def test_reward_discount_and_tab_on_the_same_sale_puts_only_the_rest_on_the_tab(conn, cust):
+    """$2 off reward on a $3 Coke, the rest on the tab: $1 on the tab, whichever discount Square applied first."""
+    from fizzy import square
+    coke = {"name": "Coke", "quantity": "1", "gross_sales_money": {"amount": 300}, "total_money": {"amount": 0}}
+    tab_first = {"line_items": [coke], "total_money": {"amount": 0}, "discounts": [
+        {"name": "Fizzy Tab", "type": "FIXED_PERCENTAGE", "percentage": "100", "scope": "ORDER", "applied_money": {"amount": 300}},
+        {"name": "Points: $2 off", "type": "FIXED_AMOUNT", "amount_money": {"amount": 200}, "scope": "ORDER", "applied_money": {"amount": 0}}]}
+    reward_first = {"line_items": [coke], "total_money": {"amount": 0}, "discounts": [
+        {"name": "Fizzy Tab", "type": "FIXED_PERCENTAGE", "percentage": "100", "scope": "ORDER", "applied_money": {"amount": 100}},
+        {"name": "Points: $2 off", "type": "FIXED_AMOUNT", "amount_money": {"amount": 200}, "scope": "ORDER", "applied_money": {"amount": 200}}]}
+    assert square.tab_discount_total(tab_first) == 100
+    assert square.tab_discount_total(reward_first) == 100
+    plain = {"line_items": [coke], "total_money": {"amount": 0}, "discounts": [
+        {"name": "Fizzy Tab", "percentage": "100", "applied_money": {"amount": 300}}]}
+    assert square.tab_discount_total(plain) == 300                       # no reward: unchanged
+    # end to end: the tab charge recorded is $1
+    c = cust()
+    o = tab_order("o-rw", 300)
+    o["line_items"] = [dict(coke)]
+    o["total_money"] = {"amount": 0}
+    o["discounts"] = tab_first["discounts"]
+    square.process_order(conn, o)
+    assert conn.execute("SELECT amount_cents FROM tab_charges WHERE customer_id = ?", (c["id"],)).fetchone()[0] == 100

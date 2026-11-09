@@ -145,11 +145,40 @@ def repayment_total(order):
 
 
 def tab_discount_total(order):
-    """How much of an order was put on the tab: the amount the "Fizzy Tab" discount took off."""
+    """How much of an order was put on the tab: the amount the "Fizzy Tab" discount took off, but
+    never more than what was really left to pay. With a reward discount on the same sale (e.g. $2 off
+    a $3 Coke, the rest on the tab) Square can let the 100% tab discount take the whole $3 and the
+    reward nothing, so the tab is capped at the price less the other discounts' full value less
+    whatever was paid."""
     if not config.SQUARE_TAB_DISCOUNT:
         return 0
-    return sum(_money(d, "applied_money") for d in (order or {}).get("discounts", []) or []
-               if _is_tab_discount(d.get("name")))
+    discounts = (order or {}).get("discounts", []) or []
+    tab = sum(_money(d, "applied_money") for d in discounts if _is_tab_discount(d.get("name")))
+    others = [d for d in discounts if not _is_tab_discount(d.get("name"))]
+    if not tab or not others:
+        return tab
+    lines = order.get("line_items", []) or []
+    def gross(li):
+        g = _money(li, "gross_sales_money")
+        return g if g else _money(li, "total_money") + _money(li, "total_discount_money")
+    base = sum(gross(li) for li in lines if (li.get("name") or "").strip().lower() != (config.SQUARE_REPAYMENT_ITEM or "").lower())
+    def full_value(d):
+        applied = _money(d, "applied_money")
+        if d.get("type", "").startswith("FIXED") or (d.get("amount_money") and not d.get("percentage")):
+            on = [li for li in lines if any(ad.get("discount_uid") == d.get("uid") for ad in li.get("applied_discounts", []) or [])]
+            each = _money(d, "amount_money")
+            nominal = each * len(on) if d.get("scope") == "LINE_ITEM" and on else each
+        else:
+            try:
+                pct = float(d.get("percentage") or 0)
+            except ValueError:
+                pct = 0
+            on = [li for li in lines if any(ad.get("discount_uid") == d.get("uid") for ad in li.get("applied_discounts", []) or [])]
+            nominal = round(pct / 100 * (sum(gross(li) for li in on) if d.get("scope") == "LINE_ITEM" and on else base))
+        return max(applied, nominal)
+    paid = _money(order, "total_money") - _money(order, "total_tip_money") - repayment_total(order)
+    left = base - sum(full_value(d) for d in others) - max(paid, 0)
+    return max(0, min(tab, left))
 
 
 def _is_tab_discount(name):
