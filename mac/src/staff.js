@@ -166,7 +166,7 @@ function saveBounds() {
 // MARK: menu actions
 
 function show() {
-  if (!win) return;
+  if (!win || win.isDestroyed()) return;  // gone while quitting
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
