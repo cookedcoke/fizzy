@@ -6,11 +6,12 @@
 
 <div class="stats">
   <div class="stat"><div class="k">Cameras</div>
-    {% if status %}<div class="v sm"><span class="tag {{ 'approved' if status == 'Armed' else 'eligible' if status == 'Disarmed' else 'red' }}">{{ status }}</span></div>
+    {% if status %}<div class="v sm"><span class="tag {{ 'approved' if status == 'Armed' else 'eligible' if status == 'Disarmed' else 'red' if status == 'Triggered' else '' }}">{{ status }}</span></div>
+    {% if status in ('Arming', 'Disarming') %}<div class="sub">{{ raw }}</div>{% endif %}
     {% else %}<div class="v sm muted">Unknown</div><div class="sub">{{ raw }}</div>{% endif %}
     {% if ha_on %}<div class="actions" style="margin-top:8px">
-      <form class="inline" method="post" action="/security/arm"><button class="sm {{ 'primary' if status != 'Armed' }}"{{ ' disabled' if status == 'Armed' }}>Arm</button></form>
-      <form class="inline" method="post" action="/security/disarm"><button class="sm"{{ ' disabled' if status == 'Disarmed' }}
+      <form class="inline" method="post" action="/security/arm"><button class="sm {{ 'primary' if status not in ('Armed', 'Arming') }}"{{ ' disabled' if status in ('Armed', 'Arming') }}>Arm</button></form>
+      <form class="inline" method="post" action="/security/disarm"><button class="sm"{{ ' disabled' if status in ('Disarmed', 'Disarming') }}
         data-confirm="Disarm the cameras? They won't record until someone arms them again.">Disarm</button></form>
     </div>{% endif %}
   </div>

@@ -76,19 +76,21 @@ def test_camera_switch(client, monkeypatch):
     login(client)
     assert "Unknown" in client.get("/security").text                                   # Home Assistant not set up
     monkeypatch.setattr(config, "HA_TOKEN", "t")
-    calls = []
+    calls, state = [], {"now": "armed_away"}
 
     def fake(method, path, body=None):
         calls.append((method, path, body))
         if method == "GET":
-            return {"state": "armed_away"}
+            return {"state": state["now"]}
         return []
     monkeypatch.setattr(security, "_ha", fake)
     assert ">Armed<" in client.get("/security").text
     r = client.post("/security/disarm")
-    assert "Cameras disarmed" in r.text
-    assert [c for c in calls if c[0] == "POST"] == [
-        ("POST", "/api/services/alarm_control_panel/alarm_disarm", {"entity_id": config.HA_ALARM_ENTITY})]
+    assert "Disarming the cameras" in r.text and ">Disarming<" in r.text          # HA still says armed: shown as pending
+    assert [c[1] for c in calls if c[0] == "POST"] == [
+        "/api/services/alarm_control_panel/alarm_disarm", "/api/services/homeassistant/update_entity"]
+    state["now"] = "disarmed"                                                      # HA caught up
+    assert ">Disarmed<" in client.get("/security").text
     assert "Disarmed the cameras" in client.get("/audit").text
 
     def down(*a, **k):
