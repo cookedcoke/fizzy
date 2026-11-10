@@ -15,7 +15,9 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
+import time
 from datetime import datetime
 
 import httpx
@@ -24,7 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from . import config
-from .db import audit, now_iso
+from .db import audit, get_setting, now_iso, set_setting
 from .web import back, get_conn, render, staff
 
 log = logging.getLogger(__name__)
@@ -32,6 +34,7 @@ router = APIRouter()
 
 CLIP = re.compile(r"^\d{8}_\d{6}_Security\d+\.mp4$")
 CLIP_MAX = 100 * 1024 * 1024        # Cloudflare's limit for one upload
+PENDING_SECONDS = 6 * 60             # Home Assistant re-reads Blink every few minutes: show "Arming..." meanwhile
 VERDICTS = {"ok": "OK", "theft": "Theft"}
 ALARM_STATES = {"armed_away": "Armed", "armed_home": "Armed", "armed_night": "Armed", "armed_custom_bypass": "Armed",
                 "disarmed": "Disarmed", "arming": "Arming", "disarming": "Disarming", "pending": "Arming",
@@ -129,20 +132,21 @@ async def ingest_clip(request: Request, iid: int, name: str, conn=Depends(get_co
     path = clip_path(iid, name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     got, head = 0, b""
-    with open(path + ".tmp", "wb") as f:
+    tmp = f"{path}.{secrets.token_hex(4)}.tmp"   # its own name: two uploads of the same clip can overlap
+    with open(tmp, "wb") as f:
         async for chunk in request.stream():
             got += len(chunk)
             if got > CLIP_MAX:
                 f.close()
-                os.remove(path + ".tmp")
+                os.remove(tmp)
                 raise HTTPException(413, "That video is too big.")
             if len(head) < 12:
                 head += chunk[:12]
             f.write(chunk)
     if head[4:8] != b"ftyp":   # every MP4 starts with an ftyp box
-        os.remove(path + ".tmp")
+        os.remove(tmp)
         raise HTTPException(400, "That isn't an MP4 video.")
-    os.replace(path + ".tmp", path)
+    os.replace(tmp, path)
     conn.execute("UPDATE incidents SET clips_gone = 0 WHERE id = ?", (iid,))
     conn.commit()
     await run_in_threadpool(prune_clips, conn)
@@ -179,6 +183,24 @@ def alarm_state():
 def set_alarm(arm):
     service = "alarm_arm_away" if arm else "alarm_disarm"
     _ha("POST", f"/api/services/alarm_control_panel/{service}", {"entity_id": config.HA_ALARM_ENTITY})
+    try:   # Blink takes the change at once, but Home Assistant only re-reads it every few minutes: ask it now
+        _ha("POST", "/api/services/homeassistant/update_entity", {"entity_id": config.HA_ALARM_ENTITY})
+    except httpx.HTTPError:
+        pass
+
+
+def shown_state(conn, status, raw):
+    """What the page shows: right after the switch was pressed, "Arming" / "Disarming" until Home
+    Assistant catches up (or PENDING_SECONDS pass), instead of the state from before the press."""
+    pending = json.loads(get_setting(conn, "cameras_pending", "") or "null")
+    if not pending:
+        return status, raw
+    want = "Armed" if pending["arm"] else "Disarmed"
+    if status == want or time.time() - pending["at"] > PENDING_SECONDS:
+        set_setting(conn, "cameras_pending", "")
+        conn.commit()
+        return status, raw
+    return ("Arming" if pending["arm"] else "Disarming"), "Blink can take a few minutes to confirm"
 
 
 @router.post("/security/arm")
@@ -200,8 +222,10 @@ async def _switch(request, on, who, conn):
         log.warning("Home Assistant: %s", e)
         return back(request, "/security", "Couldn't reach Home Assistant. Nothing changed; try again or use the Blink app.", "bad")
     audit(conn, who, "cameras_armed" if on else "cameras_disarmed")
+    set_setting(conn, "cameras_pending", json.dumps({"arm": on, "at": time.time()}))
     conn.commit()
-    return back(request, "/security", "Cameras armed." if on else "Cameras disarmed. Remember to arm them when you close.")
+    return back(request, "/security", "Arming the cameras. Blink can take a few minutes to confirm." if on else
+                "Disarming the cameras. Blink can take a few minutes to confirm. Remember to arm them when you close.")
 
 
 # ---- the pages -------------------------------------------------------------------------------
@@ -221,7 +245,7 @@ def _incident(row):
 
 @router.get("/security", response_class=HTMLResponse)
 async def security_page(request: Request, show: str = "open", who=Depends(staff), conn=Depends(get_conn)):
-    status, raw = await run_in_threadpool(alarm_state)
+    status, raw = shown_state(conn, *await run_in_threadpool(alarm_state))
     where = "WHERE verdict IS NULL" if show == "open" else ""
     rows = conn.execute(f"SELECT * FROM incidents {where} ORDER BY happened_at DESC, id DESC LIMIT 200").fetchall()
     counts = conn.execute("SELECT COUNT(*) AS n, SUM(verdict IS NULL) AS open, SUM(verdict = 'theft') AS theft,"
