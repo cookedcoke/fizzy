@@ -31,7 +31,7 @@ def test_header_has_the_six_tabs_and_the_more_menu(client):
     assert re.findall(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', nav) == [
         ("/", "Dashboard"), ("/customers", "Customers"), ("/transactions", "Sales"), ("/tabs", "Tabs"), ("/rewards", "Rewards"), ("/money", "Money")]
     menu = h.split('<div class="nav-menu">', 1)[1].split("</div>", 1)[0]
-    assert re.findall(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', menu) == [("/settings", "Settings"), ("/audit", "Log"), ("/tools", "Tools")]
+    assert re.findall(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', menu) == [("/security", "Security"), ("/settings", "Settings"), ("/audit", "Log"), ("/tools", "Tools")]
     assert "<summary>More</summary>" in h
     for gone in ("/ask", "/import", "/profit", "/square"):
         assert f'href="{gone}"' not in h.split('<div class="who">')[0], gone

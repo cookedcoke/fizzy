@@ -639,6 +639,23 @@ iPhone the camera opens the My CCC app there, or its App Clip if the app isn't i
 browser is sent on to `https://my.cookedcoke.co/c/<code>`, so the find counts on the student site:
 on their account if they're signed in there, else kept in that browser until they sign in there.
 
+### Security
+
+**Security** (header, More) is for the fridge camera. The Blink cameras only record while they're
+**armed**, so disarm them while you're selling and arm them when you close: the switch is at the top
+of the page (it goes through Home Assistant, so it needs `FIZZY_HA_TOKEN`). Who can use it is the
+"Arm or disarm the cameras" row in Settings, Who can do what.
+
+Every fridge-camera clip is watched by an AI on the home server (Gemini, with the room camera's clips
+from just before and after) and rated 0 to 10 for how likely it shows a theft. Clips rated high enough
+come to Fizzy with their videos, newest first under **To watch**. Open one, watch the clips, then mark
+it **OK** or **Theft** (Undo puts it back). The AI can be wrong: it only says what it saw.
+
+The videos are kept on the Fizzy server (next to the database, not in the backups), up to
+`FIZZY_INCIDENT_MAX_GB`; past that the oldest videos are deleted and their ratings stay. The analyser
+sends them to `POST /security/ingest` and `PUT /security/ingest/<id>/<file>` with
+`Authorization: Bearer <FIZZY_SECURITY_TOKEN>`.
+
 ## 8. Tools
 
 Each tool lives on the page of what it changes (the **Home** column) and is also on **Tools** (header,
@@ -1016,6 +1033,11 @@ blank (`KEY=`) counts as not set and uses its default.
 | `FIZZY_ACCESS_HOST` | *(off)* | Turns on the device lock. Unregistered devices are sent here (behind Cloudflare Access) |
 | `CF_ACCESS_TEAM_DOMAIN` | — | Your Access team domain, e.g. `cookedcoke.cloudflareaccess.com` |
 | `CF_ACCESS_AUD` | — | The Access application's Audience (AUD) tag |
+| `FIZZY_SECURITY_TOKEN` | *(off)* | The clip analyser's key for sending incidents (see Security). Without it, `/security/ingest` doesn't exist |
+| `FIZZY_INCIDENT_MAX_GB` | `5` | Incident videos kept next to the database; past this the oldest are deleted (their ratings stay) |
+| `FIZZY_HA_URL` | `https://home.w-l.xyz` | Home Assistant, which runs the Blink cameras |
+| `FIZZY_HA_TOKEN` | *(off)* | A Home Assistant long-lived access token. Turns on the cameras' Arm / Disarm switch |
+| `FIZZY_HA_ALARM_ENTITY` | `alarm_control_panel.blink_cooked_coke_co_security` | The Blink system in Home Assistant |
 | `CLOUDFLARE_TUNNEL_TOKEN` | — | Used by the `cloudflared` container |
 
 The tab limit, days to pay and spend threshold live in the database and are changed on the

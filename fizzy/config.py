@@ -41,6 +41,14 @@ STUDENT_APP_STORE_URL = _env("FIZZY_STUDENT_APP_STORE_URL", "https://apps.apple.
 DISCORD_WEBHOOK_URL = _env("DISCORD_WEBHOOK_URL")
 DISCORD_MENTION = _env("DISCORD_MENTION")                        # e.g. @everyone, or <@&ROLE_ID>
 
+# Security (see security.py): fridge-camera incidents sent by the clip analyser on the home server, and
+# the Blink cameras' arm/disarm switch through Home Assistant. Each part is off until its settings are set.
+SECURITY_TOKEN = _env("FIZZY_SECURITY_TOKEN")                    # the analyser's key for /security/ingest
+INCIDENT_MAX_GB = float(_env("FIZZY_INCIDENT_MAX_GB", "5"))      # clip storage; oldest clips go first
+HA_URL = _env("FIZZY_HA_URL", "https://home.w-l.xyz").rstrip("/")
+HA_TOKEN = _env("FIZZY_HA_TOKEN")                                # a Home Assistant long-lived access token
+HA_ALARM_ENTITY = _env("FIZZY_HA_ALARM_ENTITY", "alarm_control_panel.blink_cooked_coke_co_security")
+
 SQUARE_TOKEN = _env("SQUARE_ACCESS_TOKEN")
 SQUARE_ENV = _env("SQUARE_ENVIRONMENT", "production")
 SQUARE_LOCATION_ID = _env("SQUARE_LOCATION_ID")

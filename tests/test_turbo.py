@@ -234,7 +234,7 @@ def test_nav_links_keep_their_order_for_the_more_menu(client):
     nav = header.split("<nav>", 1)[1].split("</nav>", 1)[0]
     menu = header.split('<div class="nav-menu">', 1)[1].split("</div>", 1)[0]
     assert re.findall(r'data-i="(\d+)"', nav) == [str(i) for i in range(6)]
-    assert re.findall(r'data-i="(\d+)" data-fixed', menu) == ["6", "7", "8"]   # Settings, Log, Tools: always in More
+    assert re.findall(r'data-i="(\d+)" data-fixed', menu) == ["6", "7", "8", "9"]   # Security, Settings, Log, Tools: always in More
     assert 'querySelectorAll("nav a, .nav-menu a")' in (ROOT / "templates" / "base.html").read_text()
 
 

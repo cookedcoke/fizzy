@@ -375,6 +375,24 @@ CREATE TABLE IF NOT EXISTS hunt_runs (
     UNIQUE (rule_id, player)
 );
 
+-- Fridge-camera incidents (security.py), sent by the clip analyser on the home server.
+CREATE TABLE IF NOT EXISTS incidents (
+    id INTEGER PRIMARY KEY,
+    clip TEXT NOT NULL UNIQUE,               -- the fridge clip's file name, e.g. 20261110_121301_Security02.mp4
+    camera TEXT NOT NULL,
+    happened_at TEXT NOT NULL,               -- local time of the clip, "YYYY-MM-DD HH:MM:SS"
+    score INTEGER NOT NULL,                  -- 0-10, how likely it was a theft (the AI's guess)
+    summary TEXT NOT NULL,
+    people INTEGER,
+    items_taken INTEGER NOT NULL DEFAULT 0,
+    context_json TEXT NOT NULL DEFAULT '[]', -- the room camera's clips sent along with it
+    received_at TEXT NOT NULL,
+    verdict TEXT,                            -- 'ok' or 'theft', once staff have watched it
+    verdict_by TEXT,
+    verdict_at TEXT,
+    clips_gone INTEGER NOT NULL DEFAULT 0    -- the video was deleted to stay under FIZZY_INCIDENT_MAX_GB
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);
@@ -383,6 +401,7 @@ CREATE INDEX IF NOT EXISTS ix_points_customer ON points_ledger(customer_id);
 CREATE INDEX IF NOT EXISTS ix_sqpay_customer ON square_payments(customer_id);
 CREATE INDEX IF NOT EXISTS ix_audit_customer ON audit_log(customer_id);
 CREATE INDEX IF NOT EXISTS ix_claim_waits_status ON claim_waits(status, done_at);
+CREATE INDEX IF NOT EXISTS ix_incidents_time ON incidents(happened_at);
 """
 
 DEFAULT_SETTINGS = {

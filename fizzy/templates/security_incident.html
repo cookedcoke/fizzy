@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% block title %}Incident{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>{{ i.when }}</h1>
+  <div class="meta"><a href="/security">Security</a> · {{ i.camera }} · <span class="tag {{ i.tag }}">{{ i.score }}/10</span>
+    {% if i.verdict %} · <span class="tag {{ 'red' if i.verdict == 'theft' else 'approved' }}">{{ verdicts[i.verdict] }}</span>
+    <span class="muted small">{{ i.verdict_by }}, {{ i.verdict_at|local }}</span>{% endif %}</div></div>
+</div>
+
+<div class="panel">
+  <h2>What the AI saw</h2>
+  <p>{{ i.summary }}</p>
+  <p class="muted small">{{ i.people }} {{ 'person' if i.people == 1 else 'people' }} ·
+    {{ 'items appear to be taken' if i.items_taken else 'no items clearly taken' }}. The AI can be wrong: watch the clips before deciding.</p>
+  <div class="actions">
+    {% for v, label in verdicts.items() %}{% if i.verdict != v %}
+    <form class="inline" method="post" action="/security/incidents/{{ i.id }}/verdict"><input type="hidden" name="verdict" value="{{ v }}">
+      <button class="{{ 'danger' if v == 'theft' else 'primary' }}">{{ 'Mark OK' if v == 'ok' else 'Mark as theft' }}</button></form>
+    {% endif %}{% endfor %}
+    {% if i.verdict %}<form class="inline" method="post" action="/security/incidents/{{ i.id }}/verdict"><input type="hidden" name="verdict" value="">
+      <button>Undo</button></form>{% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Clips <span class="count">{{ i.videos|length }}</span></h2>
+  {% if i.clips_gone %}<p class="empty">These videos were deleted to make room for newer ones. They may still be on the home server.</p>
+  {% elif not i.videos %}<p class="empty">The videos haven't arrived yet. They usually come a minute or two after the rating.</p>{% endif %}
+  {% for name in i.videos %}
+  <figure style="margin:0 0 var(--s4)">
+    <figcaption class="muted small" style="margin-bottom:4px">{{ 'Fridge camera' if name == i.clip else 'Room camera' }} · {{ name[9:11] }}:{{ name[11:13] }}:{{ name[13:15] }}</figcaption>
+    <video src="/security/clips/{{ i.id }}/{{ name }}" controls playsinline preload="metadata" style="width:100%;max-width:720px;border-radius:var(--r);background:#000"></video>
+  </figure>
+  {% endfor %}
+</div>
+{% endblock %}

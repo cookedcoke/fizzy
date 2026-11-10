@@ -41,10 +41,10 @@ def local(ts, fmt="%a %-d %b %H:%M"):
 ACTION_LABELS = {
     "update_requested": "Asked for an update", "maintenance": "Maintenance mode",
     "admin_pin": "Changed the PIN", "archive": "Archived", "assign_customer": "Said whose sale it was",
-    "breach_ack": "Dismissed a warning", "claim_wait": "Claim sale button", "customer_add": "Added a customer", "customer_edit": "Edited a customer",
+    "breach_ack": "Dismissed a warning", "cameras_armed": "Armed the cameras", "cameras_disarmed": "Disarmed the cameras", "claim_wait": "Claim sale button", "customer_add": "Added a customer", "customer_edit": "Edited a customer",
     "customer_kind": "Changed account type", "device_link": "Made a device link", "device_revoked": "Removed a device",
     "download_backup": "Downloaded a backup", "export": "Exported", "export_square_csv": "Exported for Square",
-    "extend_due": "Gave more time to pay", "import": "Imported the school list", "item_costs": "Changed item costs",
+    "extend_due": "Gave more time to pay", "import": "Imported the school list", "incident_verdict": "Marked a security incident", "item_costs": "Changed item costs",
     "login": "Signed in", "merge": "Merged customers", "notice": "Changed the noticeboard", "owner_unlock": "Owner unlocked",
     "square_history": "Imported sales history", "rule_add": "Added a custom badge or event", "rule_change": "Changed a custom badge or event",
     "rule_pause": "Paused a custom badge or event", "rule_resume": "Restarted a custom badge or event",

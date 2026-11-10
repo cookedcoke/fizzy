@@ -37,7 +37,7 @@ _fails = {}
 
 # Never asked, whatever the settings say: signing in and out, the student site, devices joining.
 # /settings/passkeys/finish only works after the owner-locked start, so it's free itself.
-FREE = [r"^/(login|logout|switch)$", r"^/login/passkey(/options)?$", r"^/settings/passkeys/finish$", r"^/me(/|$)", r"^/enrol/", r"^/square/webhook$", r"^/settings/pin/unlock$"]
+FREE = [r"^/(login|logout|switch)$", r"^/login/passkey(/options)?$", r"^/settings/passkeys/finish$", r"^/me(/|$)", r"^/enrol/", r"^/square/webhook$", r"^/security/ingest(/|$)", r"^/settings/pin/unlock$"]
 # Always the owner: the locks themselves.
 LOCKED = [r"^/settings/(pin|permissions|maintenance|update|ask)$", r"^/settings/passkeys", r"^/customers/\d+/kind$"]
 
@@ -65,6 +65,8 @@ ACTIONS = [
     ("rules", "Pause, restart or delete custom badges and events", [("POST", r"^/rules/\d+/")], "owner"),
     ("qr_login", "Show a one-time sign-in code on the customer display", [("POST", r"^/customers/\d+/qr-login$")], "open"),
     ("passcodes", "Set or read back student passcodes", [("POST", r"^/customers/\d+/passcode")], "pin"),
+    ("cameras", "Arm or disarm the cameras", [("POST", r"^/security/(arm|disarm)$")], "open"),
+    ("incidents", "Mark security incidents OK or theft", [("POST", r"^/security/incidents/\d+/verdict$")], "open"),
     ("money", "Add restocks and payouts", [("POST", r"^/money/(restock|payout)$"), ("POST", r"^/money/restock/\d+$")], "pin"),
     ("money_delete", "Delete restocks and payouts", [("POST", r"^/money/(restock|payout)/\d+/delete$")], "owner"),
     ("costs", "Item costs", [("POST", r"^/profit$")], "pin"),

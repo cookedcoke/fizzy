@@ -25,14 +25,14 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import ask, badges, challenges, display, jobs, passkeys, pwa, rules, transactions, updater
+from . import ask, badges, challenges, display, jobs, passkeys, pwa, rules, security, transactions, updater
 from .web import (HERE, LoginRequired, back, cents, claim_bar, get_conn, is_phone, local, money, render, sale_amounts, sale_time,
                   session_gen, staff, take, templates, wants_json)
 
 log = logging.getLogger("fizzy")
 
 
-GATE_EXEMPT = ("/static/", "/healthz", "/square/webhook", "/enrol/", "/sw.js", "/manifest.webmanifest")
+GATE_EXEMPT = ("/static/", "/healthz", "/square/webhook", "/security/ingest", "/enrol/", "/sw.js", "/manifest.webmanifest")
 GATE_PAGE = ("<!doctype html><meta name=viewport content='width=device-width'><title>{title}</title>"
              "<body style='font:15px system-ui;max-width:520px;margin:15vh auto;padding:0 16px'>"
              "<h1 style='font-size:20px'>{title}</h1><p>{body}</p>")
@@ -284,7 +284,7 @@ def create_app(background=True):
         Square's webhook still gets through, so no sales are missed. Runs before the device gate."""
         msg = await run_in_threadpool(maintenance_message)
         path = request.url.path
-        if msg is None or path.startswith("/static/") or path in ("/healthz", "/square/webhook"):
+        if msg is None or path.startswith(("/static/", "/security/ingest")) or path in ("/healthz", "/square/webhook"):
             return await call_next(request)
         error = None
         staff_host = not getattr(request.state, "public", False)
@@ -363,6 +363,7 @@ def create_app(background=True):
     app.include_router(ask.router)
     app.include_router(jobs.router)
     app.include_router(money_pages.router)
+    app.include_router(security.router)
     return app
 
 

@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% block title %}Security{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Security</h1>
+  <div class="meta">Fridge camera clips an AI rated as a possible theft. Watch them, then mark each one.</div></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="k">Cameras</div>
+    {% if status %}<div class="v sm"><span class="tag {{ 'approved' if status == 'Armed' else 'eligible' if status == 'Disarmed' else 'red' }}">{{ status }}</span></div>
+    {% else %}<div class="v sm muted">Unknown</div><div class="sub">{{ raw }}</div>{% endif %}
+    {% if ha_on %}<div class="actions" style="margin-top:8px">
+      <form class="inline" method="post" action="/security/arm"><button class="sm {{ 'primary' if status != 'Armed' }}"{{ ' disabled' if status == 'Armed' }}>Arm</button></form>
+      <form class="inline" method="post" action="/security/disarm"><button class="sm"{{ ' disabled' if status == 'Disarmed' }}
+        data-confirm="Disarm the cameras? They won't record until someone arms them again.">Disarm</button></form>
+    </div>{% endif %}
+  </div>
+  <div class="stat"><div class="k">To watch</div><div class="v">{{ counts.open or 0 }}</div><div class="sub">{{ counts.high or 0 }} rated 7 or more</div></div>
+  <div class="stat"><div class="k">Marked theft</div><div class="v">{{ counts.theft or 0 }}</div><div class="sub">of {{ counts.n or 0 }} incidents</div></div>
+</div>
+
+<div class="panel">
+  <h2>{{ 'To watch' if show == 'open' else 'All incidents' }} <span class="count">{{ incidents|length }}</span>
+    <a class="aside" href="/security?show={{ 'all' if show == 'open' else 'open' }}">{{ 'Show all' if show == 'open' else 'Only ones to watch' }}</a></h2>
+  {% if not incidents %}<p class="empty">{{ 'Nothing to watch.' if show == 'open' else 'No incidents yet.' }} The cameras only record while they're armed.</p>
+  {% else %}<div class="scroll"><table>
+    <tr><th>When</th><th>Score</th><th>What the AI saw</th><th>Marked</th><th></th></tr>
+    {% for i in incidents %}<tr>
+      <td class="when">{{ i.when }}</td>
+      <td><span class="tag {{ i.tag }}">{{ i.score }}/10</span></td>
+      <td class="small">{{ i.summary }}</td>
+      <td>{% if i.verdict %}<span class="tag {{ 'red' if i.verdict == 'theft' else 'approved' }}">{{ verdicts[i.verdict] }}</span>
+        <div class="muted small">{{ i.verdict_by }}</div>{% endif %}</td>
+      <td class="n"><a class="btn sm {{ 'primary' if not i.verdict }}" href="/security/incidents/{{ i.id }}">{{ 'Watch' if i.videos else 'Open' }}</a></td>
+    </tr>{% endfor %}
+  </table></div>{% endif %}
+</div>
+{% endblock %}

@@ -39,10 +39,10 @@
 <header>
   <a class="brand" href="/">{% include "_logo.html" %}<span>Fizzy</span><small>Cooked Coke Co.</small></a>
   {% set p = request.url.path %}
-  {# Six tabs, then More (Settings, Log, Tools). Sales is Transactions and Square; Money is Money and Profit. #}
+  {# Six tabs, then More (Security, Settings, Log, Tools). Sales is Transactions and Square; Money is Money and Profit. #}
   {% set tabs = [('/', 'Dashboard', ('/ask',)), ('/customers', 'Customers', ('/import', '/scan')), ('/transactions', 'Sales', ('/sales', '/square')),
                  ('/tabs', 'Tabs', ()), ('/rewards', 'Rewards', ()), ('/money', 'Money', ('/profit',))] %}
-  {% set more_tabs = [('/settings', 'Settings', ('/display/settings',)), ('/audit', 'Log', ()), ('/tools', 'Tools', ())] %}
+  {% set more_tabs = [('/security', 'Security', ()), ('/settings', 'Settings', ('/display/settings',)), ('/audit', 'Log', ()), ('/tools', 'Tools', ())] %}
   {% macro tab(p, href, label, also, i, fixed) %}{% set on = (p == '/' or p.startswith('/ask')) if href == '/' else (p.startswith(href) or p.startswith(also)) %}<a href="{{ href }}" data-i="{{ i }}"{% if fixed %} data-fixed{% endif %} class="{{ 'on' if on }}">{{ label }}</a>{% endmacro %}
   <nav>
     {% for href, label, also in tabs %}{{ tab(p, href, label, also, loop.index0, False) }}
@@ -52,7 +52,7 @@
   <details class="nav-more{{ ' on' if more_on.v }}"><summary>More</summary><div class="nav-menu">
     {% for href, label, also in more_tabs %}{{ tab(p, href, label, also, tabs|length + loop.index0, True) }}{% endfor %}
   </div></details>
-  <script>/* Runs before first paint. Settings, Log and Tools always sit in the More menu (data-fixed). Wider than a
+  <script>/* Runs before first paint. Security, Settings, Log and Tools always sit in the More menu (data-fixed). Wider than a
      phone: tabs that still don't fit go into that menu too, above them (never the current page's). Before any
      tab moves, the extras give way one at a time, in the order a narrower window drops them (style.css, 1600px
      and below), so a wider window never shows less: the Display menu's word, then the tagline, labels and date
