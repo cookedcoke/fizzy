@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 from datetime import datetime
 
@@ -129,20 +130,21 @@ async def ingest_clip(request: Request, iid: int, name: str, conn=Depends(get_co
     path = clip_path(iid, name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     got, head = 0, b""
-    with open(path + ".tmp", "wb") as f:
+    tmp = f"{path}.{secrets.token_hex(4)}.tmp"   # its own name: two uploads of the same clip can overlap
+    with open(tmp, "wb") as f:
         async for chunk in request.stream():
             got += len(chunk)
             if got > CLIP_MAX:
                 f.close()
-                os.remove(path + ".tmp")
+                os.remove(tmp)
                 raise HTTPException(413, "That video is too big.")
             if len(head) < 12:
                 head += chunk[:12]
             f.write(chunk)
     if head[4:8] != b"ftyp":   # every MP4 starts with an ftyp box
-        os.remove(path + ".tmp")
+        os.remove(tmp)
         raise HTTPException(400, "That isn't an MP4 video.")
-    os.replace(path + ".tmp", path)
+    os.replace(tmp, path)
     conn.execute("UPDATE incidents SET clips_gone = 0 WHERE id = ?", (iid,))
     conn.commit()
     await run_in_threadpool(prune_clips, conn)
