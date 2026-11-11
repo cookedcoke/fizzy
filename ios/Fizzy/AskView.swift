@@ -231,9 +231,11 @@ struct AskView: View {
                         .onDisappear { atEnd = false }
                 }
                 .padding()
-                // A tap on the chat (not on a button in it) puts the keyboard away.
-                .background(Color.clear.contentShape(Rectangle()).onTapGesture { focused = false })
             }
+            // A tap anywhere on the chat (a button in it still gets its own tap) puts the keyboard away.
+            // On the scroll view itself, so the empty space under a short chat counts too.
+            .contentShape(Rectangle())
+            .onTapGesture { focused = false }
             // Even a short chat can be dragged, so dragging down always puts the keyboard away too.
             .scrollBounceBehavior(.always)
             .overlay { if !page.loaded && page.error == nil { ProgressView() } }
@@ -243,7 +245,7 @@ struct AskView: View {
             .onChange(of: page.data) { if atEnd { proxy.scrollTo("end") }; joinIfPending() }
         }
         .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .bottom) { composer(d) }
+        .modifier(ComposerBar { composer(d) })
         .navigationTitle("Fizz")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -346,8 +348,8 @@ struct AskView: View {
             TextField(live.active ? "Fizz is answering…" : "Ask Fizz anything about the stall…", text: $text, axis: .vertical)
                 .lineLimit(1...5)
                 .focused($focused)
-                .padding(10)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .modifier(ComposerField())
             if focused {
                 Button { focused = false } label: {
                     Image(systemName: "keyboard.chevron.compact.down").font(.system(size: 20)).frame(height: 34)
@@ -362,7 +364,6 @@ struct AskView: View {
             .disabled(live.active || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !d.enabled.bool)
         }
         .padding(.horizontal).padding(.vertical, 8)
-        .background(.bar)
     }
 
     private func send() {
@@ -370,5 +371,29 @@ struct AskView: View {
         guard !question.isEmpty, !live.active else { return }
         text = ""
         live.send(question)
+    }
+}
+
+/// The message box's place at the bottom. On iOS 26 it floats over the page like Messages (no strip of its own,
+/// so the white page runs down to the keyboard's rounded top); before that, on the usual bar.
+private struct ComposerBar<Bar: View>: ViewModifier {
+    @ViewBuilder let bar: () -> Bar
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.safeAreaBar(edge: .bottom) { bar() }
+        } else {
+            content.safeAreaInset(edge: .bottom) { bar().background(.bar) }
+        }
+    }
+}
+
+/// The text field's shape: Liquid Glass on iOS 26, a grey bubble before.
+private struct ComposerField: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
+        } else {
+            content.background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+        }
     }
 }
