@@ -231,7 +231,11 @@ struct AskView: View {
                         .onDisappear { atEnd = false }
                 }
                 .padding()
+                // A tap on the chat (not on a button in it) puts the keyboard away.
+                .background(Color.clear.contentShape(Rectangle()).onTapGesture { focused = false })
             }
+            // Even a short chat can be dragged, so dragging down always puts the keyboard away too.
+            .scrollBounceBehavior(.always)
             .overlay { if !page.loaded && page.error == nil { ProgressView() } }
             .onChange(of: live.answer) { if atEnd { proxy.scrollTo("end") } }
             .onChange(of: live.status) { if atEnd { proxy.scrollTo("end") } }
@@ -344,6 +348,13 @@ struct AskView: View {
                 .focused($focused)
                 .padding(10)
                 .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+            if focused {
+                Button { focused = false } label: {
+                    Image(systemName: "keyboard.chevron.compact.down").font(.system(size: 20)).frame(height: 34)
+                }
+                .accessibilityLabel("Hide keyboard")
+                .foregroundStyle(.secondary)
+            }
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill").font(.system(size: 34))
             }
