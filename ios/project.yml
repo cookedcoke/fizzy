@@ -13,8 +13,8 @@ settingGroups:
   # My CCC and its App Clip: the App Store needs the clip's version and build to match the app's,
   # so both come from here. Bump the build here for each upload.
   myccc-version:
-    MARKETING_VERSION: "1.1.0"
-    CURRENT_PROJECT_VERSION: "3"
+    MARKETING_VERSION: "1.1.1"
+    CURRENT_PROJECT_VERSION: "4"
 targets:
   Fizzy:
     type: application
