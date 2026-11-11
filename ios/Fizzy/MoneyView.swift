@@ -119,6 +119,7 @@ struct RestockSheet: View {
     var items: [J] = []
     @State private var clientID = UUID().uuidString
     struct Line: Identifiable { let id = UUID(); var item = ""; var qty = "1"; var cost = "" }
+    struct LineRef: Identifiable { let id: UUID }
     @State private var day = Fmt.day(Date())
     @State private var shop = ""
     @State private var lines = [Line()]
@@ -192,7 +193,8 @@ struct RestockSheet: View {
             }
         }
         .onAppear(perform: fill)
-        .sheet(item: Binding(get: { pickingLine.map { Pick(value: .str($0.uuidString)) } }, set: { if $0 == nil { pickingLine = nil } })) { _ in
+        // Keyed by the line's own id: a fresh id on each redraw made SwiftUI close and reopen the picker in a loop.
+        .sheet(item: Binding(get: { pickingLine.map(LineRef.init) }, set: { if $0 == nil { pickingLine = nil } })) { _ in
             ItemPicker(known: page.data.known.strings, current: lines.first { $0.id == pickingLine }?.item ?? "") { name in
                 if let i = lines.firstIndex(where: { $0.id == pickingLine }) { lines[i].item = name }
             }
