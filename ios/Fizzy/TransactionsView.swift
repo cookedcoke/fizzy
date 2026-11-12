@@ -89,36 +89,43 @@ struct TransactionsView: View {
         let amount = r.sold_cents.int != 0 ? r.sold_cents.int : r.repay_cents.int
         let items = r["items"].array.map { "\($0.qty.int)× \($0.name.string)" }.joined(separator: ", ")
         let source = r.source.string
-        VStack(alignment: .leading, spacing: 4) {
+        // Who and how much on top, what they bought under it, then when and how it was paid. A sale with a
+        // customer opens them when tapped (an invisible link over the row, so no arrow sits mid-row).
+        VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    if !r.customer_id.isNull {
-                        NavigationLink(r.customer.string, value: CustomerID(id: r.customer_id.int))
-                    } else if let pid = r.payment_ids[0].optString {
-                        Button("Assign to…") { assigning = Pick(value: .str(pid)) }.buttonStyle(.bordered).controlSize(.small)
-                    } else {
-                        Text("No customer").foregroundStyle(.secondary)
-                    }
-                    Text(Fmt.when(r.at.string)).font(.caption).foregroundStyle(.secondary)
+                if !r.customer_id.isNull {
+                    Text(r.customer.string).font(.body.weight(.medium)).lineLimit(1)
+                } else if let pid = r.payment_ids[0].optString {
+                    Button("Assign to…") { assigning = Pick(value: .str(pid)) }.buttonStyle(.bordered).controlSize(.small)
+                } else {
+                    Text("No customer").foregroundStyle(.secondary)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(Fmt.money(amount)).monospacedDigit()
-                    if r.points.int != 0 { Text("\(Fmt.points(r.points.int)) pts").font(.caption).foregroundStyle(.secondary) }
+                Text(Fmt.money(amount)).font(.body.weight(.semibold)).monospacedDigit()
+            }
+            HStack(alignment: .firstTextBaseline) {
+                if source == "square" {
+                    Text(items.isEmpty ? "Sale" : items).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                } else {
+                    Text((source == "writeoff" ? "Debt written off" : "Recorded in Fizzy") + (r.note.optString.map { ": \($0)" } ?? "") + " · \(r.staff.string)")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
+                Spacer()
+                if r.points.int != 0 { Text("\(Fmt.points(r.points.int)) pts").font(.caption).foregroundStyle(.secondary).monospacedDigit() }
             }
-            if source == "square" {
-                if !items.isEmpty { Text(items).font(.caption).foregroundStyle(.secondary) }
-            } else {
-                Text((source == "writeoff" ? "Debt written off" : "Recorded in Fizzy") + (r.note.optString.map { ": \($0)" } ?? "") + " · \(r.staff.string)")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Text(Fmt.when(r.at.string) + (r.tenders.array.isEmpty ? "" : " · " + r.tenders.strings.joined(separator: ", ").lowercased()))
+                    .font(.caption).foregroundStyle(.tertiary).lineLimit(1)
                 if r.tab_cents.int != 0 { Tag(text: r.tab_cents.int == r.sold_cents.int ? "On tab" : "\(Fmt.money(r.tab_cents.int)) on tab", color: .blue) }
                 if r.repay_cents.int != 0 && source != "writeoff" { Tag(text: "Tab repaid", color: .green) }
                 if source == "writeoff" { Tag(text: "Written off") }
                 if r.refunded_cents.int != 0 { Tag(text: "\(Fmt.money(r.refunded_cents.int)) refunded", color: .red) }
-                if !r.tenders.array.isEmpty { Text(r.tenders.strings.joined(separator: ", ").lowercased()).font(.caption2).foregroundStyle(.secondary) }
+            }
+        }
+        .padding(.vertical, 2)
+        .background {
+            if !r.customer_id.isNull {
+                NavigationLink(value: CustomerID(id: r.customer_id.int)) { EmptyView() }.opacity(0)
             }
         }
     }

@@ -60,7 +60,7 @@ struct DashboardView: View {
                     Label("\(e.name.string) (×\(Fmt.g(e.multiplier.double))) is on today", systemImage: "sparkles").bold().foregroundStyle(.green)
                 }
                 if !d.events_soon.array.isEmpty {
-                    Text("Coming up: " + d.events_soon.array.map { "\($0.name.string) \(Fmt.when($0.start_date.string, "EEE d MMM"))" }.joined(separator: ", "))
+                    Label("Coming up: " + d.events_soon.array.map { "\($0.name.string) \(Fmt.when($0.start_date.string, "EEE d MMM"))" }.joined(separator: ", "), systemImage: "calendar")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -112,9 +112,11 @@ struct DashboardView: View {
                 Chart {
                     ForEach(s.hours.array, id: \.self) { h in
                         BarMark(x: .value("Hour", hourLabel(h.hour.int)), y: .value("Sold", Double(h.last_week.int) / 100))
+                            .cornerRadius(3)
                             .foregroundStyle(by: .value("When", "Last \(Fmt.when(t.day.string, "EEEE"))"))
                             .position(by: .value("When", "Last \(Fmt.when(t.day.string, "EEEE"))"))
                         BarMark(x: .value("Hour", hourLabel(h.hour.int)), y: .value("Sold", Double(h.cents.int) / 100))
+                            .cornerRadius(3)
                             .foregroundStyle(by: .value("When", "Today"))
                             .position(by: .value("When", "Today"))
                     }
@@ -125,16 +127,26 @@ struct DashboardView: View {
                 .frame(height: 160)
             }
         }
-        Section("Last 7 school days · \(Fmt.money(s.week_sold_cents.int)) sold · \(s.week_orders.int) orders") {
+        Section("Last 7 school days") {
+            // The totals inside the card, not in the title, where they wrapped onto a second line.
+            HStack(alignment: .firstTextBaseline) {
+                Text(Fmt.money(s.week_sold_cents.int)).font(.title2.bold()).monospacedDigit()
+                Text("sold").foregroundStyle(.secondary)
+                Spacer()
+                Text("\(s.week_orders.int) orders").foregroundStyle(.secondary).monospacedDigit()
+            }
+            .listRowSeparator(.hidden)
             Chart(s.week.array, id: \.self) { w in
-                BarMark(x: .value("Day", Fmt.when(w.day.string, "EEE d")), y: .value("Sold", Double(w.sold_cents.int) / 100))
-                    .foregroundStyle(Color("Brand"))
-                    .annotation(position: .top) {
-                        if w.sold_cents.int > 0 { Text(Fmt.money(w.sold_cents.int)).font(.caption2).monospacedDigit().foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7) }
+                BarMark(x: .value("Day", Fmt.when(w.day.string, "EEE d")), y: .value("Sold", Double(w.sold_cents.int) / 100), width: .ratio(0.62))
+                    .cornerRadius(6)
+                    .foregroundStyle(LinearGradient(colors: [Color("Brand"), Color("Brand").opacity(0.65)], startPoint: .top, endPoint: .bottom))
+                    .annotation(position: .top, spacing: 3) {
+                        // Whole dollars: with the cents, seven labels ran into each other.
+                        if w.sold_cents.int > 0 { Text("$\(Int((Double(w.sold_cents.int) / 100).rounded()))").font(.caption2.weight(.medium)).monospacedDigit().foregroundStyle(.secondary).fixedSize() }
                     }
             }
             .chartYAxis { dollarAxis }
-            .frame(height: 150)
+            .frame(height: 160)
         }
     }
 
@@ -208,11 +220,13 @@ struct DashboardView: View {
     @ViewBuilder private func sales(_ d: J) -> some View {
         let s = d.sales
         Section("Top items") {
-            ForEach(s.top_today.array, id: \.self) { Line(left: $0.name.string, right: "\($0.qty.int) sold") }
+            let most = s.top_today.array.map { $0.qty.int }.max() ?? 1
+            ForEach(s.top_today.array, id: \.self) { TopItemRow(name: $0.name.string, qty: $0.qty.int, most: most) }
             if s.top_today.array.isEmpty { Text("Nothing yet today.").foregroundStyle(.secondary) }
         }
         Section("Top items · last 7 school days") {
-            ForEach(s.top_week.array, id: \.self) { Line(left: $0.name.string, right: "\($0.qty.int) sold") }
+            let mostWeek = s.top_week.array.map { $0.qty.int }.max() ?? 1
+            ForEach(s.top_week.array, id: \.self) { TopItemRow(name: $0.name.string, qty: $0.qty.int, most: mostWeek) }
             if s.top_week.array.isEmpty { Text("Nothing yet.").foregroundStyle(.secondary) }
         }
         Section("Latest sales") {
@@ -276,5 +290,32 @@ struct AssignSheet: View {
                 Text("Type a name and tap the match.")
             }
         }
+    }
+}
+
+/// A top-selling item: its count, and a bar showing how it compares with the best seller.
+private struct TopItemRow: View {
+    let name: String
+    let qty: Int
+    let most: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(name)
+                Spacer()
+                Text("\(qty)").bold().monospacedDigit()
+                Text("sold").font(.footnote).foregroundStyle(.secondary)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.12))
+                    Capsule().fill(Color("Brand").opacity(0.85))
+                        .frame(width: max(6, geo.size.width * CGFloat(qty) / CGFloat(max(most, 1))))
+                }
+            }
+            .frame(height: 5)
+        }
+        .padding(.vertical, 2)
     }
 }

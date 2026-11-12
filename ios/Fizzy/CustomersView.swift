@@ -125,22 +125,43 @@ struct CustomersView: View {
         let statusKey: String
         let reward: Bool
         var body: some View {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(.body.weight(.medium))
-                    if let email { Text(email.split(separator: "@").first.map(String.init) ?? email).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1) }
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(Fmt.number(points)) pts").monospacedDigit()
-                    HStack(spacing: 4) {
-                        if owing != "$0.00" { Text("owes \(owing)").foregroundStyle(.orange).lineLimit(1).fixedSize() }
-                        Tag(text: status, color: statusColor(statusKey))
-                        if reward { Tag(text: "Reward", color: .purple) }
+            // Initials, then the name on one line with their id and tags under it; points (and any debt) on the right.
+            HStack(spacing: 12) {
+                Text(initials)
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(tint.gradient, in: Circle())
+                // Two full-width lines (not two columns, which squeezed each other): who and their points,
+                // then their id, tab and any debt.
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(name).font(.body.weight(.medium)).lineLimit(1)
+                        // Can afford a reward: an icon by the name (a third pill squeezed the id down to "r…").
+                        if reward { Image(systemName: "gift.fill").font(.caption).foregroundStyle(.purple).accessibilityLabel("Can get a reward") }
+                        Spacer(minLength: 6)
+                        (Text(Fmt.number(points)).font(.body.weight(.semibold)) + Text(" pts").font(.caption).foregroundStyle(.secondary))
+                            .monospacedDigit().lineLimit(1).fixedSize()
                     }
-                    .font(.caption)
+                    HStack(spacing: 6) {
+                        if let email { Text(email.split(separator: "@").first.map(String.init) ?? email).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).fixedSize() }
+                        Tag(text: status, color: statusColor(statusKey))
+                        Spacer(minLength: 4)
+                        if owing != "$0.00" { Text("owes \(owing)").font(.caption.weight(.medium)).foregroundStyle(.orange).lineLimit(1).fixedSize() }
+                    }
                 }
             }
+            .padding(.vertical, 2)
+        }
+
+        private var initials: String {
+            let parts = name.split(separator: " ")
+            return ((parts.first?.prefix(1) ?? "") + (parts.count > 1 ? parts.last!.prefix(1) : "")).uppercased()
+        }
+
+        /// The same colour for the same person every time, from their name.
+        private var tint: Color {
+            let palette: [Color] = [.red, .orange, .pink, .purple, .indigo, .blue, .teal, .green]
+            return palette[name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 9973 } % palette.count]
         }
     }
 }
