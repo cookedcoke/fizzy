@@ -215,19 +215,19 @@ enum MoreDestination: Hashable {
 struct MoreView: View {
     var body: some View {
         List {
-            Section {
-                link("Tabs", "creditcard", .tabs)
-                link("Rewards", "gift", .rewards)
-                link("Money", "banknote", .money)
+            Section("The stall") {
+                link("Tabs", "Who owes, who to chase, tab rules", "creditcard.fill", .blue, .tabs)
+                link("Rewards", "Points rewards, events and hunts", "gift.fill", .purple, .rewards)
+                link("Money", "Restocks, payouts and profit", "banknote.fill", .green, .money)
+            }
+            Section("Running it") {
+                link("Customer display", "What the counter screen shows", "tv.fill", .indigo, .display)
+                link("Settings", "Updates, backups, Fizz and devices", "gearshape.fill", .gray, .settings)
+                link("Activity log", "Everything staff have changed", "clock.arrow.circlepath", .orange, .log)
+                link("Tools", "Fix-ups, and where everything lives", "wrench.and.screwdriver.fill", .teal, .tools)
             }
             Section {
-                link("Customer display", "tv", .display)
-                link("Settings", "gearshape", .settings)
-                link("Activity log", "clock.arrow.circlepath", .log)
-                link("Tools", "wrench.and.screwdriver", .tools)
-            }
-            Section {
-                link("This app", "iphone", .thisApp)
+                link("This app", "Fizzy's address and this device", "iphone", Color("Brand"), .thisApp)
             }
         }
         .navigationTitle("More")
@@ -246,8 +246,21 @@ struct MoreView: View {
         }
     }
 
-    private func link(_ title: String, _ icon: String, _ to: MoreDestination) -> some View {
-        NavigationLink(value: to) { Label(title, systemImage: icon) }
+    /// A coloured icon tile, the name and a line on what's in there, as the Settings app does it.
+    private func link(_ title: String, _ about: String, _ icon: String, _ color: Color, _ to: MoreDestination) -> some View {
+        NavigationLink(value: to) {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(color.gradient, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    Text(about).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .padding(.vertical, 2)
+        }
     }
 }
 
