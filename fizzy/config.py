@@ -65,6 +65,13 @@ SQUARE_REPAYMENT_ITEM = _env("SQUARE_REPAYMENT_ITEM", "tab repayment")
 # SQUARE_ACCOUNT for House Account). Off by default - the discount is the tab button.
 SQUARE_TAB_TENDERS = {t.strip().upper() for t in _env("SQUARE_TAB_TENDERS", "").split(",") if t.strip()}
 
+# Paying off a tab in My CCC with Apple Pay: the app gets a one-time card nonce from Square's SDK and
+# Fizzy charges it here. Off until the Apple Pay merchant ID and Square certificate are set up.
+APPLE_PAY = _env("FIZZY_APPLE_PAY", "0") == "1"
+SQUARE_APP_ID = _env("SQUARE_APPLICATION_ID")                     # sq0idp-... (sandbox-sq0idb-... in sandbox): not secret
+SQUARE_CURRENCY = _env("SQUARE_CURRENCY", "AUD")
+APPLE_PAY_MERCHANT_ID = _env("FIZZY_APPLE_PAY_MERCHANT_ID", "merchant.co.cookedcoke.student")
+
 SQUARE_BASE = (
     "https://connect.squareupsandbox.com" if SQUARE_ENV == "sandbox" else "https://connect.squareup.com"
 )

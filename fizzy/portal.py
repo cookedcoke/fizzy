@@ -21,7 +21,7 @@ import anyio
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from . import badges, challenges, config, events, logic, rewards, rules, runs, stats
+from . import badges, challenges, config, events, logic, rewards, rules, runs, square, stats
 from .db import audit, now_iso
 from .web import get_conn, staff, templates, wants_json
 
@@ -251,6 +251,9 @@ def student_payload(conn, c):
                 "owing_cents": led["owing_cents"], "overdue_cents": led["overdue_cents"], "has_overdue": led["has_overdue"],
                 "balance_cents": led["balance_cents"], "late_count": led["late_count"], "has_charges": bool(led["charges"]),
                 "next_due": min(unpaid) if unpaid else None,
+                "apple_pay": ({"app_id": config.SQUARE_APP_ID, "location_id": config.SQUARE_LOCATION_ID,
+                               "merchant_id": config.APPLE_PAY_MERCHANT_ID, "currency": config.SQUARE_CURRENCY}
+                              if config.APPLE_PAY and config.SQUARE_APP_ID and led["owing_cents"] > 0 else None),
                 "score": {"score": sc["score"], "limit_cents": sc["limit_cents"], "next": sc["next"],
                           "factors": [{"label": label, "points": pts} for label, pts in sc["factors"]], "tips": sc["tips"]}},
         "streak": {"days": me["streak"], "best": me["best"], "today": me["today"]},
@@ -603,6 +606,27 @@ async def scan(request: Request, conn=Depends(get_conn)):
     ok, msg = challenges.scan(conn, c["id"], str(form.get("code") or "")[:500])
     conn.commit()
     return _json({"ok": True, "message": msg} if ok else {"error": msg}, 200 if ok else 400)
+
+
+@router.post("/me/tab/pay")
+async def pay_tab(request: Request, conn=Depends(get_conn)):
+    """My CCC's Apple Pay button: a one-time card nonce from Square's SDK, the amount, and the app's id
+    for this attempt (so a retry can't charge twice)."""
+    c = current(request, conn)
+    if c is None:
+        return _json({"error": "You're signed out. Sign in again."}, 401)
+    form = await request.form()
+    amount = str(form.get("amount_cents") or "")
+    try:
+        paid = square.pay_tab(conn, c, str(form.get("nonce") or ""), int(amount) if amount.isdigit() else -1,
+                              str(form.get("key") or ""))
+    except square.PayError as e:
+        conn.rollback()
+        return _json({"error": str(e)}, 400)
+    conn.commit()
+    owing = logic.tab_ledger(conn, c["id"])["owing_cents"]
+    left = f" You still owe ${owing / 100:.2f}." if owing > 0 else " Your tab's all paid off!"
+    return _json({"ok": True, "message": f"Paid ${paid / 100:.2f}.{left}", "owing_cents": owing})
 
 
 @router.get("/me/c/{code}")

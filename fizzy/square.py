@@ -1326,3 +1326,74 @@ def verify_webhook(body: bytes, signature: str, key=None, url=None):
         return False
     digest = hmac.new(key.encode(), url.encode() + body, hashlib.sha256).digest()
     return hmac.compare_digest(base64.b64encode(digest).decode(), signature)
+
+
+# ---- paying off a tab in the app (Apple Pay) ---------------------------------------------------------
+
+class PayError(Exception):
+    """Something to tell the student: the card was declined, the amount was wrong, and so on."""
+
+
+_DECLINES = {
+    "CARD_DECLINED": "Your card was declined. Try another card in Apple Pay, or pay at the stall.",
+    "INSUFFICIENT_FUNDS": "Not enough money on that card. Try another card, or pay at the stall.",
+    "CARD_EXPIRED": "That card has expired. Try another card in Apple Pay.",
+    "GENERIC_DECLINE": "Your bank declined that. Try another card, or pay at the stall.",
+    "CVV_FAILURE": "Your bank declined that. Try another card, or pay at the stall.",
+    "INVALID_CARD": "That card can't be used here. Try another card in Apple Pay.",
+}
+
+
+def _square_error(e):
+    """A student-friendly message for a Square error response."""
+    try:
+        errors = e.response.json().get("errors") or []
+    except Exception:
+        errors = []
+    for err in errors:
+        if err.get("code") in _DECLINES:
+            return _DECLINES[err["code"]]
+    log.warning("Square payment failed: %s", errors or e)
+    return "That didn't go through, and you weren't charged. Try again, or pay at the stall."
+
+
+def pay_tab(conn, customer, nonce, amount_cents, key, client=None):
+    """Charge an Apple Pay nonce from My CCC and put it against the customer's tab.
+
+    The charge is an order with the "Tab repayment" item, so it reads like a repayment taken at the
+    counter, and it's recorded through process_payment: the next Square sync sees a payment that's
+    already in and leaves it. `key` is the app's id for this attempt, so a retry is never charged twice.
+    Returns the amount paid. Raises PayError with a message for the student."""
+    if not config.APPLE_PAY or not config.SQUARE_TOKEN or not config.SQUARE_LOCATION_ID:
+        raise PayError("Paying in the app isn't switched on. Pay at the stall.")
+    owing = logic.tab_ledger(conn, customer["id"])["owing_cents"]
+    if owing <= 0:
+        raise PayError("You don't owe anything.")
+    if not isinstance(amount_cents, int) or amount_cents < 50 or amount_cents > owing:
+        raise PayError(f"You can pay between $0.50 and ${owing / 100:.2f}.")
+    key = str(key or "").strip()[:40]
+    if not nonce or len(key) < 8:
+        raise PayError("That didn't go through. Try again.")
+    client = client or SquareClient()
+    money = {"amount": amount_cents, "currency": config.SQUARE_CURRENCY}
+    who = {"customer_id": customer["square_customer_id"]} if customer["square_customer_id"] else {}
+    try:
+        order = client._post("/v2/orders", {"idempotency_key": f"{key}-o", "order": {
+            "location_id": config.SQUARE_LOCATION_ID, "reference_id": f"fizzy-{customer['id']}", **who,
+            "line_items": [{"name": config.SQUARE_REPAYMENT_ITEM.capitalize(), "quantity": "1", "base_price_money": money}]}})["order"]
+        payment = client._post("/v2/payments", {
+            "idempotency_key": key, "source_id": nonce, "amount_money": money, "order_id": order["id"],
+            "location_id": config.SQUARE_LOCATION_ID, "autocomplete": True, "note": "Tab paid in My CCC", **who})["payment"]
+    except httpx.HTTPStatusError as e:
+        raise PayError(_square_error(e)) from None
+    except httpx.HTTPError:
+        raise PayError("Couldn't reach the payment service, and you weren't charged. Try again.") from None
+    if payment.get("status") != "COMPLETED":
+        raise PayError("That didn't go through, and you weren't charged. Try again, or pay at the stall.")
+    order = client.order(order["id"]) or order
+    process_payment(conn, payment, order)
+    row = conn.execute("SELECT customer_id FROM square_payments WHERE square_payment_id = ?", (payment["id"],)).fetchone()
+    if row is not None and row["customer_id"] is None:
+        _link(conn, payment["id"], customer["id"])   # no Square profile on the order: it's still theirs
+    audit(conn, "student", "tab_paid_in_app", customer["id"], f"${amount_cents / 100:.2f} {payment['id']}")
+    return amount_cents
