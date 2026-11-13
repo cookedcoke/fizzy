@@ -95,6 +95,23 @@ final class StudentAPI {
         return try decode(data, response).message.string
     }
 
+    /// Pay off the tab with a one-time card nonce from Apple Pay (via Square's SDK). `key` is this attempt's
+    /// id: Fizzy uses it so a retry is never charged twice. Returns what the server says ("Paid $7.50. …").
+    func payTab(nonce: String, amountCents: Int, key: String) async throws -> String {
+        var request = URLRequest(url: url("/tab/pay"))
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: safe) ?? "" }
+        request.httpBody = "nonce=\(enc(nonce))&amount_cents=\(amountCents)&key=\(enc(key))".data(using: .utf8)
+        let (data, response) = try await session.data(for: request)
+        if (response as? HTTPURLResponse)?.statusCode == 401, let saved = SavedSignIn.load() {
+            try await signIn(who: saved.who, passcode: saved.passcode)
+            return try await answer(request).message.string
+        }
+        return try decode(data, response).message.string
+    }
+
     /// A hunt poster's code (from its link), opened with no one signed in: this server's student site keeps
     /// it against this phone, and moves it onto their account when they sign in.
     func guestScan(_ code: String) async throws -> String {

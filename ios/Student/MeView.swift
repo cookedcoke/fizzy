@@ -151,6 +151,7 @@ private struct TabSection: View {
                         Figure(title: "Tab limit", value: Fmt.money(tab.limit_cents.int), sub: "\(tab.due_days.int) days to pay")
                     }
                 }
+                PayTabButton(tab: tab)
                 if tab.balance_cents.int < 0 {
                     Text("You have \(Fmt.money(-tab.balance_cents.int)) in credit - it's used next time you put something on your tab.")
                         .font(.subheadline).foregroundStyle(.secondary)
