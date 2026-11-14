@@ -10,6 +10,7 @@
 	<key>com.apple.developer.in-app-payments</key>
 	<array>
 		<string>merchant.co.cookedcoke.student</string>
+		<string>merchant.co.cookedcoke.student.sandbox</string>
 	</array>
 </dict>
 </plist>
