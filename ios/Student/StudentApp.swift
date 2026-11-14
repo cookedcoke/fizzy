@@ -9,6 +9,7 @@ struct StudentApp: App {
             RootView()
                 .environment(model)
                 .tint(Color("Brand"))
+                .readableWidth()
         }
     }
 }

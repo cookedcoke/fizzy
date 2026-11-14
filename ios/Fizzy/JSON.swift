@@ -1,6 +1,7 @@
 // Pages come back as the data their template is drawn from (the server's `X-Fizzy-Format: json`),
 // so screens read from this instead of a struct per page. Missing keys read as null, not a crash.
 import Foundation
+import SwiftUI
 
 @dynamicMemberLookup
 enum J: Codable, Hashable {
@@ -163,4 +164,28 @@ enum Fmt {
 
     /// 1 / 2.5 -> "1", "2.5" (the website's %g).
     static func g(_ d: Double) -> String { d == d.rounded() ? String(Int(d)) : String(d) }
+}
+
+// MARK: big screens
+
+/// On a wide screen (the iPhone Duo open, or landscape) lists and forms stay a readable width in the middle
+/// instead of stretching edge to edge. contentMargins reaches every scroll view inside, so this goes once at
+/// the root.
+struct ReadableWidth: ViewModifier {
+    var limit: CGFloat = 720
+    func body(content: Content) -> some View {
+        GeometryReader { geo in
+            // Narrow (a phone, the Duo closed): untouched, so lists keep their own margins, which also leave room
+            // for the Duo's side rail. Wide: a column in the middle.
+            if geo.size.width > limit + 80 {
+                content.contentMargins(.horizontal, (geo.size.width - limit) / 2, for: .scrollContent)
+            } else {
+                content
+            }
+        }
+    }
+}
+
+extension View {
+    func readableWidth(_ limit: CGFloat = 720) -> some View { modifier(ReadableWidth(limit: limit)) }
 }

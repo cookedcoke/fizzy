@@ -11,6 +11,7 @@ struct ClipApp: App {
         WindowGroup {
             HuntView()
                 .tint(Color("Brand"))
+                .readableWidth()
         }
     }
 }

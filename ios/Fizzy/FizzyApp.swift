@@ -10,6 +10,7 @@ struct FizzyApp: App {
             RootView()
                 .environment(model)
                 .tint(Color("Brand"))
+                .readableWidth()
         }
     }
 }
