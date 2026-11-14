@@ -14,7 +14,7 @@ settingGroups:
   # so both come from here. Bump the build here for each upload.
   myccc-version:
     MARKETING_VERSION: "1.1.2"
-    CURRENT_PROJECT_VERSION: "5"
+    CURRENT_PROJECT_VERSION: "6"
 packages:
   # Square's In-App Payments SDK: turns an Apple Pay payment into a one-time card nonce Fizzy can charge.
   SquareInAppPaymentsSDK:
