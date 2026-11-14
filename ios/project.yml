@@ -13,8 +13,8 @@ settingGroups:
   # My CCC and its App Clip: the App Store needs the clip's version and build to match the app's,
   # so both come from here. Bump the build here for each upload.
   myccc-version:
-    MARKETING_VERSION: "1.1.1"
-    CURRENT_PROJECT_VERSION: "4"
+    MARKETING_VERSION: "1.1.2"
+    CURRENT_PROJECT_VERSION: "5"
 packages:
   # Square's In-App Payments SDK: turns an Apple Pay payment into a one-time card nonce Fizzy can charge.
   SquareInAppPaymentsSDK:
@@ -54,6 +54,14 @@ targets:
       - target: MyCCCClip   # the App Clip, embedded in the app
       - package: SquareInAppPaymentsSDK
         product: SquareInAppPaymentsSDK
+    postBuildScripts:
+      # Square's documented step: moves its nested frameworks out and deletes its setup script, which the
+      # App Store otherwise rejects ("disallowed nested bundles").
+      - name: Set up Square In-App Payments SDK
+        basedOnDependencyAnalysis: false
+        script: |
+          FRAMEWORKS="${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}"
+          "${FRAMEWORKS}/SquareInAppPaymentsSDK.framework/setup"
     settings:
       groups: [myccc-version]
       base:
@@ -72,6 +80,7 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: Brand
         TARGETED_DEVICE_FAMILY: "1"   # iPhone only
         CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: NO   # Square's setup script moves files in the app bundle
   MyCCCClip:
     # The App Clip: a hunt poster's code, opened from the camera with nothing installed (Clip/ClipApp.swift).
     type: application.on-demand-install-capable
