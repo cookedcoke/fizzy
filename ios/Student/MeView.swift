@@ -20,6 +20,7 @@ struct MeView: View {
             if wide {
                 // The iPhone Duo open: you (points, streak, what's on, hunts) on the left half, what you can
                 // spend and what you've done (rewards, tab, activity) on the right, split at the fold.
+                // A gap down the middle (where the fold is), so the two columns' cards don't touch.
                 HStack(spacing: 0) {
                     List {
                         if urgent { TabSection(tab: tab) }
@@ -28,11 +29,13 @@ struct MeView: View {
                         StreakSection(streak: p.streak)
                         ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
                     }
+                    .contentMargins(.trailing, 12, for: .scrollContent)
                     List {
                         if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
                         if !urgent && showTab { TabSection(tab: tab) }
                         ActivitySection(items: p.activity.array)
                     }
+                    .contentMargins(.leading, 12, for: .scrollContent)
                 }
             } else {
                 List {
