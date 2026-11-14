@@ -189,3 +189,26 @@ struct ReadableWidth: ViewModifier {
 extension View {
     func readableWidth(_ limit: CGFloat = 720) -> some View { modifier(ReadableWidth(limit: limit)) }
 }
+
+// MARK: the iPhone Duo's fold
+
+/// Two columns on a wide screen, using the system's split view, so iOS itself puts the split on the iPhone Duo's
+/// hinge when it's half folded (with the gap the system uses) - the same as Settings and Mail. Narrower, the caller
+/// shows its usual single page instead. The left column has no sidebar button: both columns always show.
+struct SplitColumns<Left: View, Right: View>: View {
+    @ViewBuilder let left: () -> Left
+    @ViewBuilder let right: () -> Right
+    @State private var visibility: NavigationSplitViewVisibility = .all
+
+    var body: some View {
+        NavigationSplitView(columnVisibility: $visibility) {
+            left()
+                .listStyle(.insetGrouped)   // the system's sidebar style turns cards into plain rows; keep them cards
+                .navigationSplitViewColumnWidth(min: 320, ideal: 460, max: 560)
+                .toolbar(removing: .sidebarToggle)
+        } detail: {
+            NavigationStack { right() }
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+}

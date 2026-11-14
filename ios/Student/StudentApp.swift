@@ -141,10 +141,23 @@ struct RootView: View {
     }
 }
 
+/// Me: one page, or on a wide screen (the iPhone Duo open) two columns in the system's split view, so iOS puts
+/// the split on the hinge when the phone is half folded.
+struct MeTab: View {
+    @Environment(\.horizontalSizeClass) private var size
+    var body: some View {
+        if size == .regular {
+            SplitColumns { MeView(part: .left) } right: { MeView(part: .right) }
+        } else {
+            NavigationStack { MeView() }
+        }
+    }
+}
+
 struct MainTabs: View {
     var body: some View {
         TabView {
-            NavigationStack { MeView() }
+            MeTab()
                 .tabItem { Label("Me", systemImage: "person.crop.circle.fill") }
             NavigationStack { LeaderboardView() }.readableWidth()
                 .tabItem { Label("Leaderboard", systemImage: "trophy.fill") }

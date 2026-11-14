@@ -8,8 +8,9 @@ struct MeView: View {
     @State private var scanFor: String?
     @State private var result: String?
     @State private var failed = false
-    @Environment(\.horizontalSizeClass) private var size
-    private var wide: Bool { size == .regular }
+    /// All of the page, or one column of the iPhone Duo's two (see MeTab).
+    var part: Part = .all
+    enum Part { case all, left, right }
 
     var body: some View {
         let p = model.page, tab = p.tab
@@ -17,29 +18,8 @@ struct MeView: View {
         let urgent = tab.has_overdue.bool || (tab.status.string == "approved" && !tab.can_charge.bool)
         let showTab = tab.has_charges.bool || !["rejected", "revoked"].contains(tab.status.string)
         Group {
-            if wide {
-                // The iPhone Duo open: you (points, streak, what's on, hunts) on the left half, what you can
-                // spend and what you've done (rewards, tab, activity) on the right, split at the fold.
-                // A gap down the middle (where the fold is), so the two columns' cards don't touch.
-                HStack(spacing: 0) {
-                    List {
-                        if urgent { TabSection(tab: tab) }
-                        WhatsOnSection(page: p)
-                        PointsSection(points: p.points.int, owner: p.name.string)
-                        StreakSection(streak: p.streak)
-                        ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
-                    }
-                    .contentMargins(.trailing, 12, for: .scrollContent)
-                    .scrollBounceBehavior(.always)   // a short column can still be pulled to refresh
-                    List {
-                        if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
-                        if !urgent && showTab { TabSection(tab: tab) }
-                        ActivitySection(items: p.activity.array)
-                    }
-                    .contentMargins(.leading, 12, for: .scrollContent)
-                    .scrollBounceBehavior(.always)
-                }
-            } else {
+            switch part {
+            case .all:
                 List {
                     if urgent { TabSection(tab: tab) }
                     WhatsOnSection(page: p)
@@ -50,9 +30,23 @@ struct MeView: View {
                     if !urgent && showTab { TabSection(tab: tab) }
                     ActivitySection(items: p.activity.array)
                 }
+            case .left:
+                List {
+                    if urgent { TabSection(tab: tab) }
+                    WhatsOnSection(page: p)
+                    PointsSection(points: p.points.int, owner: p.name.string)
+                    StreakSection(streak: p.streak)
+                    ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
+                }
+            case .right:
+                List {
+                    if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
+                    if !urgent && showTab { TabSection(tab: tab) }
+                    ActivitySection(items: p.activity.array)
+                }
             }
         }
-        .navigationTitle("Hey \(p.first.string)")
+        .navigationTitle(part == .right ? "Rewards and tab" : "Hey \(p.first.string)")
         .pageChrome()
         .sheet(isPresented: Binding(get: { scanFor != nil }, set: { if !$0 { scanFor = nil } })) {
             CodeScanner(title: scanFor ?? "", guide: .poster) { code in scanFor = nil; Task { await send(code) } }

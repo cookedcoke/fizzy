@@ -6,34 +6,30 @@ struct DashboardView: View {
     @State private var page = Page("/")
     @State private var assigning: Pick?
 
-    @Environment(\.horizontalSizeClass) private var size
+    /// Which part of Today this shows: all of it, or one column of the iPhone Duo's two (see TodayTab).
+    var part: Part = .all
+    enum Part { case all, left, right }
 
     var body: some View {
         Group {
-            if size == .regular {
-                // The iPhone Duo open: today's numbers and charts on the left half; what needs doing and
-                // what's selling on the right, with a gap at the fold. Each half pulls to refresh.
-                HStack(spacing: 0) {
-                    PageList(page: page, title: "Today", staffMenu: true) { d in
-                        banners(d)
-                        today(d)
-                        tabs(d)
-                    }
-                    .contentMargins(.trailing, 12, for: .scrollContent)
-                    .scrollBounceBehavior(.always)
-                    PageList(page: page, title: "Today") { d in
-                        attention(d)
-                        overdue(d)
-                        sales(d)
-                    }
-                    .contentMargins(.leading, 12, for: .scrollContent)
-                    .scrollBounceBehavior(.always)
-                }
-            } else {
+            switch part {
+            case .all:
                 PageList(page: page, title: "Today", staffMenu: true) { d in
                     banners(d)
                     today(d)
                     tabs(d)
+                    attention(d)
+                    overdue(d)
+                    sales(d)
+                }
+            case .left:
+                PageList(page: page, title: "Today", staffMenu: true) { d in
+                    banners(d)
+                    today(d)
+                    tabs(d)
+                }
+            case .right:
+                PageList(page: page, title: "To do and selling") { d in
                     attention(d)
                     overdue(d)
                     sales(d)
@@ -47,13 +43,13 @@ struct DashboardView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            if part != .right { ToolbarItem(placement: .topBarTrailing) {
                 // The noticeboard: a note at the top of this page for the others.
                 NavigationLink { ToolHost(id: "notice", label: "Noticeboard", from: page) } label: {
                     Image(systemName: page.data.notice.optString == nil ? "square.and.pencil" : "megaphone")
                 }
                 .accessibilityLabel(page.data.notice.optString == nil ? "Add a note" : "Edit note")
-            }
+            } }
         }
         .sheet(item: $assigning) { payment in
             AssignSheet(page: page, paymentID: payment.value.square_payment_id.string, people: page.data.people.array)

@@ -146,7 +146,7 @@ struct CustomerID: Hashable { let id: Int }
 struct MainTabs: View {
     var body: some View {
         TabView {
-            NavigationStack { DashboardView().fizzyDestinations() }   // two columns of its own when wide
+            TodayTab()
                 .tabItem { Label("Today", systemImage: "chart.bar.fill") }
             TwoPane(empty: "Pick a customer", icon: "person.crop.circle") { CustomersView() }
                 .tabItem { Label("Customers", systemImage: "person.2.fill") }
@@ -156,6 +156,19 @@ struct MainTabs: View {
                 .tabItem { Label("Sales", systemImage: "list.bullet.rectangle") }
             NavigationStack { MoreView().fizzyDestinations() }.readableWidth()
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }
+        }
+    }
+}
+
+/// Today: one page, or on a wide screen (the iPhone Duo open) two columns - numbers and charts on the left,
+/// what needs doing and what's selling on the right.
+struct TodayTab: View {
+    @Environment(\.horizontalSizeClass) private var size
+    var body: some View {
+        if size == .regular {
+            SplitColumns { DashboardView(part: .left).fizzyDestinations() } right: { DashboardView(part: .right).fizzyDestinations() }
+        } else {
+            NavigationStack { DashboardView().fizzyDestinations() }
         }
     }
 }
