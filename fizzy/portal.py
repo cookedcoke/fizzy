@@ -303,7 +303,8 @@ def home(request: Request, conn=Depends(get_conn)):
                  cards=challenges.cards(conn, c["id"]),
                  activity=activity(conn, c["id"]), boards=[("This month", month, month_me), ("All time", alltime, alltime_me)],
                  me=_with_custom(conn, badges.for_customer(conn, c["id"]), c["id"]), events_on=events.on(conn), events_soon=events.upcoming(conn),
-                 custom_events=rules.student_events(conn))
+                 custom_events=rules.student_events(conn),
+                 app_pay_url=config.STUDENT_APP_STORE_URL if config.APPLE_PAY and config.APP_PAY_PROMO else None)
 
 
 def _with_custom(conn, me, cid):

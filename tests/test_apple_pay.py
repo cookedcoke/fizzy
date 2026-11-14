@@ -166,3 +166,16 @@ def test_the_app_endpoint(client, on, monkeypatch):
     assert client.get("/me", headers=J).json()["tab"]["apple_pay"] is None        # nothing left to pay
     bad = client.post("/me/tab/pay", data={"nonce": "n", "amount_cents": "100", "key": "k-87654321"}, headers=J)
     assert bad.status_code == 400 and "don't owe" in bad.json()["error"]
+
+
+def test_the_website_points_at_the_app_to_pay(client, on, monkeypatch):
+    from fizzy import db
+    cid = setup_student(client, points=0)
+    conn = db.connect()
+    owes(conn, conn.execute("SELECT * FROM customers WHERE id = ?", (cid,)).fetchone(), 750)
+    client.post("/logout")
+    me_login(client, "rns5")
+    assert "Apple Pay in the" not in client.get("/me").text                  # off until the app version is out
+    monkeypatch.setattr(config, "APP_PAY_PROMO", True)
+    page = client.get("/me").text
+    assert "Pay it off with Apple Pay in the" in page and config.STUDENT_APP_STORE_URL in page

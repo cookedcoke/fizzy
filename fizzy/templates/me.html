@@ -40,6 +40,7 @@
     {% if led.balance_cents < 0 %}<p class="tab-sub">You have {{ (-led.balance_cents)|money }} in credit - it's used next time you put something on your tab.</p>{% endif %}
     {% if led.late_count %}<p class="tab-sub">{{ led.late_count }} late payment{{ '' if led.late_count == 1 else 's' }} on record.</p>{% endif %}
     {% endif %}
+    {% if app_pay_url and led.owing_cents > 0 %}<p class="tab-sub">Pay it off with Apple Pay in the <a href="{{ app_pay_url }}">My CCC app</a>.</p>{% endif %}
     {% set sc = st.score %}
     {% if st.status not in ('rejected', 'revoked') %}
     <details class="score" {{ 'open' if st.status == 'low_score' }}>
