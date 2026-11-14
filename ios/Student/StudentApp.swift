@@ -24,12 +24,16 @@ final class Student {
     var offline = false          // showing the saved copy: no signal
     var problem: String?
     private var loading = false
+    private var again = false    // asked for while a fetch was running: that fetch may be from before a change
 
     /// Fetches the page. A session that's run out signs in again by itself if the passcode was saved.
     func load() async {
-        guard !loading else { return }
+        guard !loading else { again = true; return }
         loading = true
-        defer { loading = false }
+        defer {
+            loading = false
+            if again { again = false; Task { await load() } }
+        }
         do {
             var home = try await StudentAPI.shared.home()
             if !home.signed_in.bool, let saved = SavedSignIn.load() {

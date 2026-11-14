@@ -144,7 +144,8 @@ private struct RewardsSection: View {
                              : "You've used this one - that's the limit.").font(.subheadline).foregroundStyle(.secondary)
                     } else {
                         let cost = max(1, o.points_cost.int)
-                        ProgressView(value: Double(cost - o.short.int), total: Double(cost))
+                        // short can be more than the cost when points are below zero: an empty bar, not none
+                        ProgressView(value: Double(min(cost, max(0, cost - o.short.int))), total: Double(cost))
                         Text("\(Fmt.number(o.short.int)) more points to go.").font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
