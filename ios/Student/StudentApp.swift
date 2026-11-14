@@ -9,7 +9,6 @@ struct StudentApp: App {
             RootView()
                 .environment(model)
                 .tint(Color("Brand"))
-                .readableWidth()
         }
     }
 }
@@ -147,9 +146,9 @@ struct MainTabs: View {
         TabView {
             NavigationStack { MeView() }
                 .tabItem { Label("Me", systemImage: "person.crop.circle.fill") }
-            NavigationStack { LeaderboardView() }
+            NavigationStack { LeaderboardView() }.readableWidth()
                 .tabItem { Label("Leaderboard", systemImage: "trophy.fill") }
-            NavigationStack { BadgesView() }
+            NavigationStack { BadgesView() }.readableWidth()
                 .tabItem { Label("Badges", systemImage: "rosette") }
         }
     }

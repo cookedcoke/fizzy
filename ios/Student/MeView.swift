@@ -8,21 +8,44 @@ struct MeView: View {
     @State private var scanFor: String?
     @State private var result: String?
     @State private var failed = false
+    @Environment(\.horizontalSizeClass) private var size
+    private var wide: Bool { size == .regular }
 
     var body: some View {
         let p = model.page, tab = p.tab
         // Money owed now (or a full tab) goes first; otherwise the tab comes after the fun parts.
         let urgent = tab.has_overdue.bool || (tab.status.string == "approved" && !tab.can_charge.bool)
         let showTab = tab.has_charges.bool || !["rejected", "revoked"].contains(tab.status.string)
-        List {
-            if urgent { TabSection(tab: tab) }
-            WhatsOnSection(page: p)
-            ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
-            PointsSection(points: p.points.int, owner: p.name.string)
-            StreakSection(streak: p.streak)
-            if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
-            if !urgent && showTab { TabSection(tab: tab) }
-            ActivitySection(items: p.activity.array)
+        Group {
+            if wide {
+                // The iPhone Duo open: you (points, streak, what's on, hunts) on the left half, what you can
+                // spend and what you've done (rewards, tab, activity) on the right, split at the fold.
+                HStack(spacing: 0) {
+                    List {
+                        if urgent { TabSection(tab: tab) }
+                        WhatsOnSection(page: p)
+                        PointsSection(points: p.points.int, owner: p.name.string)
+                        StreakSection(streak: p.streak)
+                        ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
+                    }
+                    List {
+                        if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
+                        if !urgent && showTab { TabSection(tab: tab) }
+                        ActivitySection(items: p.activity.array)
+                    }
+                }
+            } else {
+                List {
+                    if urgent { TabSection(tab: tab) }
+                    WhatsOnSection(page: p)
+                    ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
+                    PointsSection(points: p.points.int, owner: p.name.string)
+                    StreakSection(streak: p.streak)
+                    if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
+                    if !urgent && showTab { TabSection(tab: tab) }
+                    ActivitySection(items: p.activity.array)
+                }
+            }
         }
         .navigationTitle("Hey \(p.first.string)")
         .pageChrome()

@@ -10,7 +10,6 @@ struct FizzyApp: App {
             RootView()
                 .environment(model)
                 .tint(Color("Brand"))
-                .readableWidth()
         }
     }
 }
@@ -147,16 +146,40 @@ struct CustomerID: Hashable { let id: Int }
 struct MainTabs: View {
     var body: some View {
         TabView {
-            NavigationStack { DashboardView().fizzyDestinations() }
+            NavigationStack { DashboardView().fizzyDestinations() }.readableWidth()
                 .tabItem { Label("Today", systemImage: "chart.bar.fill") }
-            NavigationStack { CustomersView().fizzyDestinations() }
+            TwoPane(empty: "Pick a customer", icon: "person.crop.circle") { CustomersView() }
                 .tabItem { Label("Customers", systemImage: "person.2.fill") }
-            NavigationStack { AskView().fizzyDestinations() }
+            NavigationStack { AskView().fizzyDestinations() }.readableWidth()
                 .tabItem { Label("Fizz", systemImage: "sparkles") }
-            NavigationStack { SalesView().fizzyDestinations() }
+            TwoPane(empty: "Pick a sale to see the customer", icon: "list.bullet.rectangle") { SalesView() }
                 .tabItem { Label("Sales", systemImage: "list.bullet.rectangle") }
-            NavigationStack { MoreView().fizzyDestinations() }
+            NavigationStack { MoreView().fizzyDestinations() }.readableWidth()
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }
+        }
+    }
+}
+
+/// A tab whose list opens customers. On a wide screen (the iPhone Duo open) the list stays on the left and the
+/// customer opens on the right, split at the fold, so staff can go down the list without going back each time.
+/// Anywhere narrower it's the usual one-screen stack.
+struct TwoPane<List: View>: View {
+    let empty: String
+    let icon: String
+    @ViewBuilder let list: () -> List
+    @Environment(\.horizontalSizeClass) private var size
+
+    var body: some View {
+        if size == .regular {
+            NavigationSplitView {
+                list().fizzyDestinations()
+                    .navigationSplitViewColumnWidth(min: 320, ideal: 400, max: 480)
+            } detail: {
+                ContentUnavailableView(empty, systemImage: icon)
+            }
+            .navigationSplitViewStyle(.balanced)   // no width cap here: each column keeps the system's margins, which clear the Duo's rail
+        } else {
+            NavigationStack { list().fizzyDestinations() }
         }
     }
 }
