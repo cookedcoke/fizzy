@@ -6,14 +6,39 @@ struct DashboardView: View {
     @State private var page = Page("/")
     @State private var assigning: Pick?
 
+    @Environment(\.horizontalSizeClass) private var size
+
     var body: some View {
-        PageList(page: page, title: "Today", staffMenu: true) { d in
-            banners(d)
-            today(d)
-            tabs(d)
-            attention(d)
-            overdue(d)
-            sales(d)
+        Group {
+            if size == .regular {
+                // The iPhone Duo open: today's numbers and charts on the left half; what needs doing and
+                // what's selling on the right, with a gap at the fold. Each half pulls to refresh.
+                HStack(spacing: 0) {
+                    PageList(page: page, title: "Today", staffMenu: true) { d in
+                        banners(d)
+                        today(d)
+                        tabs(d)
+                    }
+                    .contentMargins(.trailing, 12, for: .scrollContent)
+                    .scrollBounceBehavior(.always)
+                    PageList(page: page, title: "Today") { d in
+                        attention(d)
+                        overdue(d)
+                        sales(d)
+                    }
+                    .contentMargins(.leading, 12, for: .scrollContent)
+                    .scrollBounceBehavior(.always)
+                }
+            } else {
+                PageList(page: page, title: "Today", staffMenu: true) { d in
+                    banners(d)
+                    today(d)
+                    tabs(d)
+                    attention(d)
+                    overdue(d)
+                    sales(d)
+                }
+            }
         }
         .task {
             while !Task.isCancelled {

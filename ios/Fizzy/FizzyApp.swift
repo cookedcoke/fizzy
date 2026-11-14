@@ -146,7 +146,7 @@ struct CustomerID: Hashable { let id: Int }
 struct MainTabs: View {
     var body: some View {
         TabView {
-            NavigationStack { DashboardView().fizzyDestinations() }.readableWidth()
+            NavigationStack { DashboardView().fizzyDestinations() }   // two columns of its own when wide
                 .tabItem { Label("Today", systemImage: "chart.bar.fill") }
             TwoPane(empty: "Pick a customer", icon: "person.crop.circle") { CustomersView() }
                 .tabItem { Label("Customers", systemImage: "person.2.fill") }

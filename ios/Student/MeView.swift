@@ -30,12 +30,14 @@ struct MeView: View {
                         ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
                     }
                     .contentMargins(.trailing, 12, for: .scrollContent)
+                    .scrollBounceBehavior(.always)   // a short column can still be pulled to refresh
                     List {
                         if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
                         if !urgent && showTab { TabSection(tab: tab) }
                         ActivitySection(items: p.activity.array)
                     }
                     .contentMargins(.leading, 12, for: .scrollContent)
+                    .scrollBounceBehavior(.always)
                 }
             } else {
                 List {
