@@ -161,13 +161,7 @@ struct PageChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
             .refreshable { await model.load() }
-            .safeAreaInset(edge: .top) {
-                if model.offline {
-                    Label("No signal. Showing what you saw last.", systemImage: "wifi.slash")
-                        .font(.footnote).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity).padding(.vertical, 6).background(.bar)
-                }
-            }
+            .modifier(OfflineNote(offline: model.offline))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -181,6 +175,25 @@ struct PageChrome: ViewModifier {
                     }
                 }
             }
+    }
+}
+
+/// "No signal" while showing a saved copy. On iOS 26 it's the title's subtitle: a strip above the list took
+/// the large title's place, so "Hey Amelia" vanished under a blur. Before 26, the strip.
+private struct OfflineNote: ViewModifier {
+    let offline: Bool
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.navigationSubtitle(offline ? "No signal · showing what you saw last" : "")
+        } else {
+            content.safeAreaInset(edge: .top) {
+                if offline {
+                    Label("No signal. Showing what you saw last.", systemImage: "wifi.slash")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 6).background(.bar)
+                }
+            }
+        }
     }
 }
 
