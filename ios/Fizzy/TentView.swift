@@ -1,13 +1,11 @@
 import Charts
+import CoreMotion
 import SwiftUI
 
 /// Tent mode: the iPhone Duo folded into a tent on the counter, its outer screen showing how the day is going.
 /// The figures stay put on the left; the card on the right turns its own pages (top items, the week, today by
 /// the hour) so a glance always finds the headline in the same place. Swipe the card to turn it yourself.
 struct TentView: View {
-    @Environment(\.dismiss) private var dismiss
-    /// Shown by folding the phone into a tent, not from a button: no close button then, opening the phone leaves.
-    var folded = false
     @State private var page = Page("/")
     @State private var card = 0
     @State private var updated: Date?
@@ -24,16 +22,12 @@ struct TentView: View {
         GeometryReader { geo in
             // The outer screen keeps a side inset for its camera. Only the title row moves over for it; the cards
             // run the full width beneath, with the same small margin all round.
-            content(camera: geo.safeAreaInsets).ignoresSafeArea(.container, edges: .horizontal)
+            content(camera: geo.safeAreaInsets, screenHeight: geo.size.height + geo.safeAreaInsets.bottom)
+                .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
         }
         .background(Color(.systemBackground).ignoresSafeArea())
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
-        .overlay(alignment: .topTrailing) {
-            if !folded {
-                Button("Done") { dismiss() }.buttonStyle(.bordered).padding(16)
-            }
-        }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
@@ -52,12 +46,18 @@ struct TentView: View {
         }
     }
 
-    /// The outer screen's camera sits in a corner and the system insets that side: bottom right in the tent
-    /// (the cards stop above it), top left the other way up (the title moves past it). Otherwise the same small
-    /// margin all round.
-    private func content(camera inset: EdgeInsets) -> some View {
-        VStack(spacing: Self.gap) {
-            header.padding(.leading, inset.leading)
+    /// Where the outer screen's camera is, from the system's occlusion region (iOS 27.1); nil without one.
+    @State private var cameraRect: CGRect?
+
+    /// In the tent the outer screen's camera is at the bottom right: the cards stop exactly at the top of it.
+    /// Otherwise one small margin all round.
+    private func content(camera inset: EdgeInsets, screenHeight: CGFloat) -> some View {
+        let cam = cameraRect
+        let cameraLow = cam.map { $0.midY > screenHeight / 2 } ?? false
+        let edge = Self.gap * 1.5
+        let bottom = cameraLow ? screenHeight - cam!.minY : max(edge, inset.bottom)
+        return VStack(spacing: Self.gap) {
+            header
             if page.loaded {
                 HStack(spacing: Self.gap) {
                     Group { if isClosed { closedFigures } else { figures } }
@@ -68,8 +68,9 @@ struct TentView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .padding(Self.gap * 1.5)
-        .padding(.bottom, max(0, inset.trailing - Self.gap * 2.5))
+        .padding([.top, .horizontal], Self.gap * 1.5)
+        .padding(.bottom, bottom)
+        .background(CameraReader(rect: $cameraRect))
     }
 
     // MARK: left: the figures
@@ -85,7 +86,6 @@ struct TentView: View {
                 }
                 .font(.footnote).foregroundStyle(.secondary)
             }
-            if !folded { Color.clear.frame(width: 64, height: 1) }   // room for Done
         }
     }
 
@@ -234,19 +234,60 @@ private struct Tile: View {
 /// staff app becomes the sales panel. Open the phone, or stand it upright, and it goes back to what it was.
 struct TentWhenFolded: ViewModifier {
     @State private var hinge: Int = 0   // UIHinge.Status raw value; 0 unknown (no hinge, or before iOS 27.1)
+    @State private var still = Stillness()
+    @State private var camera: CGRect?
     @Environment(\.horizontalSizeClass) private var size
 
     func body(content: Content) -> some View {
         GeometryReader { geo in
+            // Standing as a tent, the outer screen's camera is at the bottom right; turned the other way up it's at the
+            // top left, which isn't a tent.
+            let cameraLow = camera.map { $0.midY > geo.size.height / 2 } ?? false
             let tent = (hinge == 1 || hinge == 2) && size == .compact && geo.size.width > geo.size.height
+                && cameraLow && still.isStill
             ZStack {
                 content
-                if tent { TentView(folded: true).transition(.opacity) }
+                if tent { TentView().transition(.opacity) }
             }
             .animation(.easeInOut(duration: 0.3), value: tent)
         }
         .background(HingeReader(status: $hinge))
+        .background(CameraReader(rect: $camera).ignoresSafeArea())
+        .onAppear { still.start() }
+        .onDisappear { still.stop() }
     }
+}
+
+/// Like StandBy, which waits until the iPhone is on its side and stationary: still means the motion sensors have
+/// read almost nothing for 3 seconds. Picking it up (a clear jolt or turn) ends it at once. With no motion
+/// sensors (the simulator) it counts as still.
+@Observable
+@MainActor
+final class Stillness {
+    private(set) var isStill = !CMMotionManager().isDeviceMotionAvailable
+    private let motion = CMMotionManager()
+    private var quietSince: Date?
+
+    func start() {
+        guard motion.isDeviceMotionAvailable, !motion.isDeviceMotionActive else { return }
+        motion.deviceMotionUpdateInterval = 0.1
+        motion.startDeviceMotionUpdates(to: .main) { [weak self] m, _ in
+            guard let self, let m else { return }
+            let a = m.userAcceleration, r = m.rotationRate
+            let moving = (a.x * a.x + a.y * a.y + a.z * a.z).squareRoot() > 0.03   // in g, gravity left out
+                || (r.x * r.x + r.y * r.y + r.z * r.z).squareRoot() > 0.15            // radians a second
+            if moving {
+                self.quietSince = nil
+                if self.isStill { self.isStill = false }
+            } else {
+                let since = self.quietSince ?? Date()
+                self.quietSince = since
+                if !self.isStill, Date().timeIntervalSince(since) >= 3 { self.isStill = true }
+            }
+        }
+    }
+
+    func stop() { motion.stopDeviceMotionUpdates() }
 }
 
 /// Reports the hinge's status through the system's hinge interaction (iOS 27.1 and later).
@@ -266,6 +307,36 @@ private struct HingeReader: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+/// Reports the camera's rect in this view's space: the system's occlusion region, less its margins.
+private struct CameraReader: UIViewRepresentable {
+    @Binding var rect: CGRect?
+
+    final class Reader: UIView {
+        var report: (CGRect?) -> Void = { _ in }
+        override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); setNeedsLayout() }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            var found: CGRect?
+            if #available(iOS 27.1, *), let r = reservedRegions(kind: .occlusion).first {
+                found = r.frame.inset(by: r.margins)
+            }
+            report(found)
+        }
+    }
+
+    func makeUIView(context: Context) -> Reader {
+        let v = Reader()
+        v.isUserInteractionEnabled = false
+        return v
+    }
+
+    func updateUIView(_ v: Reader, context: Context) {
+        let binding = $rect
+        v.report = { r in if binding.wrappedValue != r { DispatchQueue.main.async { binding.wrappedValue = r } } }
+        v.setNeedsLayout()
+    }
 }
 
 extension View {
