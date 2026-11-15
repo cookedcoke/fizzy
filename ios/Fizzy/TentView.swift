@@ -259,8 +259,9 @@ struct TentWhenFolded: ViewModifier {
 }
 
 /// Like StandBy, which waits until the iPhone is on its side and stationary: still means the motion sensors have
-/// read almost nothing for 3 seconds. Once it's showing, a nudge along the table (a slide or a twist) is let go:
-/// only lifting or tipping it, or a long shove, ends it. With no motion sensors (the simulator) it counts as still.
+/// read almost nothing for 1.5 seconds. Once it's showing, as in StandBy, sliding or turning it on the table and
+/// folding the hinge are all fine: only picking it up ends it. (Turning it to portrait, or opening it flat, ends tent
+/// mode through the pose check instead.) With no motion sensors (the simulator) it counts as still.
 @Observable
 @MainActor
 final class Stillness {
@@ -286,8 +287,8 @@ final class Stillness {
                 + (r.z - twist * uz) * (r.z - twist * uz)).squareRoot()               // tilting off it
 
             let moving: Bool
-            if self.isStill {   // showing: a nudge is fine, being picked up or tipped isn't
-                moving = slide > 0.3 || abs(up) > 0.1 || tip > 0.6 || abs(twist) > 2
+            if self.isStill {   // showing: only a lift off the table counts
+                moving = abs(up) > 0.15
             } else {            // to start, it has to be properly settled
                 moving = slide > 0.05 || abs(up) > 0.03 || tip > 0.15 || abs(twist) > 0.3
             }
@@ -296,12 +297,12 @@ final class Stillness {
                 let since = self.movingSince ?? Date()
                 self.movingSince = since
                 // a knock is a moment; being picked up keeps going
-                if self.isStill, Date().timeIntervalSince(since) >= 0.4 { self.isStill = false }
+                if self.isStill, Date().timeIntervalSince(since) >= 0.3 { self.isStill = false }
             } else {
                 self.movingSince = nil
                 let since = self.quietSince ?? Date()
                 self.quietSince = since
-                if !self.isStill, Date().timeIntervalSince(since) >= 3 { self.isStill = true }
+                if !self.isStill, Date().timeIntervalSince(since) >= 1.5 { self.isStill = true }
             }
         }
     }
