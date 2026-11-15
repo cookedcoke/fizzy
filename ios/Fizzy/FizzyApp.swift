@@ -130,7 +130,7 @@ struct RootView: View {
             switch model.phase {
             case .loading: ProgressView().task { await model.start() }
             case .signedOut: LoginView()
-            case .signedIn: MainTabs()
+            case .signedIn: MainTabs().tentWhenFolded()
             }
         }
         .animation(.default, value: model.phase)

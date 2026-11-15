@@ -5,6 +5,7 @@ import SwiftUI
 struct DashboardView: View {
     @State private var page = Page("/")
     @State private var assigning: Pick?
+    @State private var tent = false
 
     /// Which part of Today this shows: all of it, or one column of the iPhone Duo's two (see TodayTab).
     var part: Part = .all
@@ -44,6 +45,10 @@ struct DashboardView: View {
         }
         .toolbar {
             if part != .right { ToolbarItem(placement: .topBarTrailing) {
+                Button { tent = true } label: { Image(systemName: "tent") }
+                    .accessibilityLabel("Tent mode")
+            } }
+            if part != .right { ToolbarItem(placement: .topBarTrailing) {
                 // The noticeboard: a note at the top of this page for the others.
                 NavigationLink { ToolHost(id: "notice", label: "Noticeboard", from: page) } label: {
                     Image(systemName: page.data.notice.optString == nil ? "square.and.pencil" : "megaphone")
@@ -51,6 +56,7 @@ struct DashboardView: View {
                 .accessibilityLabel(page.data.notice.optString == nil ? "Add a note" : "Edit note")
             } }
         }
+        .fullScreenCover(isPresented: $tent) { TentView() }
         .sheet(item: $assigning) { payment in
             AssignSheet(page: page, paymentID: payment.value.square_payment_id.string, people: page.data.people.array)
         }
