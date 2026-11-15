@@ -8,7 +8,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.2.4"
-    CURRENT_PROJECT_VERSION: "11"
+    CURRENT_PROJECT_VERSION: "12"
 settingGroups:
   # My CCC and its App Clip: the App Store needs the clip's version and build to match the app's,
   # so both come from here. Bump the build here for each upload.
