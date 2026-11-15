@@ -59,7 +59,7 @@ struct CustomersView: View {
                     .accessibilityLabel("Add customer")
             }
         }
-        .navigationDestination(item: $jumpTo) { CustomerView(id: $0.id) }
+        .navigationDestination(item: $jumpTo) { CustomerView(id: $0.id).id($0.id) }
     }
 
     @ViewBuilder private var recent: some View {

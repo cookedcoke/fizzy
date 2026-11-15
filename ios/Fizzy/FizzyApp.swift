@@ -200,7 +200,8 @@ struct TwoPane<List: View>: View {
 extension View {
     /// Every screen can link to a customer.
     func fizzyDestinations() -> some View {
-        navigationDestination(for: CustomerID.self) { CustomerView(id: $0.id) }
+        // .id: in a split view the detail is reused for the next person picked, and its page is @State
+        navigationDestination(for: CustomerID.self) { CustomerView(id: $0.id).id($0.id) }
     }
 }
 
