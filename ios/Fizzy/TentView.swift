@@ -16,17 +16,17 @@ struct TentView: View {
     private var isClosed: Bool { !d.closed.isNull }
     private var cards: [String] { isClosed ? ["Best sellers", "This week"] : ["Top items", "This week", "By the hour"] }
 
+    /// One gap for everything: between cards, around the edge, and inside each card.
+    static let gap: CGFloat = 12
+    static let radius: CGFloat = 20
+
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                if page.loaded { isClosed ? AnyView(closedFigures) : AnyView(figures) }
-                else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
-            }
-            .frame(maxWidth: .infinity)
-            if page.loaded { pager.frame(maxWidth: .infinity) }
+        GeometryReader { geo in
+            // The outer screen has the camera on one side and a strip for the side status bar on the other.
+            // Clear whichever is wider on both sides, so the margins match.
+            let side = max(geo.safeAreaInsets.leading, geo.safeAreaInsets.trailing)
+            content.padding(.horizontal, side).ignoresSafeArea(.container, edges: .horizontal)
         }
-        .padding(16)
         .background(Color(.systemBackground).ignoresSafeArea())
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
@@ -53,32 +53,47 @@ struct TentView: View {
         }
     }
 
+    private var content: some View {
+        VStack(spacing: Self.gap) {
+            header
+            if page.loaded {
+                HStack(spacing: Self.gap) {
+                    Group { if isClosed { closedFigures } else { figures } }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    pager.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .padding(Self.gap * 1.5)
+    }
+
     // MARK: left: the figures
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Today").font(.title2.bold())
-                Text(Date.now, format: .dateTime.weekday(.wide).day().month(.wide))
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("Today").font(.title3.bold())
+            Text(Date.now, format: .dateTime.weekday(.wide).day().month(.wide)).foregroundStyle(.secondary)
             Spacer()
             if let updated {
                 Label { Text(updated, format: .dateTime.hour().minute()) } icon: {
                     Image(systemName: page.offlineSince == nil ? "arrow.clockwise" : "wifi.slash")
                 }
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.footnote).foregroundStyle(.secondary)
             }
+            if !folded { Color.clear.frame(width: 64, height: 1) }   // room for Done
         }
+        .padding(.horizontal, 4)
     }
 
     private var figures: some View {
         let t = d.sales.today
         let lw = d.sales.vs_last_week_cents.int
         let vs: String? = lw > 0 ? "\(t.sold_cents.int >= lw ? "▲" : "▼") \(abs(Int((Double(t.sold_cents.int - lw) * 100 / Double(lw)).rounded())))% vs last week" : nil
-        return VStack(spacing: 10) {
+        return VStack(spacing: Self.gap) {
             Tile(title: "Sold", value: Fmt.money(t.sold_cents.int), sub: vs, big: true)
-            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+            Grid(horizontalSpacing: Self.gap, verticalSpacing: Self.gap) {
                 GridRow {
                     Tile(title: "Orders", value: "\(t.orders.int)")
                     Tile(title: "Average", value: Fmt.money(t.avg_cents.int))
@@ -93,13 +108,13 @@ struct TentView: View {
 
     private var closedFigures: some View {
         let c = d.closed, l = c.last, n = c.next_in.int
-        return VStack(spacing: 10) {
+        return VStack(spacing: Self.gap) {
             Tile(title: "\(c.reason.string) · closed",
                  value: n == 1 ? "Open tomorrow" : "Open " + Fmt.when(c.next.string, n < 7 ? "EEEE" : "EEE d MMM"), big: true)
             if !l.isNull {
-                Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                Grid(horizontalSpacing: Self.gap, verticalSpacing: Self.gap) {
                     GridRow {
-                        Tile(title: "Sold " + Fmt.when(l.day.string, "EEEE"), value: Fmt.money(l.sold_cents.int))
+                        Tile(title: Fmt.when(l.day.string, "EEEE"), value: Fmt.money(l.sold_cents.int))
                         Tile(title: "Orders", value: "\(l.orders.int)")
                     }
                 }
@@ -112,17 +127,17 @@ struct TentView: View {
     private var pager: some View {
         TabView(selection: $card) {
             ForEach(cards.indices, id: \.self) { i in
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(cards[i]).font(.headline)
+                VStack(alignment: .leading, spacing: Self.gap) {
+                    Text(cards[i]).font(.subheadline).foregroundStyle(.secondary)
                     content(i).frame(maxHeight: .infinity)
                 }
                 .padding(16)
-                .padding(.bottom, 18)   // room for the page dots
+                .padding(.bottom, 20)   // room for the page dots
                 .tag(i)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .always))
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
     }
 
     @ViewBuilder private func content(_ i: Int) -> some View {
@@ -183,18 +198,20 @@ private struct Tile: View {
     var sub: String?
     var big = false
 
+    /// Like a widget: what it is at the top, the figure at the bottom.
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 4)
             Text(value)
                 .font(.system(big ? .largeTitle : .title2, design: .rounded).weight(.bold))
                 .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                 .contentTransition(.numericText())
-            if let sub { Text(sub).font(.caption).foregroundStyle(.secondary) }
+            if let sub { Text(sub).font(.footnote).foregroundStyle(.secondary).lineLimit(1) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(16)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: TentView.radius, style: .continuous))
     }
 }
 
