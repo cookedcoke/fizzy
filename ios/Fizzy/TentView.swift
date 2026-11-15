@@ -259,27 +259,46 @@ struct TentWhenFolded: ViewModifier {
 }
 
 /// Like StandBy, which waits until the iPhone is on its side and stationary: still means the motion sensors have
-/// read almost nothing for 3 seconds. Picking it up (a clear jolt or turn) ends it at once. With no motion
-/// sensors (the simulator) it counts as still.
+/// read almost nothing for 3 seconds. Once it's showing, a nudge along the table (a slide or a twist) is let go:
+/// only lifting or tipping it, or a long shove, ends it. With no motion sensors (the simulator) it counts as still.
 @Observable
 @MainActor
 final class Stillness {
     private(set) var isStill = !CMMotionManager().isDeviceMotionAvailable
     private let motion = CMMotionManager()
     private var quietSince: Date?
+    private var movingSince: Date?
 
     func start() {
         guard motion.isDeviceMotionAvailable, !motion.isDeviceMotionActive else { return }
         motion.deviceMotionUpdateInterval = 0.1
         motion.startDeviceMotionUpdates(to: .main) { [weak self] m, _ in
             guard let self, let m else { return }
-            let a = m.userAcceleration, r = m.rotationRate
-            let moving = (a.x * a.x + a.y * a.y + a.z * a.z).squareRoot() > 0.03   // in g, gravity left out
-                || (r.x * r.x + r.y * r.y + r.z * r.z).squareRoot() > 0.15            // radians a second
+            // Split the motion by gravity: along it is up and down off the table, across it is sliding on the table.
+            let g = m.gravity, a = m.userAcceleration, r = m.rotationRate
+            let gl = max((g.x * g.x + g.y * g.y + g.z * g.z).squareRoot(), 0.01)
+            let (ux, uy, uz) = (g.x / gl, g.y / gl, g.z / gl)
+            let up = a.x * ux + a.y * uy + a.z * uz                                   // in g
+            let slide = ((a.x - up * ux) * (a.x - up * ux) + (a.y - up * uy) * (a.y - up * uy)
+                + (a.z - up * uz) * (a.z - up * uz)).squareRoot()
+            let twist = r.x * ux + r.y * uy + r.z * uz                                // turning flat on the table, rad/s
+            let tip = ((r.x - twist * ux) * (r.x - twist * ux) + (r.y - twist * uy) * (r.y - twist * uy)
+                + (r.z - twist * uz) * (r.z - twist * uz)).squareRoot()               // tilting off it
+
+            let moving: Bool
+            if self.isStill {   // showing: a nudge is fine, being picked up or tipped isn't
+                moving = slide > 0.3 || abs(up) > 0.1 || tip > 0.6 || abs(twist) > 2
+            } else {            // to start, it has to be properly settled
+                moving = slide > 0.05 || abs(up) > 0.03 || tip > 0.15 || abs(twist) > 0.3
+            }
             if moving {
                 self.quietSince = nil
-                if self.isStill { self.isStill = false }
+                let since = self.movingSince ?? Date()
+                self.movingSince = since
+                // a knock is a moment; being picked up keeps going
+                if self.isStill, Date().timeIntervalSince(since) >= 0.4 { self.isStill = false }
             } else {
+                self.movingSince = nil
                 let since = self.quietSince ?? Date()
                 self.quietSince = since
                 if !self.isStill, Date().timeIntervalSince(since) >= 3 { self.isStill = true }
