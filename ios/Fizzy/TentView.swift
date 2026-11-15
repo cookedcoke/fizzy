@@ -22,10 +22,9 @@ struct TentView: View {
 
     var body: some View {
         GeometryReader { geo in
-            // The outer screen has the camera on one side and a strip for the side status bar on the other.
-            // Clear whichever is wider on both sides, so the margins match.
-            let side = max(geo.safeAreaInsets.leading, geo.safeAreaInsets.trailing)
-            content.padding(.horizontal, side).ignoresSafeArea(.container, edges: .horizontal)
+            // The outer screen keeps a side inset for its camera. Only the title row moves over for it; the cards
+            // run the full width beneath, with the same small margin all round.
+            content(camera: geo.safeAreaInsets).ignoresSafeArea(.container, edges: .horizontal)
         }
         .background(Color(.systemBackground).ignoresSafeArea())
         .environment(\.colorScheme, .dark)
@@ -53,9 +52,12 @@ struct TentView: View {
         }
     }
 
-    private var content: some View {
+    /// The outer screen's camera sits in a corner and the system insets that side: bottom right in the tent
+    /// (the cards stop above it), top left the other way up (the title moves past it). Otherwise the same small
+    /// margin all round.
+    private func content(camera inset: EdgeInsets) -> some View {
         VStack(spacing: Self.gap) {
-            header
+            header.padding(.leading, inset.leading)
             if page.loaded {
                 HStack(spacing: Self.gap) {
                     Group { if isClosed { closedFigures } else { figures } }
@@ -67,6 +69,7 @@ struct TentView: View {
             }
         }
         .padding(Self.gap * 1.5)
+        .padding(.bottom, max(0, inset.trailing - Self.gap * 2.5))
     }
 
     // MARK: left: the figures
@@ -84,7 +87,6 @@ struct TentView: View {
             }
             if !folded { Color.clear.frame(width: 64, height: 1) }   // room for Done
         }
-        .padding(.horizontal, 4)
     }
 
     private var figures: some View {
@@ -125,19 +127,30 @@ struct TentView: View {
     // MARK: right: the card that turns
 
     private var pager: some View {
-        TabView(selection: $card) {
-            ForEach(cards.indices, id: \.self) { i in
-                VStack(alignment: .leading, spacing: Self.gap) {
-                    Text(cards[i]).font(.subheadline).foregroundStyle(.secondary)
-                    content(i).frame(maxHeight: .infinity)
+        let i = min(card, cards.count - 1)
+        return VStack(alignment: .leading, spacing: Self.gap) {
+            HStack {
+                Text(cards[i]).font(.subheadline).foregroundStyle(.secondary)
+                Spacer()
+                HStack(spacing: 6) {
+                    ForEach(cards.indices, id: \.self) { j in
+                        Circle().fill(j == i ? Color.primary : Color.secondary.opacity(0.4)).frame(width: 6, height: 6)
+                    }
                 }
-                .padding(16)
-                .padding(.bottom, 20)   // room for the page dots
-                .tag(i)
             }
+            content(i)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(i)
+                .transition(.opacity)
         }
-        .tabViewStyle(.page(indexDisplayMode: .always))
+        .padding(16)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation { card = (i + 1) % cards.count } }
+        .gesture(DragGesture(minimumDistance: 30).onEnded { g in
+            let step = g.translation.width < 0 ? 1 : cards.count - 1
+            withAnimation { card = (i + step) % cards.count }
+        })
     }
 
     @ViewBuilder private func content(_ i: Int) -> some View {
