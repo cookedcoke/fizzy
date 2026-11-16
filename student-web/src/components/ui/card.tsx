@@ -1,18 +1,22 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { BlurFade } from "@/components/ui/blur-fade";
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-[18px] bg-card px-[18px] py-4 shadow-card", className)} {...props} />;
+  return <div className={cn("rounded-[20px] border border-line/70 bg-card px-[18px] py-4 shadow-card", className)} {...props} />;
 }
 
-export function Section({ title, small, children }: { title: React.ReactNode; small?: React.ReactNode; children?: React.ReactNode }) {
+/** A titled part of the page. It eases into view the first time it scrolls on screen. */
+export function Section({ title, small, children, className }: { title: React.ReactNode; small?: React.ReactNode; children?: React.ReactNode; className?: string }) {
   return (
-    <section>
-      <h2 className="mt-[30px] mb-2.5 flex items-baseline gap-2 text-[19px] font-[750]">
-        {title}{small != null && <small className="font-sans text-[13px] font-normal text-muted">{small}</small>}
-      </h2>
-      {children}
-    </section>
+    <BlurFade inView inViewMargin="-40px" direction="up" offset={10} className={className}>
+      <section>
+        <h2 className="mt-8 mb-3 flex items-baseline gap-2 text-[19px] font-[750]">
+          {title}{small != null && <small className="font-sans text-[13px] font-normal text-muted">{small}</small>}
+        </h2>
+        {children}
+      </section>
+    </BlurFade>
   );
 }
 

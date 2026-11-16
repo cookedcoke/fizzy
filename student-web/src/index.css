@@ -50,13 +50,27 @@
   button { cursor: pointer; }
 }
 
-/* Animations for the Magic UI components (shine-border, animated-shiny-text) from 21st.dev. */
+/* Animations for the Magic UI components from 21st.dev (shine-border, animated-shiny-text, marquee, shimmer-button). */
 @theme {
   --animate-shine: shine var(--duration) infinite linear;
   --animate-shiny-text: shiny-text 8s infinite;
   @keyframes shine { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } to { background-position: 0% 0%; } }
+  --animate-marquee: marquee var(--duration) infinite linear;
+  --animate-shimmer-slide: shimmer-slide var(--speed) ease-in-out infinite alternate;
+  --animate-spin-around: spin-around calc(var(--speed) * 2) infinite linear;
+  @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(calc(-100% - var(--gap))); } }
+  @keyframes shimmer-slide { to { transform: translate(calc(100cqw - 100%), 0); } }
+  @keyframes spin-around {
+    0% { transform: translateZ(0) rotate(0); } 15%, 35% { transform: translateZ(0) rotate(90deg); }
+    65%, 85% { transform: translateZ(0) rotate(270deg); } 100% { transform: translateZ(0) rotate(360deg); }
+  }
   @keyframes shiny-text {
     0%, 90%, 100% { background-position: calc(-100% - var(--shiny-width)) 0; }
     30%, 60% { background-position: calc(100% + var(--shiny-width)) 0; }
   }
+}
+
+/* Anyone who has asked their phone for less motion gets still versions of the looping effects. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee, .animate-shimmer-slide, .animate-spin-around, .animate-shiny-text, .animate-shine { animation: none !important; }
 }

@@ -3,12 +3,14 @@ import { motion } from "motion/react";
 import type { Badge } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Bar, Section } from "@/components/ui/card";
+import { ShineBorder } from "@/components/ui/shine-border";
 
 function One({ b, i }: { b: Badge; i: number }) {
   return (
     <motion.div title={b.how} initial={{ opacity: 0, scale: .94 }} animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: (i % 6) * .04 }} whileHover={{ y: -2 }}
-      className={cn("flex flex-col rounded-[16px] bg-card px-3 py-3 shadow-card", b.earned ? "bg-gradient-to-br from-card from-55% to-sun-wash" : "opacity-80")}>
+      className={cn("relative flex flex-col overflow-hidden rounded-[18px] border border-line/70 bg-card px-3 py-3 shadow-card", b.earned ? "bg-gradient-to-br from-card from-55% to-sun-wash" : "opacity-80")}>
+      {b.earned && <ShineBorder borderWidth={1.5} duration={12} shineColor={["#FFC23D", "#FFE7A3"]} />}
       <div aria-hidden className={cn("mb-1 text-[28px]", !b.earned && "grayscale")}>{b.icon}</div>
       <b className="font-display text-[14.5px] leading-tight">{b.name}</b>
       <span className="text-[12.5px] leading-snug text-muted">{b.how}</span>
