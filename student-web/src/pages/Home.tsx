@@ -5,7 +5,7 @@ import { TopBar } from "@/components/TopBar";
 import { Events } from "@/components/Events";
 import { ScanResultCard } from "@/components/Hunt";
 import { ChallengeCard } from "@/components/Challenge";
-import { PointsCard, Streak } from "@/components/Points";
+import { StatRing } from "@/components/StatRing";
 import { Rewards } from "@/components/Rewards";
 import { TabCard } from "@/components/TabCard";
 import { ActivityFeed } from "@/components/Activity";
@@ -21,8 +21,6 @@ export function Home({ me, reload, onOut }: { me: Me; reload: () => void; onOut:
   const scanned = r && r.kind !== "info" ? r : null;
   const showTab = me.tab.has_charges || (t.status !== "rejected" && t.status !== "revoked");
   const cards = me.cards.map(k => <ChallengeCard key={k.id} k={k} name={me.name} sid={me.sid} scanned={scanned} onChange={reload} />);
-  const month = me.boards[0];
-  const rank = month?.rows.find(x => x.me)?.rank ?? month?.mine?.rank ?? null;
   const out = async () => { await api.logout(); onOut(); };
   return (
     <>
@@ -38,14 +36,7 @@ export function Home({ me, reload, onOut }: { me: Me; reload: () => void; onOut:
             {me.note && !scanned && <div role="status" className="mb-3 rounded-[14px] bg-red-solid px-3.5 py-2.5 text-[14px] font-medium text-white">{me.note.message}</div>}
             <Events w={me} custom={me.custom_events} />
             {!scanned && cards}
-            <BlurFade delay={.05} direction="up" offset={10}>
-              <PointsCard points={me.points} who={me.sid || me.name} stats={[
-                { label: "Streak", value: me.streak.days, suffix: "d" },
-                { label: "Badges", value: me.badges_earned, suffix: `/${me.badges.length}` },
-                { label: month?.title ?? "This month", value: rank, prefix: "#" },
-              ]} />
-            </BlurFade>
-            <BlurFade delay={.1} direction="up" offset={10}><Streak {...me.streak} /></BlurFade>
+            <BlurFade delay={.05} direction="up" offset={10}><StatRing me={me} /></BlurFade>
             <Rewards offers={me.offers} />
             {!urgent && showTab && <TabCard t={t} />}
             <ActivityFeed items={me.activity} />
