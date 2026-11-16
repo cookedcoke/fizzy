@@ -87,7 +87,8 @@ export default function App() {
 function Splash() {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
   return (
-    <motion.div className="fixed inset-0 z-50" initial={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: .35 } }}>
+    // pointer-events-none: it's only to look at, and while it fades out it must never catch a tap meant for the page
+    <motion.div className="pointer-events-none fixed inset-0 z-50" initial={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: .35 } }}>
       <GlassIconReveal logo="/static/logo.svg" label="My Cooked Coke" loop={false} className="size-full cursor-default"
         look={dark ? "dark" : "light"} background={dark ? "#17120f" : "#FFF7EE"} logoColor={dark ? "#FF2A1A" : "#E3110B"}
         plateColor="#221b17" logoScale={0.62} finalScale={0.85} tileSize={220} />
