@@ -38,6 +38,18 @@ function usePageColour() {
   return c;
 }
 
+/** Room for the framed ring (its 560px stage plus the frame), rather than the phone layout. */
+function useWide() {
+  const q = "(min-width: 640px)";
+  const [wide, setWide] = useState(() => matchMedia(q).matches);
+  useEffect(() => {
+    const mq = matchMedia(q), on = () => setWide(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return wide;
+}
+
 /** "+120 since last time": what this phone saw on its last visit, remembered per student. */
 function useGain(points: number, who: string) {
   const [gain, setGain] = useState(0);
@@ -58,6 +70,7 @@ const FONT = '"Bricolage", ui-rounded, system-ui, -apple-system, sans-serif';
  *  cards that turns in 3D through a wide lens (Warp Carousel, WebGL). */
 export function StatRing({ me }: { me: Me }) {
   const page = usePageColour();
+  const wide = useWide();
   const gain = useGain(me.points, me.sid || me.name);
   const s = me.streak;
   const month = me.boards[0];
@@ -95,15 +108,30 @@ export function StatRing({ me }: { me: Me }) {
       mesh: mesh("#D10000", "#7A0804", "#4A0604", "#2A1712", "#FF8A3C", 0.3, 0.3, 0.45) });
   }
 
-  // The ring is drawn on a 720 by 440 unit stage, its cards sized by whichever side is tighter. It's laid out
-  // between 460 and 760px wide and centred: wider and the lens flare just smears across a big screen; on a phone
-  // narrower than 460 it runs a little past the screen so the cards stay readable and the flare starts at each edge.
-  // Its left and right ends fade into the page, so it never looks boxed in.
+  // The ring is drawn on a 720 by 440 unit stage, its cards sized by whichever side is tighter; any wider than the
+  // stage and the outermost lens flare is stretched to fill it. So:
+  // - on a phone it's laid out 460 wide (a little past the screen), the cards readable and the flare starting at
+  //   each edge, its ends fading into the page;
+  // - on a wider screen it's exactly the stage (560 by 342), in a frame: a dark display window with a red-to-sun
+  //   rim, like the glass front of a drinks fridge.
+  if (wide) return (
+    <div className="mx-auto my-2 w-fit rounded-[34px] bg-gradient-to-br from-sun via-red to-[#7A0804] p-[3px] shadow-[0_24px_60px_-28px_rgba(179,0,0,.75),0_0_0_1px_rgba(0,0,0,.04)]">
+      <div className="relative overflow-hidden rounded-[31px] bg-[#140C0A] p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,.06)]">
+        <div className="overflow-hidden rounded-[24px] shadow-[inset_0_2px_14px_rgba(0,0,0,.6)]">
+          <WarpCarousel cards={cards} background="#1B110E" font={FONT} autoplay interval={4.5} step={1} ariaLabel="Your stats"
+            className="focus-visible:outline-2 focus-visible:outline-red"
+            style={{ width: 560, height: 342, minHeight: 0, aspectRatio: "auto" }} />
+        </div>
+        {/* glass: a soft sheen across the top of the window */}
+        <div aria-hidden className="pointer-events-none absolute inset-2.5 rounded-[24px] bg-gradient-to-b from-white/[.07] via-transparent to-transparent" />
+      </div>
+    </div>
+  );
   return (
     <div className="relative left-1/2 flex w-screen -translate-x-1/2 justify-center overflow-x-clip">
       <WarpCarousel cards={cards} background={page} font={FONT} autoplay interval={4.5} step={1} ariaLabel="Your stats"
         className="shrink-0 focus-visible:outline-2 focus-visible:outline-red"
-        style={{ width: "clamp(460px, 100%, 760px)", height: "clamp(290px, 62vw, 342px)", minHeight: 0, aspectRatio: "auto",
+        style={{ width: 460, height: "clamp(290px, 62vw, 342px)", minHeight: 0, aspectRatio: "auto",
           maskImage: "linear-gradient(90deg, transparent, #000 13%, #000 87%, transparent)",
           WebkitMaskImage: "linear-gradient(90deg, transparent, #000 13%, #000 87%, transparent)" }} />
     </div>
