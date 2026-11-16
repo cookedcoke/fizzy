@@ -1,0 +1,195 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>html,body{margin:0;background:#888}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { TTFLoader } from "three/addons/loaders/TTFLoader.js";
+import { Font } from "three/addons/loaders/FontLoader.js";
+import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
+
+const S = 1024;
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(S, S);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.82;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+
+// --- crown cap: a revolved profile with 21 flutes pressed into the skirt ---
+const R = 1.0, TOP = 0.0, H = 0.36, FLUTES = 21;
+// profile: [radius, y] from the centre of the top, over the shoulder, down the skirt
+const prof = [];
+for (let i = 0; i <= 20; i++) prof.push([0.80 * i / 20, TOP]);                       // flat top
+for (let i = 1; i <= 16; i++) { const a = (Math.PI / 2) * i / 16;                       // rounded shoulder
+  prof.push([0.80 + 0.17 * Math.sin(a), TOP - 0.17 * (1 - Math.cos(a))]); }
+for (let i = 1; i <= 24; i++) { const t = i / 24;                                       // skirt, flaring out
+  prof.push([0.97 + 0.07 * t * t, TOP - 0.17 - (H - 0.17) * t]); }
+for (let i = 1; i <= 6; i++) { const a = (Math.PI / 2) * i / 6;                         // rolled bottom lip
+  prof.push([1.04 + 0.02 * Math.sin(a), TOP - H - 0.025 * (1 - Math.cos(a))]); }
+const SEG = 21 * 16;
+const pos = [], idx = [];
+for (let j = 0; j < prof.length; j++) {
+  const [r0, y] = prof[j];
+  const skirt = Math.max(0, Math.min(1, (TOP - 0.12 - y) / (H - 0.12)));               // 0 at shoulder, 1 at lip
+  for (let i = 0; i <= SEG; i++) {
+    const th = (i / SEG) * Math.PI * 2;
+    const flute = Math.cos(th * FLUTES);
+    const r = r0 + Math.pow(skirt, 0.8) * (0.05 * flute - 0.015);
+    pos.push(r * Math.cos(th), y, r * Math.sin(th));
+  }
+}
+const W = SEG + 1;
+for (let j = 0; j < prof.length - 1; j++) for (let i = 0; i < SEG; i++) {
+  const a = j * W + i, b = a + W;
+  idx.push(a, b, a + 1, b, b + 1, a + 1);
+}
+const capGeo = new THREE.BufferGeometry();
+capGeo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+capGeo.setIndex(idx); capGeo.computeVertexNormals();
+
+const paint = new THREE.MeshPhysicalMaterial({ color: 0xa80904, metalness: 0.82, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12, envMapIntensity: 0.55, side: THREE.DoubleSide });
+const cap = new THREE.Mesh(capGeo, paint); cap.castShadow = true; cap.receiveShadow = true;
+const group = new THREE.Group(); group.add(cap);
+
+// liner ring pressed into the top
+const ring = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.022, 16, 160), paint);
+ring.rotation.x = Math.PI / 2; ring.position.y = TOP - 0.004; group.add(ring);
+
+// the C on top, in several styles
+const cream = new THREE.MeshPhysicalMaterial({ color: 0xf3e2c9, metalness: 0.0, roughness: 0.42, clearcoat: 0.6, clearcoatRoughness: 0.2, envMapIntensity: 0.6 });
+const gold = new THREE.MeshPhysicalMaterial({ color: 0xe8b04a, metalness: 1, roughness: 0.22, envMapIntensity: 1.1 });
+const groove = new THREE.MeshPhysicalMaterial({ color: 0x5a0402, metalness: 0.6, roughness: 0.5, envMapIntensity: 0.4 });
+function torusC(mat, cR = 0.33, tube = 0.105, flat = 0.42, arc = Math.PI * 1.55) {
+  const C = new THREE.Mesh(new THREE.TorusGeometry(cR, tube, 24, 120, arc), mat);
+  C.rotation.x = -Math.PI / 2; C.rotation.z = (Math.PI * 2 - arc) / 2;                 // opening to the right
+  C.scale.set(1, 1, flat); C.castShadow = true;
+  for (const end of [0, arc]) { const b = new THREE.Mesh(new THREE.SphereGeometry(tube, 24, 16), mat); b.position.set(cR * Math.cos(end), cR * Math.sin(end), 0); b.castShadow = true; C.add(b); }
+  return C;
+}
+function blockC(mat) {                                                                   // a chunky stamped letter with a bevelled flat face
+  const ro = 0.45, ri = 0.22, gap = 0.62, shape = new THREE.Shape();
+  shape.absarc(0, 0, ro, gap / 2, Math.PI * 2 - gap / 2, false);
+  shape.absarc(0, 0, ri, Math.PI * 2 - gap / 2, gap / 2, true);
+  const g = new THREE.ExtrudeGeometry(shape, { depth: 0.05, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.022, bevelSegments: 6, curveSegments: 96 });
+  const m = new THREE.Mesh(g, mat); m.rotation.x = -Math.PI / 2; m.castShadow = true; return m;
+}
+const cStyles = {
+  cream: () => torusC(cream),
+  tone: () => torusC(paint),
+  gold: () => torusC(gold),
+  block: () => blockC(cream),
+  deboss: () => { const c = torusC(groove, 0.33, 0.085, 0.12); c.position.y = -0.012; return c; },
+  fizz: () => { const g = new THREE.Group(); g.add(torusC(cream, 0.31, 0.09));
+    for (const [x, z, r] of [[0.36, -0.02, 0.07], [0.5, -0.17, 0.045]]) { const b = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 16), cream);
+      b.position.set(x, 0, z); b.scale.y = 0.5; b.castShadow = true; g.add(b); } return g; },
+};
+// a gold C set in a real typeface, extruded with a rounded bevel and laid on the cap
+const fonts = {};
+async function loadFont(n) { if (!fonts[n]) fonts[n] = new Font(await new TTFLoader().loadAsync("fonts/" + n + ".ttf")); return fonts[n]; }
+function fontC(font, mat, width = 0.7) {
+  const g = new TextGeometry("C", { font, size: 1, height: 0.12, curveSegments: 24, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.03, bevelSegments: 8 });
+  g.computeBoundingBox(); const b = g.boundingBox;
+  g.translate(-(b.min.x + b.max.x) / 2, -(b.min.y + b.max.y) / 2, -b.min.z);
+  const k = width / Math.max(b.max.x - b.min.x, b.max.y - b.min.y);
+  const m = new THREE.Mesh(g, mat); m.scale.set(k, k, k * 0.55); m.rotation.x = -Math.PI / 2; m.castShadow = true; return m;
+}
+window.fontC = async (n, matName = "gold", width) => { const f = await loadFont(n); cHolder.clear(); cHolder.add(fontC(f, { gold, cream, paint }[matName], width)); };
+// --- our own C letterforms, drawn as 2D outlines (x right, y up), then extruded in polished gold ---
+const goldHi = new THREE.MeshPhysicalMaterial({ color: 0xf0b545, metalness: 1, roughness: 0.16, clearcoat: 0.4, envMapIntensity: 1.5 });
+const P = (r, a, rx = 1, ry = 1) => new THREE.Vector2(r * rx * Math.cos(a), r * ry * Math.sin(a));
+// a C stroke along an ellipse from a0 to a1 (radians, counter-clockwise), half-width w(t) for t in 0..1
+function stroke({ r = 0.33, rx = 1, ry = 1, a0, a1, w, n = 160, cut0 = "radial", cut1 = "radial" }) {
+  const outer = [], inner = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, a = a0 + (a1 - a0) * t, h = w(t);
+    outer.push(P(r + h, a, rx, ry)); inner.push(P(r - h, a, rx, ry));
+  }
+  // flat horizontal cuts: slide each end's outer point along the curve to the inner point's height
+  const level = (pts, ref, end) => { const y = ref.y; const p = pts[end]; pts[end] = new THREE.Vector2(p.x + (y - p.y) * 0.0 + (p.x > 0 ? 0 : 0), y); };
+  if (cut0 === "flat") level(outer, inner[0], 0);
+  if (cut1 === "flat") level(outer, inner[n], n);
+  return new THREE.Shape([...outer, ...inner.reverse()]);
+}
+const circle = (x, y, r) => { const s = new THREE.Shape(); s.absarc(x, y, r, 0, Math.PI * 2, false); return s; };
+function emboss(shapes, mat = goldHi, depth = 0.05) {
+  const g = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.018, bevelSegments: 8, curveSegments: 64 });
+  const m = new THREE.Mesh(g, mat); m.rotation.x = -Math.PI / 2; m.castShadow = true; return m;
+}
+const D = Math.PI / 180;
+const letters = {
+  // 1. Soda: heavy, round, the ends sliced flat and level like old bottle lettering, a touch heavier at the bottom
+  soda: () => emboss(stroke({ r: 0.31, a0: 48 * D, a1: 312 * D, w: t => 0.125 + 0.03 * Math.sin(Math.PI * t) + 0.015 * t, cut0: "flat", cut1: "flat" })),
+  // 2. Ball: thick-thin contrast, the top end curling into a ball, the bottom end a sharp flick
+  ball: () => emboss([stroke({ r: 0.32, a0: 40 * D, a1: 318 * D, w: t => 0.035 + 0.115 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.05)), 1.4) }), circle(0.32 * Math.cos(40 * D) + 0.01, 0.32 * Math.sin(40 * D) + 0.01, 0.085)]),
+  // 3. Pop: the C runs out of letter and carries on as fizz, three bubbles getting smaller along the curve
+  pop: () => emboss([stroke({ r: 0.31, a0: 75 * D, a1: 320 * D, w: t => 0.105 + 0.02 * Math.sin(Math.PI * t) }),
+    circle(0.31 * Math.cos(52 * D), 0.31 * Math.sin(52 * D), 0.075), circle(0.31 * Math.cos(32 * D), 0.31 * Math.sin(32 * D), 0.05), circle(0.31 * Math.cos(17 * D), 0.31 * Math.sin(17 * D), 0.03)]),
+  // 4. Retro: wide and squarish, rounded corners (a superellipse), a groove running along its middle
+  retro: () => {
+    const se = (a, r, n = 3.2) => { const c = Math.cos(a), s = Math.sin(a); return new THREE.Vector2(r * 1.18 * Math.sign(c) * Math.abs(c) ** (2 / n), r * Math.sign(s) * Math.abs(s) ** (2 / n)); };
+    const o = [], i = [], N = 160, a0 = 42 * D, a1 = 318 * D;
+    for (let k = 0; k <= N; k++) { const a = a0 + (a1 - a0) * k / N; o.push(se(a, 0.42)); i.push(se(a, 0.2)); }
+    const g = new THREE.Group(); g.add(emboss(new THREE.Shape([...o, ...i.reverse()])));
+    const go = [], gi = [];
+    for (let k = 4; k <= N - 4; k++) { const a = a0 + (a1 - a0) * k / N; go.push(se(a, 0.318)); gi.push(se(a, 0.302)); }
+    const groove = emboss(new THREE.Shape([...go, ...gi.reverse()]), new THREE.MeshPhysicalMaterial({ color: 0x6b3b05, metalness: 1, roughness: 0.4 }), 0.004);
+    groove.position.y = 0.081; g.add(groove); return g;
+  },
+  // 5. Nib: a broad-pen stroke, thick on the down-strokes and hairline at the ends, top end flicking up and out
+  nib: () => emboss(stroke({ r: 0.31, rx: 0.95, ry: 1.05, a0: 30 * D, a1: 320 * D, w: t => { const a = (30 + 290 * t) * D; return 0.02 + 0.13 * Math.abs(Math.sin(a - 35 * D)) * Math.min(1, t * 6, (1 - t) * 4); } })),
+  // 6. Mono: one even, rounded stroke, lighter and modern, ends rounded off
+  mono: () => { const a0 = 45 * D, a1 = 315 * D, r = 0.32, h = 0.07;
+    return emboss([stroke({ r, a0, a1, w: () => h }), circle(r * Math.cos(a0), r * Math.sin(a0), h), circle(r * Math.cos(a1), r * Math.sin(a1), h)]); },
+};
+const enamel = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 0.7 });
+window.letter = (name, mat) => { cHolder.clear(); const m = letters[name](); if (mat === "white") m.traverse(o => { if (o.isMesh && o.material === goldHi) o.material = enamel; }); cHolder.add(m); };
+const cHolder = new THREE.Group(); cHolder.position.y = TOP + 0.01; group.add(cHolder);
+function setC(style) { cHolder.clear(); cHolder.add(cStyles[style]()); }
+setC("cream");
+scene.add(group);
+
+// bubbles: clear glassy spheres rising off the cap
+const glass = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.04, transparent: true, opacity: 0.5, clearcoat: 1, envMapIntensity: 1.4 });
+const bubbles = [[0.98, 0.62, -0.42, 0.15], [1.22, 0.95, -0.62, 0.09], [0.86, 1.08, -0.78, 0.055]];
+const bubbleMeshes = bubbles.map(([x, y, z, r]) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 48, 32), glass); m.position.set(x, y, z); scene.add(m); return m; });
+
+// lights: soft key from top-left, rim from behind, shadow catcher under the cap
+const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(-3, 5, 2.5); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048); key.shadow.radius = 8; Object.assign(key.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2 });
+scene.add(key);
+const rim = new THREE.DirectionalLight(0xffe6c8, 1.4); rim.position.set(3, 2, -4); scene.add(rim);
+const blob = document.createElement("canvas"); blob.width = blob.height = 256;
+{ const g = blob.getContext("2d"), r = g.createRadialGradient(128, 128, 10, 128, 128, 128);
+  r.addColorStop(0, "rgba(0,0,0,.42)"); r.addColorStop(.55, "rgba(0,0,0,.18)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, 256, 256); }
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 2.7), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(blob), transparent: true, depthWrite: false }));
+floor.rotation.x = -Math.PI / 2; floor.position.set(0.03, TOP - H - 0.03, 0.05); scene.add(floor);
+
+const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 50);
+function view(elev = 52, dist = 6.3, yaw = -14, look = [0.14, -0.12, -0.12]) {
+  const e = THREE.MathUtils.degToRad(elev), a = THREE.MathUtils.degToRad(yaw);
+  camera.position.set(dist * Math.cos(e) * Math.sin(a), dist * Math.sin(e), dist * Math.cos(e) * Math.cos(a));
+  camera.lookAt(...look);
+}
+window.render = (opts = {}) => {
+  view(opts.elev, opts.dist, opts.yaw);
+  floor.visible = opts.shadow !== false;
+  if (opts.c && cStyles[opts.c]) setC(opts.c);
+  paint.envMapIntensity = opts.env ?? 0.55;
+  bubbleMeshes.forEach(b => b.visible = opts.bubbles !== false);
+  renderer.render(scene, camera);
+  return renderer.domElement.toDataURL("image/png");
+};
+window.save = async (name, opts) => {
+  const url = window.render(opts);
+  await fetch("/save?name=" + name, { method: "POST", body: url });
+  return name;
+};
+window.ready = true;
+window.render();
+</script>
