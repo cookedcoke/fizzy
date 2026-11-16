@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { MotionConfig, motion } from "motion/react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { GlassIconReveal } from "@/components/ui/liquid-glass-logo-reveal";
 import { api, base, href, type GuestCard, type Home as HomeData, type ScanResult } from "@/lib/api";
 import { Login } from "@/pages/Login";
 import { Home } from "@/pages/Home";
@@ -14,8 +15,17 @@ type View =
 /** The page's own path, without the /me prefix used off the student host. */
 const route = () => { const p = location.pathname; return (p.startsWith(base) ? p.slice(base.length) : p) || "/"; };
 
+// The glass reveal plays in full the first time the site opens in a browser session (about 2.5 s, until the
+// glass lets go of the logo); after that the splash only shows while the page is actually loading.
+const firstOpen = (() => {
+  try { if (sessionStorage.getItem("cc-revealed")) return false; sessionStorage.setItem("cc-revealed", "1"); } catch { /* private mode */ }
+  return !matchMedia("(prefers-reduced-motion: reduce)").matches;
+})();
+
 export default function App() {
   const [view, setView] = useState<View>({ kind: "loading" });
+  const [revealed, setRevealed] = useState(!firstOpen);
+  useEffect(() => { if (!revealed) { const t = setTimeout(() => setRevealed(true), 2600); return () => clearTimeout(t); } }, [revealed]);
 
   const load = useCallback(async () => {
     const path = route();
@@ -61,7 +71,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      {view.kind === "loading" && <Splash />}
+      <AnimatePresence>{(view.kind === "loading" || !revealed) && <Splash key="splash" />}</AnimatePresence>
       {view.kind === "error" && <ErrorPage message={view.message} retry={load} />}
       {view.kind === "hunt" && <GuestHunt cards={view.cards} result={view.result} reload={load} />}
       {view.kind === "home" && (view.data.signed_in
@@ -71,12 +81,15 @@ export default function App() {
   );
 }
 
+/** The loading screen: our logo lands as a drop of glass, the glass bends it at the rim, then lets go. */
 function Splash() {
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
   return (
-    <div className="grid min-h-dvh place-items-center">
-      <motion.img src="/static/logo.svg" alt="Loading" className="size-14" animate={{ scale: [1, 1.08, 1], opacity: [.7, 1, .7] }}
-        transition={{ duration: 1.2, repeat: Infinity }} />
-    </div>
+    <motion.div className="fixed inset-0 z-50" initial={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: .35 } }}>
+      <GlassIconReveal logo="/static/logo.svg" label="My Cooked Coke" loop={false} className="size-full cursor-default"
+        look={dark ? "dark" : "light"} background={dark ? "#17120f" : "#FFF7EE"} logoColor={dark ? "#FF2A1A" : "#E3110B"}
+        plateColor="#221b17" logoScale={0.62} finalScale={0.85} tileSize={220} />
+    </motion.div>
   );
 }
 
