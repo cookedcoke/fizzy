@@ -44,6 +44,12 @@
 }
 
 @layer base {
+  /* Every rounded corner is a superellipse (a squircle, like iOS icons) rather than a quarter circle, where the
+     browser supports it; older browsers keep ordinary rounding. Circles and pills stay round.
+     (superellipse(1) is a plain round corner, 2 a full squircle; 1.8 keeps the corners soft.) */
+  @supports (corner-shape: squircle) {
+    *:not(.rounded-full) { corner-shape: superellipse(1.8); }
+  }
   html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
   /* clip, not hidden: full-bleed parts (the stats ring) span 100vw, which includes a desktop scrollbar */
   html, body { overflow-x: clip; }
