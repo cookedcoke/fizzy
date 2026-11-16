@@ -15,8 +15,8 @@ type View =
 /** The page's own path, without the /me prefix used off the student host. */
 const route = () => { const p = location.pathname; return (p.startsWith(base) ? p.slice(base.length) : p) || "/"; };
 
-// The glass reveal plays in full the first time the site opens in a browser session (about 2.5 s, until the
-// glass lets go of the logo); after that the splash only shows while the page is actually loading.
+// The glass reveal plays in full the first time the site opens in a browser session and on signing in (about
+// 2.5 s, until the glass lets go of the logo); otherwise the splash only shows while the page is actually loading.
 const firstOpen = (() => {
   try { if (sessionStorage.getItem("cc-revealed")) return false; sessionStorage.setItem("cc-revealed", "1"); } catch { /* private mode */ }
   return !matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -68,6 +68,8 @@ export default function App() {
   }, [load]);
 
   const toHome = () => { history.replaceState(null, "", href("/")); setView({ kind: "loading" }); load(); };
+  // Signing in plays the glass reveal in full on the way to their page.
+  const signedIn = () => { if (!matchMedia("(prefers-reduced-motion: reduce)").matches) setRevealed(false); toHome(); };
 
   return (
     <MotionConfig reducedMotion="user">
@@ -76,7 +78,7 @@ export default function App() {
       {view.kind === "hunt" && <GuestHunt cards={view.cards} result={view.result} reload={load} />}
       {view.kind === "home" && (view.data.signed_in
         ? <Home me={view.data} reload={load} onOut={toHome} />
-        : <Login w={view.data} onIn={toHome} />)}
+        : <Login w={view.data} onIn={signedIn} />)}
     </MotionConfig>
   );
 }
