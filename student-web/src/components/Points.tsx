@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { animate, motion, useMotionValue, useTransform } from "motion/react";
 import { num } from "@/lib/format";
+import { AnimatedShinyText } from "@/components/ui/animated-shiny-text";
 
 /** The fizzy can: the balance, counting up from what this phone saw last visit ("+120 since last time"). */
 export function PointsCard({ points, who }: { points: number; who: string }) {
@@ -29,7 +30,8 @@ export function PointsCard({ points, who }: { points: number; who: string }) {
       ))}
       <div className="text-[13px] font-semibold opacity-85">Your points
         {gain > 0 && <motion.span initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: .3 }}
-          className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-[12px]">+{num(gain)} since last time</motion.span>}</div>
+          className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-[12px]">
+          <AnimatedShinyText className="mx-0 text-white/85 via-white dark:text-white/85 dark:via-white">+{num(gain)} since last time</AnimatedShinyText></motion.span>}</div>
       <motion.div className="my-1.5 font-display text-[56px] font-extrabold leading-none tracking-[-.03em]">{shown}</motion.div>
       <div className="text-[13px] opacity-85">1 point for every cent you spend. Tab buys earn theirs when you pay them off.</div>
     </div>

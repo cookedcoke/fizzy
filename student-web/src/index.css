@@ -49,3 +49,14 @@
   h1, h2, h3 { @apply font-display; letter-spacing: -.01em; }
   button { cursor: pointer; }
 }
+
+/* Animations for the Magic UI components (shine-border, animated-shiny-text) from 21st.dev. */
+@theme {
+  --animate-shine: shine var(--duration) infinite linear;
+  --animate-shiny-text: shiny-text 8s infinite;
+  @keyframes shine { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } to { background-position: 0% 0%; } }
+  @keyframes shiny-text {
+    0%, 90%, 100% { background-position: calc(-100% - var(--shiny-width)) 0; }
+    30%, 60% { background-position: calc(100% + var(--shiny-width)) 0; }
+  }
+}
