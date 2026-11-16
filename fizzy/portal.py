@@ -11,6 +11,8 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import json
+import os
 import re
 import secrets
 import time
@@ -19,7 +21,7 @@ import unicodedata
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 import anyio
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from . import badges, challenges, config, events, logic, rewards, rules, runs, square, stats
 from .db import audit, now_iso
@@ -217,6 +219,25 @@ def _page(request, name, **ctx):
     return response
 
 
+SPA_INDEX = os.path.join(os.path.dirname(__file__), "static", "me-app", "index.html")
+
+
+def spa_on():
+    """The React student site (student-web/, built into static/me-app) is served when it's built and not switched off."""
+    return config.STUDENT_UI != "classic" and os.path.isfile(SPA_INDEX)
+
+
+def spa():
+    """The React app's page. It reads everything through the same JSON the My CCC app uses."""
+    with open(SPA_INDEX, encoding="utf-8") as f:
+        html = f.read()
+    cfg = {"base": "" if config.PUBLIC_HOST else "/me",
+           "appPayUrl": config.STUDENT_APP_STORE_URL if config.APPLE_PAY and config.APP_PAY_PROMO else None}
+    script = "<script>window.__FIZZY__=" + json.dumps(cfg).replace("</", "<\\/") + "</script>"
+    html = html.replace("<!--fizzy-config-->", script).replace('href="/manifest.webmanifest"', f'href="{_url("/manifest.webmanifest")}"')
+    return HTMLResponse(html, headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer"})
+
+
 def _json(body, status=200):
     """The student iOS app's answer: the same as the page, as data."""
     return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
@@ -246,6 +267,7 @@ def student_payload(conn, c):
         boards.append({"title": title, "rows": board, "mine": mine})
     return {
         "signed_in": True, "name": c["name"], "first": c["name"].split(" ")[0], "points": s["points"],
+        "sid": (c["email"] or "").split("@")[0],   # their student number, for a finished hunt's claim ticket
         "tab": {"status": st["status"], "can_charge": st["can_charge"], "available_cents": st["available_cents"],
                 "limit_cents": st["limit_cents"], "min_score": st["min_score"], "due_days": st["due_days"],
                 "owing_cents": led["owing_cents"], "overdue_cents": led["overdue_cents"], "has_overdue": led["has_overdue"],
@@ -285,6 +307,8 @@ templates.env.globals["me_url"] = _url
 @router.get("/me/")
 def home(request: Request, conn=Depends(get_conn)):
     c = current(request, conn)
+    if not wants_json(request) and spa_on():
+        return spa()
     if c is None and wants_json(request):
         return _json({"signed_in": False, **_whats_on(conn)})
     if c is None:
@@ -293,7 +317,12 @@ def home(request: Request, conn=Depends(get_conn)):
     if badges.award(conn, c["id"]):  # a badge earned since the last look pays its points now
         conn.commit()
     if wants_json(request):
-        return _json(student_payload(conn, c))
+        body = student_payload(conn, c)
+        note = request.session.pop("me_note", None)   # a one-off message (a scan, hunt progress moved over)
+        if note:
+            ok = request.session.pop("me_note_ok", True)
+            body["note"] = {"message": note, "ok": ok, "result": scan_result(ok, note)}
+        return _json(body)
     s = logic.customer_summary(conn, c)
     month, month_me = leaderboard(conn, since=month_start(), me=c["id"])
     alltime, alltime_me = leaderboard(conn, me=c["id"])
@@ -635,12 +664,14 @@ def scan_link(request: Request, code: str, conn=Depends(get_conn)):
     """A challenge code opened with the phone camera (the QR is a link to here, or to a link that
     redirects here). Signed in: it counts on their account. Not: it's kept against this phone, so new
     students and those without a passcode yet can play, and claim at the stall."""
+    if not wants_json(request) and spa_on():
+        return spa()   # the page scans it itself, through the JSON below
     c = current(request, conn)
     if c is not None:
         ok, msg = challenges.scan(conn, c["id"], code[:60])
         conn.commit()
         if wants_json(request):
-            return _json({"ok": ok, "message": msg})   # the My CCC app, opening a poster's link
+            return _json({"ok": ok, "message": msg, "signed_in": True, "result": scan_result(ok, msg)})   # the My CCC app, opening a poster's link
         request.session["me_note"] = msg
         request.session["me_note_ok"] = ok
         return RedirectResponse(_url("/"), status_code=303)
@@ -649,7 +680,8 @@ def scan_link(request: Request, code: str, conn=Depends(get_conn)):
     ok, msg, rule = challenges.guest_scan(conn, guest, code[:60])
     conn.commit()
     if wants_json(request):   # the My CCC App Clip
-        return _json({"ok": ok, "message": msg, "cards": challenges.guest_cards(conn, guest)})
+        return _json({"ok": ok, "message": msg, "cards": challenges.guest_cards(conn, guest), "signed_in": False,
+                      "result": scan_result(ok, msg)})
     return _page(request, "me_hunt.html", note=msg, ok=ok, cards=challenges.guest_cards(conn, guest), signin=_signin())
 
 
@@ -674,6 +706,8 @@ async def hunt_name(request: Request, conn=Depends(get_conn)):
 @router.get("/me/hunt")
 def hunt_page(request: Request, conn=Depends(get_conn)):
     """What this phone has found so far, without signing in."""
+    if not wants_json(request) and spa_on():
+        return spa()
     guest = request.session.get("guest")
     cards = challenges.guest_cards(conn, guest) if guest else []
     if wants_json(request):

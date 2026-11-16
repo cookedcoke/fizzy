@@ -5,6 +5,7 @@ os.environ.setdefault("FIZZY_PASSWORD", "test-pw")
 os.environ.setdefault("FIZZY_SECRET_KEY", "test-secret")
 os.environ.setdefault("FIZZY_SECURE_COOKIES", "0")
 os.environ["SQUARE_ACCESS_TOKEN"] = ""
+os.environ["FIZZY_STUDENT_UI"] = "classic"   # the server-drawn student pages; tests/test_student_react.py turns the React one on
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest  # noqa: E402

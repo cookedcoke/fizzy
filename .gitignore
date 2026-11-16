@@ -11,3 +11,5 @@ backups/
 .pytest_cache/
 updates/
 update-status/
+fizzy/static/me-app/
+node_modules/

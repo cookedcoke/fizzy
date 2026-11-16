@@ -1,9 +1,18 @@
+# The student site (React + Tailwind, student-web/), built to static files Fizzy serves.
+FROM node:22-alpine AS student
+WORKDIR /student-web
+COPY student-web/package.json student-web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY student-web ./
+RUN npm run build -- --outDir /student-app
+
 FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 FIZZY_DB=/data/fizzy.db
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY fizzy ./fizzy
+COPY --from=student /student-app ./fizzy/static/me-app
 RUN useradd -r -u 10001 fizzy && mkdir -p /data /backups && chown fizzy /data /backups
 COPY deploy/entrypoint.sh /usr/local/bin/fizzy-entrypoint
 # Strip Windows line endings in case the repo was cloned on Windows (git autocrlf).

@@ -449,6 +449,12 @@ The pages are kept to labels and buttons. What they used to explain:
 - **Security keys.** A key or passkey signs in instead of the staff password, so one key can be shared. You still pick who's on the counter, and the PIN and owner password work the same. A key only works on the address it was added on.
 - **Devices.** With `FIZZY_ACCESS_HOST` set, registered devices open the main address directly and everything else goes through Cloudflare Access; both still need the staff password. Device links work once.
 
+### The student site is a React app
+
+The student site's pages are built from `student-web/` (React, Tailwind and the 21st.dev/shadcn setup),
+built into the Docker image when you press Update. See `student-web/README.md` for working on it and
+adding 21st.dev components. `FIZZY_STUDENT_UI=classic` in `.env` switches back to the original pages.
+
 ## 5. Profit
 
 **Profit** (dashboard button, or the top bar) needs no Square Retail Plus: type what one of

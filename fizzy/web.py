@@ -20,7 +20,8 @@ def _asset_version():
     """Changes whenever a static file changes, so browsers can cache /static forever."""
     h = hashlib.sha1()
     for f in sorted((HERE / "static").iterdir()):
-        h.update(f.read_bytes())
+        if f.is_file():   # folders (me-app, the React student site) version their own files
+            h.update(f.read_bytes())
     return h.hexdigest()[:10]
 
 
