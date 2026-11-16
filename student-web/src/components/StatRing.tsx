@@ -39,7 +39,7 @@ function usePageColour() {
 }
 
 /** Room for the framed ring (its 560px stage plus the frame), rather than the phone layout. */
-function useWide() {
+export function useWide() {
   const q = "(min-width: 640px)";
   const [wide, setWide] = useState(() => matchMedia(q).matches);
   useEffect(() => {
@@ -68,9 +68,8 @@ const FONT = '"Bricolage", ui-rounded, system-ui, -apple-system, sans-serif';
 
 /** The top of the home page: points, streak, this month's place, badges and the next reward, on a ring of
  *  cards that turns in 3D through a wide lens (Warp Carousel, WebGL). */
-export function StatRing({ me }: { me: Me }) {
+export function StatRing({ me, wide }: { me: Me; wide: boolean }) {
   const page = usePageColour();
-  const wide = useWide();
   const gain = useGain(me.points, me.sid || me.name);
   const s = me.streak;
   const month = me.boards[0];
@@ -112,15 +111,15 @@ export function StatRing({ me }: { me: Me }) {
   // stage and the outermost lens flare is stretched to fill it. So:
   // - on a phone it's laid out 460 wide (a little past the screen), the cards readable and the flare starting at
   //   each edge, its ends fading into the page;
-  // - on a wider screen it's exactly the stage (560 by 342), in a frame: a dark display window with a red-to-sun
-  //   rim, like the glass front of a drinks fridge.
+  // - on a wider screen it fills the left column at the stage's own 720:440 shape, in a frame: a dark display
+  //   window with a red-to-sun rim, like the glass front of a drinks fridge.
   if (wide) return (
-    <div className="mx-auto my-2 w-fit rounded-[34px] bg-gradient-to-br from-sun via-red to-[#7A0804] p-[3px] shadow-[0_24px_60px_-28px_rgba(179,0,0,.75),0_0_0_1px_rgba(0,0,0,.04)]">
+    <div className="mt-1 mb-2 rounded-[34px] bg-gradient-to-br from-sun via-red to-[#7A0804] p-[3px] shadow-[0_24px_60px_-28px_rgba(179,0,0,.75),0_0_0_1px_rgba(0,0,0,.04)]">
       <div className="relative overflow-hidden rounded-[31px] bg-[#140C0A] p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,.06)]">
         <div className="overflow-hidden rounded-[24px] shadow-[inset_0_2px_14px_rgba(0,0,0,.6)]">
           <WarpCarousel cards={cards} background="#1B110E" font={FONT} autoplay interval={4.5} step={1} ariaLabel="Your stats"
             className="focus-visible:outline-2 focus-visible:outline-red"
-            style={{ width: 560, height: 342, minHeight: 0, aspectRatio: "auto" }} />
+            style={{ width: "100%", height: "auto", minHeight: 0, aspectRatio: "720 / 440" }} />
         </div>
         {/* glass: a soft sheen across the top of the window */}
         <div aria-hidden className="pointer-events-none absolute inset-2.5 rounded-[24px] bg-gradient-to-b from-white/[.07] via-transparent to-transparent" />
