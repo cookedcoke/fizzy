@@ -14,6 +14,11 @@ https://fizzy-demo.w-l.xyz (staff app) and https://fizzy-demo.w-l.xyz/me (My CCC
   service, reseeds every morning at 05:30 (so the reviewer always sees sales "today"), and adds
   `fizzy-demo-set-password` for the staff password, which the owner types themselves.
 
+Apple Pay (so App Review can find My CCC's Pay with Apple Pay button on Amelia's tab, which the seed
+always leaves owing $5.50) uses Square's sandbox. Add these to `/etc/fizzy-demo/env` in place of the
+`demo-not-real` token, from the Sandbox tab of the Square Developer dashboard, then restart `fizzy-demo`:
+`FIZZY_APPLE_PAY=1`, `SQUARE_ENVIRONMENT=sandbox`, `SQUARE_ACCESS_TOKEN`, `SQUARE_APPLICATION_ID`, `SQUARE_LOCATION_ID`.
+
 To try it locally:
 
 ```bash
