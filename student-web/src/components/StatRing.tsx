@@ -95,13 +95,17 @@ export function StatRing({ me }: { me: Me }) {
       mesh: mesh("#D10000", "#7A0804", "#4A0604", "#2A1712", "#FF8A3C", 0.3, 0.3, 0.45) });
   }
 
-  // The ring is drawn on a 720-unit stage; narrower than that the cards get small, so on a phone it's laid out
-  // wider than the screen and centred, with the outer edges of the lens flare running off each side.
+  // The ring is drawn on a 720 by 440 unit stage, its cards sized by whichever side is tighter. It's laid out
+  // between 460 and 760px wide and centred: wider and the lens flare just smears across a big screen; on a phone
+  // narrower than 460 it runs a little past the screen so the cards stay readable and the flare starts at each edge.
+  // Its left and right ends fade into the page, so it never looks boxed in.
   return (
-    <div className="-mx-[18px] overflow-x-clip">
+    <div className="relative left-1/2 flex w-screen -translate-x-1/2 justify-center overflow-x-clip">
       <WarpCarousel cards={cards} background={page} font={FONT} autoplay interval={4.5} step={1} ariaLabel="Your stats"
-        className="focus-visible:outline-2 focus-visible:outline-red"
-        style={{ width: 560, height: 342, minHeight: 0, aspectRatio: "auto", marginLeft: "calc(50% - 280px)" }} />
+        className="shrink-0 focus-visible:outline-2 focus-visible:outline-red"
+        style={{ width: "clamp(460px, 100%, 760px)", height: "clamp(290px, 62vw, 342px)", minHeight: 0, aspectRatio: "auto",
+          maskImage: "linear-gradient(90deg, transparent, #000 13%, #000 87%, transparent)",
+          WebkitMaskImage: "linear-gradient(90deg, transparent, #000 13%, #000 87%, transparent)" }} />
     </div>
   );
 }

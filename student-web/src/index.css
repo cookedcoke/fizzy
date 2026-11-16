@@ -45,6 +45,8 @@
 
 @layer base {
   html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+  /* clip, not hidden: full-bleed parts (the stats ring) span 100vw, which includes a desktop scrollbar */
+  html, body { overflow-x: clip; }
   body { @apply bg-cream text-ink font-sans antialiased; font-size: 15px; line-height: 1.5; font-variant-numeric: tabular-nums; }
   h1, h2, h3 { @apply font-display; letter-spacing: -.01em; }
   button { cursor: pointer; }

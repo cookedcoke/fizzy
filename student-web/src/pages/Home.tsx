@@ -29,14 +29,17 @@ export function Home({ me, reload, onOut }: { me: Me; reload: () => void; onOut:
         <BlurFade direction="up" offset={10}>
           <h1 className="mt-2 mb-4 text-[32px] leading-tight font-extrabold">{greeting()} <span className="text-red">{me.first}</span> 👋</h1>
         </BlurFade>
+        {/* what needs them now comes first: a poster just scanned, a tab to pay, a message, what's on */}
+        <div className="md:max-w-[calc(100%-388px)]">
+          {scanned && <><ScanResultCard r={scanned} />{cards}</>}
+          {urgent && <TabCard t={t} />}
+          {me.note && !scanned && <div role="status" className="mb-3 rounded-[14px] bg-red-solid px-3.5 py-2.5 text-[14px] font-medium text-white">{me.note.message}</div>}
+          <Events w={me} custom={me.custom_events} />
+        </div>
+        <BlurFade delay={.05} direction="up" offset={10}><StatRing me={me} /></BlurFade>
         <div className="md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,360px)] md:gap-7">
           <div>
-            {scanned && <><ScanResultCard r={scanned} />{cards}</>}
-            {urgent && <TabCard t={t} />}
-            {me.note && !scanned && <div role="status" className="mb-3 rounded-[14px] bg-red-solid px-3.5 py-2.5 text-[14px] font-medium text-white">{me.note.message}</div>}
-            <Events w={me} custom={me.custom_events} />
             {!scanned && cards}
-            <BlurFade delay={.05} direction="up" offset={10}><StatRing me={me} /></BlurFade>
             <Rewards offers={me.offers} />
             {!urgent && showTab && <TabCard t={t} />}
             <ActivityFeed items={me.activity} />

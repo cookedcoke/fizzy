@@ -1,6 +1,6 @@
 "use client";
 
-// Warp Carousel by Louis Studios (MIT, from 21st.dev).
+// Warp Carousel by Louis Studios (MIT, from 21st.dev). Changed here: larger title and footer text.
 // 140+ more hand-made React components at https://studios.lou15.com/?ref=21st-code
 
 import * as React from "react";
@@ -400,12 +400,13 @@ function paintCard(cv: HTMLCanvasElement, card: WarpCard, family: string) {
   const white: [number, number, number] = [255, 255, 255];
   const accent = parseColor(card.accent || "#ffffff");
 
-  // title and footer
-  const small = sizeForCap(ctx, 300, family, 7.9, "H");
-  ctx.font = fontStr(300, small, family);
-  ctx.fillStyle = rgba(white, 0.9);
+  // title and footer (larger than the reference's 7.9 cap height, so they stay readable when the stage is
+  // narrowed to show the lens flare on a phone)
+  const small = sizeForCap(ctx, 400, family, 10.5, "H");
+  ctx.font = fontStr(400, small, family);
+  ctx.fillStyle = rgba(white, 0.92);
   const lines = (card.title || "").split("\n");
-  lines.slice(0, 2).forEach((ln, i) => ctx.fillText(ln, 17, 37 + i * 14));
+  lines.slice(0, 2).forEach((ln, i) => ctx.fillText(ln, 17, 40 + i * 17));
   if (card.footer) {
     ctx.fillStyle = rgba(white, 0.88);
     ctx.fillText(card.footer, 17, 295);
