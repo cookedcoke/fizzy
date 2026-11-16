@@ -1,12 +1,13 @@
 "use client";
 
-// Warp Carousel by Louis Studios (MIT, from 21st.dev). Changed here: larger title and footer text.
+// Warp Carousel by Louis Studios (MIT, from 21st.dev). Changed here: larger title and footer text, every numeral
+// centred, the waveform without its circle and plus marks, and a "dots" detail.
 // 140+ more hand-made React components at https://studios.lou15.com/?ref=21st-code
 
 import * as React from "react";
 
 /** The small graphic under each numeral. */
-export type WarpCardDetail = "slider" | "ring" | "wave" | "cross" | "none";
+export type WarpCardDetail = "slider" | "ring" | "wave" | "cross" | "dots" | "none";
 
 /** One stat card on the ring. */
 export interface WarpCard {
@@ -30,6 +31,8 @@ export interface WarpCard {
   accent?: string;
   /** Labels for the detail: slider ends, or the crosshair pill and its two badges. */
   labels?: string[];
+  /** For the dots detail: how many dots, and how many of them are lit. */
+  dots?: [number, number];
 }
 
 export interface WarpCarouselProps {
@@ -421,8 +424,8 @@ function paintCard(cv: HTMLCanvasElement, card: WarpCard, family: string) {
   ctx.font = fontStr(300, unitPx, family);
   const uw = card.unit ? ctx.measureText(card.unit).width + 4 : 0;
   const detail = card.detail || "none";
-  const centre = detail === "wave" ? 112 : detail === "cross" ? 106 : 127;
-  const x0 = centre - (vw + uw) / 2 + (detail === "cross" ? uw / 2 : 0);
+  const centre = CW / 2;   // every numeral centred (the reference shifted it per detail)
+  const x0 = centre - (vw + uw) / 2;
   const n0 = parseColor((card.numeral && card.numeral[0]) || "#ffffff");
   const n1 = parseColor((card.numeral && card.numeral[1]) || "#ffffff");
   const grad = ctx.createLinearGradient(x0, 0, x0 + vw, 0);
@@ -478,29 +481,28 @@ function paintCard(cv: HTMLCanvasElement, card: WarpCard, family: string) {
       ctx.textAlign = "left";
     }
   } else if (detail === "wave") {
-    ctx.fillStyle = "rgba(20, 0, 8, 0.32)"; // ls:keep
-    ctx.beginPath();
-    ctx.arc(27, 157, 18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = rgba(white, 0.75);
-    ctx.lineWidth = 0.9;
-    const plus = (px: number, py: number, r: number) => {
-      ctx.beginPath();
-      ctx.moveTo(px - r, py);
-      ctx.lineTo(px + r, py);
-      ctx.moveTo(px, py - r);
-      ctx.lineTo(px, py + r);
-      ctx.stroke();
-    };
-    plus(27, 157, 3);
-    plus(199, 157, 3);
+    // a row of level bars under the numeral, one marked in the accent colour
     for (let i = 0; i < 56; i++) {
-      const x = 43 + i * 3;
+      const x = CW / 2 - 84 + i * 3;
       const r1 = Math.abs(Math.sin(i * 1.7 + 0.4) * Math.cos(i * 0.53));
       const hh = 1.5 + 6.5 * r1;
-      const mark = i === 23;
+      const mark = i === 41;
       ctx.fillStyle = mark ? rgba(accent, 0.95) : rgba(white, 0.3);
-      ctx.fillRect(x, 204 - (mark ? 8 : hh), mark ? 1.4 : 0.9, mark ? 16 : hh * 2);
+      ctx.fillRect(x, 214 - (mark ? 8 : hh), mark ? 1.4 : 0.9, mark ? 16 : hh * 2);
+    }
+  } else if (detail === "dots") {
+    const [total, lit] = card.dots ?? [0, 0];
+    const gap = Math.min(18, 200 / Math.max(1, total));
+    const r = Math.min(4.2, gap * 0.3);
+    const x0d = CW / 2 - (gap * (total - 1)) / 2;
+    for (let i = 0; i < total; i++) {
+      ctx.save();
+      if (i < lit) { ctx.shadowColor = rgba(accent, 0.9); ctx.shadowBlur = 8 * k; ctx.fillStyle = rgba(accent, 1); }
+      else ctx.fillStyle = rgba(white, 0.22);
+      ctx.beginPath();
+      ctx.arc(x0d + i * gap, 214, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
   } else if (detail === "cross") {
     ctx.fillStyle = rgba(white, 0.28);
