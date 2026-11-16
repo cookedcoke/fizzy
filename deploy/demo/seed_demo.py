@@ -125,7 +125,9 @@ for c in tabbers:
                            {"id": f"o{seq}", "customer_id": c["square_customer_id"],
                             "line_items": [{"name": config.SQUARE_REPAYMENT_ITEM.title(), "quantity": "1", "total_money": {"amount": owed}}]})
 tabbers = [conn.execute("SELECT * FROM customers WHERE id = ?", (c["id"],)).fetchone() for c in tabbers]  # now approved
-for c in tabbers[:5]:
+# Amelia (App Review's student) always owes a little, so My CCC shows her Pay with Apple Pay button.
+owing[tabbers[0]["id"]] += tab_sale(tabbers[0], when(days[-2]), [MENU[0], MENU[7]])
+for c in tabbers[1:5]:
     for day in random.sample(days[-3:], 2):
         items = basket()[:2]
         if sum(p for _, p, _, _ in items) <= logic.tab_status(conn, c)["available_cents"]:
