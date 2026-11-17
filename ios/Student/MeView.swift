@@ -23,10 +23,9 @@ struct MeView: View {
             case .all:
                 List {
                     if urgent { TabSection(tab: tab) }
-                    if !p.member.isNull { MemberSection(member: p.member, holder: p.name.string) }
+                    PointsSection(points: p.points.int, owner: p.name.string, page: p)
                     WhatsOnSection(page: p)
                     ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
-                    PointsSection(points: p.points.int, owner: p.name.string, page: p)
                     StreakSection(streak: p.streak)
                     if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
                     if !urgent && showTab { TabSection(tab: tab) }
@@ -35,9 +34,8 @@ struct MeView: View {
             case .left:
                 List {
                     if urgent { TabSection(tab: tab) }
-                    if !p.member.isNull { MemberSection(member: p.member, holder: p.name.string) }
-                    WhatsOnSection(page: p)
                     PointsSection(points: p.points.int, owner: p.name.string, page: p)
+                    WhatsOnSection(page: p)
                     StreakSection(streak: p.streak)
                     ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
                 }
@@ -87,8 +85,8 @@ struct MeView: View {
     }
 }
 
-/// The fizzy can: the balance on a red card with bubbles rising through it, counting up from what this phone saw
-/// last time ("+120 since last time"), with the streak, badges and this month's place along the bottom.
+/// Their card with the balance in the middle, counting up from what this phone saw last time ("+120"), and the
+/// streak, badges and this month's place in a row under it.
 private struct PointsSection: View {
     let points: Int
     let owner: String
@@ -97,41 +95,19 @@ private struct PointsSection: View {
     @State private var shown = 0
 
     var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Your points").font(.subheadline.weight(.semibold)).opacity(0.85)
-                        Spacer()
-                        if gain > 0 {
-                            Text("+\(Fmt.number(gain)) since last time").font(.caption.bold())
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(.white.opacity(0.22), in: Capsule())
-                                .transition(.scale.combined(with: .opacity))
-                        }
-                    }
-                    Text(Fmt.number(shown))
-                        .font(.system(size: 54, weight: .heavy, design: .rounded)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.5)   // a long balance shrinks to fit, never wraps
-                        .contentTransition(.numericText(value: Double(shown)))
-                    Text("1 point for every cent you spend. Tab buys earn theirs when you pay them off.")
-                        .font(.footnote).opacity(0.85)
-                }
-                .padding(20)
+        Group {
+            Section {
+                // Their card: Red or Black Coke for members, white for everyone else, with the points in the middle.
+                MemberCard(member: page.member, holder: owner, points: shown, gain: gain)
+                    .padding(.vertical, 4)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 18, bottom: 28, trailing: 18))   // room for the shadow: the row clips it
+            }
+            Section {
                 if !page.isNull { stats }
+            } footer: {
+                Text("1 point for every cent you spend. Tab buys earn theirs when you pay them off. Tap the card to turn it over.")
             }
-            .foregroundStyle(.white)
-            .background {
-                ZStack {
-                    LinearGradient(colors: [Color(red: 1, green: 0.17, blue: 0.1), Color("Brand"), Color(red: 0.62, green: 0, blue: 0)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                    Fizz()
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: Color("Brand").opacity(0.35), radius: 16, y: 8)
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
         }
         .onAppear {
             // "+120 since last time": counted from what this phone saw last time, and the number counts up from there.
@@ -161,7 +137,7 @@ private struct PointsSection: View {
         return HStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, item in
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.0.uppercased()).font(.caption2.weight(.semibold)).opacity(0.75)
+                    Text(item.0.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                         .lineLimit(1).minimumScaleFactor(0.7)
                     Text(item.1).font(.system(.title3, design: .rounded).weight(.heavy)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.7)
@@ -169,11 +145,10 @@ private struct PointsSection: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, i == 0 ? 20 : 12).padding(.vertical, 10)
-                .overlay(alignment: .leading) { if i > 0 { Rectangle().fill(.white.opacity(0.18)).frame(width: 1) } }
+                .overlay(alignment: .leading) { if i > 0 { Rectangle().fill(.separator).frame(width: 1) } }
             }
         }
-        .background(.black.opacity(0.12))
-        .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.15)).frame(height: 1) }
+        .listRowInsets(EdgeInsets())
     }
 }
 

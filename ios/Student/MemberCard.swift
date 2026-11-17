@@ -43,16 +43,23 @@ final class Tilt {
 }
 
 struct MemberCard: View {
+    /// Red / Black Coke, or null for everyone else (a white card).
     let member: J
     let holder: String
+    var points = 0
+    var gain = 0
     @State private var drag = CGSize.zero
     @State private var flipped = false
     @State private var landed = false
     @Environment(\.accessibilityReduceMotion) private var still
     private var tilt: Tilt { Tilt.shared }
 
-    private var black: Bool { member.tier.string == "black" }
+    private var tier: String { member.isNull ? "white" : member.tier.string }
+    private var black: Bool { tier == "black" }
+    private var white: Bool { tier == "white" }
+    private var art: String { "Member" + tier.capitalized }
     private var pct: String { "\(member.pct.int)%" }
+    private var ink: Color { Color(red: 0.086, green: 0.075, blue: 0.06) }
 
     var body: some View {
         // The card's own sizes are those of the 1536-wide artwork, scaled to however wide it's shown.
@@ -75,7 +82,7 @@ struct MemberCard: View {
             .rotation3DEffect(.degrees(landed || still ? 0 : -70), axis: (1, 0, 0), anchor: .bottom, perspective: 0.6)
             .scaleEffect(landed || still ? 1 : 0.86)
             .opacity(landed || still ? 1 : 0)
-            .shadow(color: (black ? Color.black : Color(red: 0.55, green: 0, blue: 0.04)).opacity(black ? 0.32 : 0.28),
+            .shadow(color: (white ? Color.black : black ? Color.black : Color(red: 0.55, green: 0, blue: 0.04)).opacity(white ? 0.16 : black ? 0.32 : 0.28),
                     radius: 9, x: -lx * 6, y: 9 - ly * 4)
         }
         .aspectRatio(1536 / 969, contentMode: .fit)
@@ -94,7 +101,8 @@ struct MemberCard: View {
         }
         .onDisappear { Tilt.shared.stop() }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(member.name.string) member card. \(pct) off everything until \(Fmt.when(member.ends_on.string, "d MMMM")).")
+        .accessibilityLabel(white ? "Your card. \(Fmt.number(points)) points."
+                            : "\(member.name.string) member card. \(Fmt.number(points)) points. \(pct) off everything until \(Fmt.when(member.ends_on.string, "d MMMM")).")
         .accessibilityHint("Turns the card over.")
         .accessibilityAddTraits(.isButton)
     }
@@ -103,9 +111,9 @@ struct MemberCard: View {
 
     private func front(k: CGFloat, lx: Double, ly: Double) -> some View {
         ZStack(alignment: .topLeading) {
-            Image(black ? "MemberBlack" : "MemberRed").resizable()
+            Image(art).resizable()
             // The gloss pattern, seen only where a band of light crosses it; the band slides with the tilt.
-            Image(black ? "MemberBlackGloss" : "MemberRedGloss").resizable()
+            Image(art + "Gloss").resizable()
                 .mask {
                     LinearGradient(stops: [.init(color: .clear, location: 0.0), .init(color: .white.opacity(0.85), location: 0.47),
                                            .init(color: .white, location: 0.5), .init(color: .white.opacity(0.4), location: 0.56),
@@ -113,10 +121,10 @@ struct MemberCard: View {
                                    startPoint: UnitPoint(x: -0.6 + lx * 0.9, y: -0.4 + ly * 0.6),
                                    endPoint: UnitPoint(x: 1.0 + lx * 0.9, y: 1.1 + ly * 0.6))
                 }
-                .opacity(black ? 0.9 : 0.45)
+                .opacity(black ? 0.9 : white ? 0.7 : 0.45)
                 .blendMode(black ? .screen : .softLight)
             // Glare: a soft spot of light where the light falls.
-            RadialGradient(colors: [.white.opacity(black ? 0.16 : 0.22), .clear], center: UnitPoint(x: 0.3 + lx * 0.5, y: 0.2 + ly * 0.5),
+            RadialGradient(colors: [.white.opacity(black ? 0.16 : white ? 0.2 : 0.22), .clear], center: UnitPoint(x: 0.3 + lx * 0.5, y: 0.2 + ly * 0.5),
                            startRadius: 0, endRadius: 900 * k)
                 .blendMode(.plusLighter)
             type(k: k, lx: lx, ly: ly)
@@ -127,11 +135,32 @@ struct MemberCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Spacer()
-                metal(Text(pct).font(.custom("AvenirNext-Medium", size: 104 * k)), lx: lx)
+                if !white { metal(Text(pct).font(.custom("AvenirNext-Medium", size: 104 * k)), lx: lx) }
             }
+            .frame(height: 120 * k)
             .padding(.top, 70 * k)
             Spacer(minLength: 0)
-            metal(Text(member.name.string.uppercased()).font(.custom("AvenirNext-Medium", size: 90 * k)).tracking(20 * k), lx: lx)
+            // the points, in the middle of the card
+            VStack(spacing: 6 * k) {
+                metal(Text(Fmt.number(points)).font(.custom("AvenirNext-Medium", size: 170 * k)).monospacedDigit(), lx: lx)
+                    .contentTransition(.numericText(value: Double(points)))
+                    .lineLimit(1).minimumScaleFactor(0.5)
+                HStack(spacing: 14 * k) {
+                    Text("POINTS").font(.system(size: 26 * k, design: .monospaced)).tracking(8 * k)
+                        .foregroundStyle(white ? ink.opacity(0.55) : .white.opacity(0.65))
+                    if gain > 0 {
+                        Text("+\(Fmt.number(gain))").font(.system(size: 24 * k, weight: .semibold, design: .monospaced))
+                            .padding(.horizontal, 12 * k).padding(.vertical, 4 * k)
+                            .background(white ? AnyShapeStyle(ink.opacity(0.08)) : AnyShapeStyle(.white.opacity(0.16)), in: Capsule())
+                            .foregroundStyle(white ? ink.opacity(0.75) : .white.opacity(0.9))
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .offset(y: -40 * k)
+            Spacer(minLength: 0)
+            metal(Text(white ? "MY CCC" : member.name.string.uppercased()).font(.custom("AvenirNext-Medium", size: 90 * k)).tracking(20 * k), lx: lx)
                 .lineLimit(1).minimumScaleFactor(0.6)
             if black {
                 Rectangle().fill(Color(red: 0.84, green: 0.09, blue: 0.12)).frame(width: 118 * k, height: 4 * k).padding(.top, 10 * k)
@@ -152,6 +181,8 @@ struct MemberCard: View {
                         .init(color: Color(white: 0.97), location: 0.55 + lx * 0.25), .init(color: Color(white: 0.5), location: 1)],
                 startPoint: .top, endPoint: .bottom))
                 .shadow(color: .black.opacity(0.7), radius: 0.5, y: 1.5)
+        } else if white {
+            text.foregroundStyle(ink).shadow(color: .white.opacity(0.8), radius: 0, y: 1.5)   // printed, a hair embossed
         } else {
             text.foregroundStyle(.white).shadow(color: .black.opacity(0.18), radius: 6, y: 3)
         }
@@ -161,36 +192,57 @@ struct MemberCard: View {
 
     private func back(k: CGFloat, lx: Double, ly: Double) -> some View {
         ZStack {
-            Image(black ? "MemberBlack" : "MemberRed").resizable()
+            Image(art).resizable()
                 .scaleEffect(x: -1, y: 1)
-                .overlay(Color.black.opacity(black ? 0.35 : 0.25))
+                .overlay(Color.black.opacity(black ? 0.35 : white ? 0.03 : 0.25))
             // the magnetic stripe, as on a real card
             VStack(spacing: 0) {
                 Rectangle().fill(LinearGradient(colors: [Color(white: 0.05), Color(white: 0.12), Color(white: 0.04)], startPoint: .top, endPoint: .bottom))
                     .frame(height: 150 * k).padding(.top, 90 * k)
                 Spacer()
             }
-            VStack(alignment: .leading, spacing: 18 * k) {
-                Spacer()
-                Text("\(pct) off everything at the stall, all term.")
-                    .font(.custom("AvenirNext-Medium", size: 48 * k)).foregroundStyle(.white)
-                Text("Say you're \(member.name.string) when you pay, and the discount comes off before anything goes on your tab. Free rewards stay free.")
-                    .font(.system(size: 28 * k, design: .monospaced)).foregroundStyle(.white.opacity(0.75))
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(line).font(.system(size: 26 * k, design: .monospaced)).tracking(4 * k)
-                    .foregroundStyle(.white.opacity(0.6)).lineLimit(1).minimumScaleFactor(0.5)
+            if white {
+                VStack(alignment: .leading, spacing: 18 * k) {
+                    Spacer()
+                    Text("Get 10% or 20% off everything.")
+                        .font(.custom("AvenirNext-Medium", size: 48 * k)).foregroundStyle(ink)
+                    Text("Red Coke is $5 for 10% off, Black Coke $12 for 20% off, all term. Ask at the stall and this card turns red or black.")
+                        .font(.system(size: 28 * k, design: .monospaced)).foregroundStyle(ink.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .lastTextBaseline) {
+                        Text(holder.uppercased()).font(.system(size: 36 * k, design: .monospaced)).tracking(5 * k).foregroundStyle(ink)
+                            .lineLimit(1).minimumScaleFactor(0.5)
+                        Spacer(minLength: 20 * k)
+                        Text("COOKED COKE CO").font(.system(size: 26 * k, design: .monospaced)).tracking(3 * k)
+                            .foregroundStyle(ink.opacity(0.55)).lineLimit(1).fixedSize()
+                    }
                     .padding(.top, 12 * k)
-                HStack(alignment: .lastTextBaseline) {
-                    metal(Text(holder.uppercased()).font(.system(size: 36 * k, design: .monospaced)).tracking(5 * k), lx: lx, soft: true)
-                        .lineLimit(1).minimumScaleFactor(0.5)
-                    Spacer(minLength: 20 * k)
-                    Text("VALID TO  \(Fmt.when(member.ends_on.string, "d MMM yyyy").uppercased())")
-                        .font(.system(size: 26 * k, design: .monospaced)).tracking(3 * k)
-                        .foregroundStyle(.white.opacity(0.6)).lineLimit(1).fixedSize()
                 }
+                .padding(.horizontal, 92 * k).padding(.bottom, 70 * k)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 18 * k) {
+                    Spacer()
+                    Text("\(pct) off everything at the stall, all term.")
+                        .font(.custom("AvenirNext-Medium", size: 48 * k)).foregroundStyle(.white)
+                    Text("Say you're \(member.name.string) when you pay, and the discount comes off before anything goes on your tab. Free rewards stay free.")
+                        .font(.system(size: 28 * k, design: .monospaced)).foregroundStyle(.white.opacity(0.75))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(line).font(.system(size: 26 * k, design: .monospaced)).tracking(4 * k)
+                        .foregroundStyle(.white.opacity(0.6)).lineLimit(1).minimumScaleFactor(0.5)
+                        .padding(.top, 12 * k)
+                    HStack(alignment: .lastTextBaseline) {
+                        metal(Text(holder.uppercased()).font(.system(size: 36 * k, design: .monospaced)).tracking(5 * k), lx: lx, soft: true)
+                            .lineLimit(1).minimumScaleFactor(0.5)
+                        Spacer(minLength: 20 * k)
+                        Text("VALID TO  \(Fmt.when(member.ends_on.string, "d MMM yyyy").uppercased())")
+                            .font(.system(size: 26 * k, design: .monospaced)).tracking(3 * k)
+                            .foregroundStyle(.white.opacity(0.6)).lineLimit(1).fixedSize()
+                    }
+                }
+                .padding(.horizontal, 92 * k).padding(.bottom, 70 * k)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 92 * k).padding(.bottom, 70 * k)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -203,7 +255,7 @@ struct MemberCard: View {
         return ZStack {
             shape.strokeBorder(AngularGradient(stops: [
                 .init(color: .white.opacity(black ? 0.85 : 0.6), location: 0), .init(color: .white.opacity(0.08), location: 0.25),
-                .init(color: .black.opacity(0.3), location: 0.5), .init(color: .white.opacity(0.08), location: 0.75),
+                .init(color: .black.opacity(white ? 0.14 : 0.3), location: 0.5), .init(color: .white.opacity(0.08), location: 0.75),
                 .init(color: .white.opacity(black ? 0.85 : 0.6), location: 1)],
                 center: .center, angle: angle), lineWidth: max(1.2, 4 * k))
             if black {
@@ -213,22 +265,5 @@ struct MemberCard: View {
             }
         }
         .allowsHitTesting(false)
-    }
-}
-
-/// The card as a row of its own in the home list.
-struct MemberSection: View {
-    let member: J
-    let holder: String
-
-    var body: some View {
-        Section {
-            MemberCard(member: member, holder: holder)
-                .padding(.vertical, 4)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 2, leading: 18, bottom: 30, trailing: 18))   // room for the shadow: the row clips it
-        } footer: {
-            Text("Tap to turn it over. Tilt your phone to catch the light.")
-        }
     }
 }

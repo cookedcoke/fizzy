@@ -534,21 +534,44 @@ AVENIR = [   # thicker takes on Avenir Next for the name (and the %), small type
 # The chosen look: Avenir Next Medium for the name and the %, SF Mono for everything under it.
 FINAL = ("Final", F("Avenir Next.ttc", 5), 90, 20, F("SFNSMono.ttf"), F("SFNSMono.ttf"), 38, F("Avenir Next.ttc", 5))
 
+def white_bg():
+    """Everyone's card before they're a member: pearl white, the same facets, barely there."""
+    def colour(cx, cy, shade, rnd):
+        light = max(0, 1 - math.hypot(cx * 0.9, cy * 1.1) / 1.25)
+        return mix((206, 203, 197), (250, 249, 246), min(1, 0.45 + shade * 0.3 + light * 0.3))
+    return facets(colour, seed=5)
+
+
+def ink_logo(width):
+    """The logo for a light card: the C keeps its red, the words go ink."""
+    im = LOGO.copy()
+    r, g, b, a = im.split()
+    words = Image.new("RGBA", im.size, (22, 19, 15, 255))
+    words.putalpha(a)
+    out = im.copy()
+    out.paste(words.crop((880, 0, im.width, im.height)), (880, 0))
+    return out.resize((width, round(out.height * width / out.width)), Image.LANCZOS)
+
+
 def export_app(dest):
     """The card art for My CCC: each tier's base (with the logo) and its gloss layer, which the app
     reveals with a band of light that follows the phone's tilt. Type is drawn by the app."""
     size = (1200, round(1200 * H / W))
-    for tier in ("black", "red"):
-        base = black_bg(app=True) if tier == "black" else red_bg(app=True)
-        shadowed(base, tier_logo(tier, 380), (90, 86), alpha=0.7 if tier == "black" else 0.35)
-        lo, hi = ((30, 30, 33), (110, 110, 118)) if tier == "black" else ((170, 20, 28), (255, 120, 120))
+    for tier in ("black", "red", "white"):
+        base = {"black": lambda: black_bg(app=True), "red": lambda: red_bg(app=True), "white": white_bg}[tier]()
+        if tier == "white":
+            shadowed(base, ink_logo(380), (90, 86), blur=8, alpha=0.12, off=(1, 3))
+        else:
+            shadowed(base, tier_logo(tier, 380), (90, 86), alpha=0.7 if tier == "black" else 0.35)
+        lo, hi = {"black": ((30, 30, 33), (110, 110, 118)), "red": ((170, 20, 28), (255, 120, 120)),
+                  "white": ((188, 186, 182), (255, 255, 255))}[tier]
         shine = facets(lambda cx, cy, shade, rnd: mix(lo, hi, shade ** 0.8 * rnd.uniform(0.7, 1.0)), seed=5)
         for name, im in ((f"Member{tier.title()}", base), (f"Member{tier.title()}Gloss", shine)):
             folder = dest / f"{name}.imageset"
             folder.mkdir(parents=True, exist_ok=True)
             im.convert("RGB").resize(size, Image.LANCZOS).save(folder / f"{name}.jpg", quality=88, optimize=True)
             (folder / "Contents.json").write_text('{"images":[{"filename":"%s.jpg","idiom":"universal","scale":"1x"}],'
-                                                  '"info":{"author":"xcode","version":1}}' % f"{name}.jpg")
+                                                  '"info":{"author":"xcode","version":1}}' % name)
     print("wrote app art to", dest)
 
 
