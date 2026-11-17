@@ -72,9 +72,9 @@ struct MemberCard: View {
             Flip(angle: flipped ? 180 : 0,
                  front: front(k: k, lx: lx, ly: ly).clipShape(shape).overlay { edge(k: k, lx: lx, ly: ly) },
                  back: back(k: k, lx: lx, ly: ly).clipShape(shape).overlay { edge(k: k, lx: lx, ly: ly) })
-            .rotation3DEffect(.degrees(lx * 9), axis: (0, 1, 0), perspective: 0.45)
-            .rotation3DEffect(.degrees(-ly * 7), axis: (1, 0, 0), perspective: 0.45)
-            .rotation3DEffect(.degrees(landed || still ? 0 : -70), axis: (1, 0, 0), anchor: .bottom, perspective: 0.6)
+            .rotation3DEffect(.degrees(lx * 9), axis: (0, 1, 0), perspective: 0)
+            .rotation3DEffect(.degrees(-ly * 7), axis: (1, 0, 0), perspective: 0)
+            .rotation3DEffect(.degrees(landed || still ? 0 : -70), axis: (1, 0, 0), anchor: .bottom, perspective: 0)
             .scaleEffect(landed || still ? 1 : 0.86)
             .opacity(landed || still ? 1 : 0)
             .shadow(color: (white ? Color.black : black ? Color.black : Color(red: 0.55, green: 0, blue: 0.04)).opacity(white ? 0.16 : black ? 0.32 : 0.28),
@@ -293,6 +293,6 @@ private struct Flip<Front: View, Back: View>: View, Animatable {
             front.opacity(showsBack ? 0 : 1)
             back.rotation3DEffect(.degrees(180), axis: (0, 1, 0)).opacity(showsBack ? 1 : 0)
         }
-        .rotation3DEffect(.degrees(angle), axis: (0, 1, 0), perspective: 0.45)
+        .rotation3DEffect(.degrees(angle), axis: (0, 1, 0), perspective: 0)
     }
 }
