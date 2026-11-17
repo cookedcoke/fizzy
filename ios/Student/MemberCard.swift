@@ -189,10 +189,21 @@ struct MemberCard: View {
         ZStack {
             Image(art).resizable()
                 .scaleEffect(x: -1, y: 1)
-                .overlay(Color.black.opacity(black ? 0.35 : white ? 0.03 : 0.25))
-            // the magnetic stripe, as on a real card
+                .overlay(Color.black.opacity(black ? 0.12 : white ? 0.03 : 0.25))
+            // the magnetic stripe, as on a real card: glossy, with a sheen that slides with the tilt and fine
+            // edges, so it still reads as a stripe on Black Coke's dark back
             VStack(spacing: 0) {
-                Rectangle().fill(LinearGradient(colors: [Color(white: 0.05), Color(white: 0.12), Color(white: 0.04)], startPoint: .top, endPoint: .bottom))
+                Rectangle()
+                    .fill(LinearGradient(colors: [Color(white: 0.02), Color(white: 0.09), Color(white: 0.01)], startPoint: .top, endPoint: .bottom))
+                    .overlay {
+                        LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.16), location: 0.5),
+                                               .init(color: .clear, location: 1)],
+                                       startPoint: UnitPoint(x: 0.15 - lx * 0.5, y: 0), endPoint: UnitPoint(x: 0.55 - lx * 0.5, y: 1))
+                            .blendMode(.plusLighter)
+                    }
+                    .overlay(alignment: .top) { Rectangle().fill(.white.opacity(black ? 0.22 : 0.1)).frame(height: max(1, 2 * k)) }
+                    .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(black ? 0.12 : 0.06)).frame(height: max(1, 2 * k)) }
+                    .shadow(color: .black.opacity(0.5), radius: 6 * k, y: 4 * k)
                     .frame(height: 150 * k).padding(.top, 90 * k)
                 Spacer()
             }
