@@ -25,11 +25,11 @@ final class Tilt {
             // Measured from how the phone was held when the card appeared, so any comfortable angle is "flat".
             let base = self.rest ?? (g.x, g.y)
             if self.rest == nil { self.rest = base }
-            let tx = max(-1, min(1, (g.x - base.0) * 2.6)), ty = max(-1, min(1, (g.y - base.1) * 2.6))
-            self.x += (tx - self.x) * 0.18
-            self.y += (ty - self.y) * 0.18
-            // the resting angle slowly follows the hand, so after a while the light settles back
-            self.rest = (base.0 + (g.x - base.0) * 0.01, base.1 + (g.y - base.1) * 0.01)
+            let tx = max(-1, min(1, (g.x - base.0) * 3.4)), ty = max(-1, min(1, (g.y - base.1) * 3.4))
+            self.x += (tx - self.x) * 0.22
+            self.y += (ty - self.y) * 0.22
+            // the resting angle slowly follows the hand, so after a while the card settles back level
+            self.rest = (base.0 + (g.x - base.0) * 0.005, base.1 + (g.y - base.1) * 0.005)
         }
     }
 
@@ -51,6 +51,9 @@ struct MemberCard: View {
     @State private var drag = CGSize.zero
     @State private var flipped = false
     @State private var landed = false
+    @State private var peek = 0.0
+    /// Until they've turned it once, the card lifts its edge after landing to show it turns over.
+    @AppStorage("card-turned") private var turned = false
     @Environment(\.accessibilityReduceMotion) private var still
     private var tilt: Tilt { Tilt.shared }
 
@@ -63,27 +66,30 @@ struct MemberCard: View {
 
     var body: some View {
         // The card's own sizes are those of the 1536-wide artwork, scaled to however wide it's shown.
+        VStack(spacing: 10) {
         GeometryReader { geo in
             let k = geo.size.width / 1536
             // where the light is: the phone's tilt, or a finger dragging the card
             let lx = still ? 0 : max(-1, min(1, tilt.x + drag.width / 160))
             let ly = still ? 0 : max(-1, min(1, tilt.y + drag.height / 160))
             let shape = RoundedRectangle(cornerRadius: 58 * k, style: .continuous)
-            Flip(angle: flipped ? 180 : 0,
+            Flip(angle: (flipped ? 180 : 0) + peek,
                  front: front(k: k, lx: lx, ly: ly).clipShape(shape).overlay { edge(k: k, lx: lx, ly: ly) },
                  back: back(k: k, lx: lx, ly: ly).clipShape(shape).overlay { edge(k: k, lx: lx, ly: ly) })
-            .rotation3DEffect(.degrees(lx * 9), axis: (0, 1, 0), perspective: 0)
-            .rotation3DEffect(.degrees(-ly * 7), axis: (1, 0, 0), perspective: 0)
+            // the card itself leans with the phone, with a little depth (turning over stays flat: see Flip)
+            .rotation3DEffect(.degrees(lx * 16), axis: (0, 1, 0), perspective: 0.35)
+            .rotation3DEffect(.degrees(-ly * 13), axis: (1, 0, 0), perspective: 0.35)
             .rotation3DEffect(.degrees(landed || still ? 0 : -70), axis: (1, 0, 0), anchor: .bottom, perspective: 0)
             .scaleEffect(landed || still ? 1 : 0.86)
             .opacity(landed || still ? 1 : 0)
             .shadow(color: (white ? Color.black : black ? Color.black : Color(red: 0.55, green: 0, blue: 0.04)).opacity(white ? 0.16 : black ? 0.32 : 0.28),
-                    radius: 9, x: -lx * 6, y: 9 - ly * 4)
+                    radius: 9 + abs(lx) * 4, x: -lx * 12, y: 9 - ly * 8)
         }
         .aspectRatio(1536 / 969, contentMode: .fit)
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.spring(duration: 0.7, bounce: 0.18)) { flipped.toggle() }
+            turned = true
+            withAnimation(.spring(duration: 0.7, bounce: 0.18)) { peek = 0; flipped.toggle() }
         }
         .gesture(DragGesture(minimumDistance: 4)
             .onChanged { v in if !still { drag = v.translation } }
@@ -94,12 +100,26 @@ struct MemberCard: View {
             Tilt.shared.start()
             withAnimation(.spring(duration: 0.9, bounce: 0.25).delay(0.1)) { landed = true }
         }
+        .task {
+            guard !turned, !still else { return }
+            try? await Task.sleep(for: .seconds(1.3))
+            withAnimation(.easeInOut(duration: 0.45)) { peek = 42 }
+            try? await Task.sleep(for: .seconds(0.45))
+            withAnimation(.spring(duration: 0.6, bounce: 0.45)) { peek = 0 }
+        }
         .onDisappear { Tilt.shared.stop() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(white ? "Your card. \(Fmt.number(points)) points."
                             : "\(member.name.string) member card. \(Fmt.number(points)) points. \(pct) off everything until \(Fmt.when(member.ends_on.string, "d MMMM")).")
         .accessibilityHint("Turns the card over.")
         .accessibilityAddTraits(.isButton)
+
+            Label(flipped ? "Tap to turn back" : "Tap to turn over", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
+                .font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+                .contentTransition(.opacity)
+                .opacity(landed || still ? 1 : 0)
+                .accessibilityHidden(true)
+        }
     }
 
     // MARK: front

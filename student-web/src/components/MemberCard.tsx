@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { RefreshCw } from "lucide-react";
 import type { Member } from "@/lib/api";
 import { num } from "@/lib/format";
 import black from "@/assets/member/MemberBlack.jpg";
@@ -228,6 +229,10 @@ export function MemberCard({ member, holder, points, gain }: { member: Member | 
           </div>
         </div>
       </button>
+      <p aria-hidden className="mt-3 flex items-center justify-center gap-1.5 text-[13px] font-medium text-muted">
+        <RefreshCw className="size-3.5" strokeWidth={2.2} />
+        {flipped ? "Tap to turn back" : "Tap to turn over"}
+      </p>
     </div>
   );
 }

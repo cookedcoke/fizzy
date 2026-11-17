@@ -101,12 +101,12 @@ private struct PointsSection: View {
                 MemberCard(member: page.member, holder: owner, points: shown, gain: gain)
                     .padding(.vertical, 4)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 2, leading: 18, bottom: 28, trailing: 18))   // room for the shadow: the row clips it
+                    .listRowInsets(EdgeInsets(top: 10, leading: 18, bottom: 16, trailing: 18))   // room for the shadow: the row clips it
             }
             Section {
                 if !page.isNull { stats }
             } footer: {
-                Text("1 point for every cent you spend. Tab buys earn theirs when you pay them off. Tap the card to turn it over.")
+                Text("1 point for every cent you spend. Tab buys earn theirs when you pay them off.")
             }
         }
         .onAppear {
