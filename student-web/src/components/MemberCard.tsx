@@ -116,11 +116,21 @@ export function MemberCard({ member, holder, points, gain }: { member: Member | 
   const face: CSSProperties = { position: "absolute", inset: 0, borderRadius: u(58), overflow: "hidden",
     backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", containerType: "inline-size" };
   const edgeAngle = Math.atan2(-0.4 - ly, -0.6 - lx) * 180 / Math.PI + 90;
+  // a metal rim, as in My CCC: a band of chrome (polished red on Red Coke) whose bright side turns to the light,
+  // a dark groove where it meets the face and a bright hairline outside
+  const [hi, mid, lo] = tier === "red" ? ["#FFB8B8", "#B80F1A", "#520008"] : isWhite ? ["#FFFFFF", "#C7C7C7", "#8C8C8C"] : ["#F5F5F5", "#808080", "#292929"];
+  const rim = `max(3px, ${(18 / 1536) * 100}cqw)`;
+  const ring: CSSProperties = { WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)", WebkitMaskComposite: "xor",
+    mask: "linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0)" };
   const edge = (
-    <div aria-hidden style={{ position: "absolute", inset: 0, borderRadius: u(58), padding: "max(1.2px, 0.26cqw)", pointerEvents: "none",
-      background: `conic-gradient(from ${edgeAngle}deg, rgba(255,255,255,${isBlack ? .85 : .6}), rgba(255,255,255,.08) 25%, rgba(0,0,0,${isWhite ? .14 : .3}) 50%, rgba(255,255,255,.08) 75%, rgba(255,255,255,${isBlack ? .85 : .6}))`,
-      WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)", WebkitMaskComposite: "xor",
-      mask: "linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0)" }} />
+    <div aria-hidden className="pointer-events-none absolute inset-0">
+      <div style={{ position: "absolute", inset: 0, borderRadius: u(58), padding: rim, ...ring,
+        background: `conic-gradient(from ${edgeAngle}deg, ${hi}, ${mid} 12%, ${lo} 30%, ${mid} 45%, ${hi} 55%, ${lo} 72%, ${mid} 88%, ${hi})`,
+        boxShadow: `inset 0 0 0 max(.5px, .08cqw) rgba(255,255,255,${isWhite ? .9 : .55})` }} />
+      {isBlack && <div style={{ position: "absolute", inset: 0, borderRadius: u(58), padding: rim, ...ring, mixBlendMode: "plus-lighter", opacity: .09,
+        background: `conic-gradient(from ${edgeAngle * 2}deg, red, orange, yellow, lime, cyan, blue, purple, red)` }} />}
+      <div style={{ position: "absolute", inset: rim, borderRadius: u(40), border: `max(.6px, .13cqw) solid rgba(0,0,0,${isWhite ? .18 : .45})` }} />
+    </div>
   );
 
   return (
