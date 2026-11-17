@@ -160,7 +160,9 @@ private struct PointsSection: View {
             ForEach(Array(items.enumerated()), id: \.offset) { i, item in
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.0.uppercased()).font(.caption2.weight(.semibold)).opacity(0.75)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                     Text(item.1).font(.system(.title3, design: .rounded).weight(.heavy)).monospacedDigit()
+                        .lineLimit(1).minimumScaleFactor(0.7)
                         .contentTransition(.numericText())
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -195,50 +197,76 @@ private struct StreakSection: View {
     }
 }
 
+/// Each reward is a card of its own, so a ready one can glow with a light round its edge without fighting the
+/// list's own rounded corners (sharing one grouped card, the glow's corners and the card's never matched).
 private struct RewardsSection: View {
     let offers: [J]
+    static let radius: CGFloat = 22
 
     var body: some View {
         Section("Rewards") {
-            ForEach(offers.sorted { $0.can_redeem.bool && !$1.can_redeem.bool }, id: \.self) { o in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(o.name.string).bold()
-                        Spacer()
-                        if o.can_redeem.bool {
-                            Label("Ready", systemImage: "sparkles").font(.caption.bold()).padding(.horizontal, 8).padding(.vertical, 2)
-                                .background(.yellow.opacity(0.3), in: Capsule())
-                                .foregroundStyle(Color(UIColor { $0.userInterfaceStyle == .dark ? .systemYellow : UIColor(red: 0.45, green: 0.3, blue: 0, alpha: 1) }))
-                                .symbolEffect(.pulse, options: .repeating)
-                        }
-                        Text("\(Fmt.number(o.points_cost.int)) pts").foregroundStyle(.secondary).monospacedDigit()
-                    }
-                    if o.can_redeem.bool {
-                        Text("It's yours - just ask at the stall.").font(.subheadline).foregroundStyle(.secondary)
-                    } else if o.limit_hit.bool {
-                        Text(o.per_customer_limit.int > 1 ? "You've used this one \(o.used.int) times - that's the limit."
-                             : "You've used this one - that's the limit.").font(.subheadline).foregroundStyle(.secondary)
-                    } else {
-                        let cost = max(1, o.points_cost.int)
-                        // short can be more than the cost when points are below zero: an empty bar, not none
-                        ProgressView(value: Double(min(cost, max(0, cost - o.short.int))), total: Double(cost))
-                        Text("\(Fmt.number(o.short.int)) more points to go.").font(.subheadline).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 2)
-                .listRowBackground(o.can_redeem.bool ? AnyView(ReadyGlow()) : AnyView(Color(.secondarySystemGroupedBackground)))
+            // Ready ones first; otherwise the order the stall set.
+            let sorted = offers.enumerated().sorted { a, b in
+                a.element.can_redeem.bool != b.element.can_redeem.bool ? a.element.can_redeem.bool : a.offset < b.offset
+            }.map(\.element)
+            ForEach(Array(sorted.enumerated()), id: \.offset) { _, o in
+                card(o)
+                    .listRowInsets(EdgeInsets(top: 5, leading: 0, bottom: 5, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
         }
         .tint(Color("Brand"))
     }
+
+    private func card(_ o: J) -> some View {
+        let ready = o.can_redeem.bool
+        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(o.name.string).bold().lineLimit(2)
+                Spacer(minLength: 4)
+                if ready {
+                    HStack(spacing: 3) {
+                        Image(systemName: "sparkles").symbolEffect(.pulse, options: .repeating)
+                        Text("Ready")
+                    }
+                    .font(.caption.bold()).lineLimit(1)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(.yellow.opacity(0.3), in: Capsule())
+                    .foregroundStyle(Color(UIColor { $0.userInterfaceStyle == .dark ? .systemYellow : UIColor(red: 0.45, green: 0.3, blue: 0, alpha: 1) }))
+                    .layoutPriority(1)
+                }
+                Text("\(Fmt.number(o.points_cost.int)) pts").foregroundStyle(.secondary).monospacedDigit().lineLimit(1).layoutPriority(1)
+            }
+            if ready {
+                Text("It's yours - just ask at the stall.").font(.subheadline).foregroundStyle(.secondary)
+            } else if o.limit_hit.bool {
+                Text(o.per_customer_limit.int > 1 ? "You've used this one \(o.used.int) times - that's the limit."
+                     : "You've used this one - that's the limit.").font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                let cost = max(1, o.points_cost.int)
+                // short can be more than the cost when points are below zero: an empty bar, not none
+                ProgressView(value: Double(min(cost, max(0, cost - o.short.int))), total: Double(cost))
+                Text("\(Fmt.number(o.short.int)) more points to go.").font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            shape.fill(Color(.secondarySystemGroupedBackground))
+            if ready { shape.fill(LinearGradient(colors: [.clear, .yellow.opacity(0.22)], startPoint: .leading, endPoint: .trailing)) }
+        }
+        .modifier(ReadyShine(on: ready, radius: Self.radius))
+    }
 }
 
-/// Behind a reward that's ready: warm light and a band running round its edge.
-private struct ReadyGlow: View {
-    var body: some View {
-        LinearGradient(colors: [Color(.secondarySystemGroupedBackground), Color.yellow.opacity(0.22)], startPoint: .leading, endPoint: .trailing)
-            .shineBorder(width: 2, radius: 12)
-            .padding(1)
+/// The light running round a ready reward's edge, on the card's own corners.
+private struct ReadyShine: ViewModifier {
+    let on: Bool
+    let radius: CGFloat
+    func body(content: Content) -> some View {
+        if on { content.shineBorder(width: 2, radius: radius) } else { content }
     }
 }
 

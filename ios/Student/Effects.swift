@@ -13,7 +13,8 @@ struct ShineBorder: ViewModifier {
 
     func body(content: Content) -> some View {
         content.overlay {
-            TimelineView(.animation(paused: still)) { tl in
+            // 30 frames a second is plenty for a slow sweep, and half the work (several can be on screen at once)
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: still)) { tl in
                 let turn = still ? 0 : tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(AngularGradient(colors: colors + [colors[0]], center: .center, angle: .degrees(turn * 360)),
