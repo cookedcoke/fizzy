@@ -36,8 +36,8 @@ export function Home({ me, reload, onOut }: { me: Me; reload: () => void; onOut:
   </>;
   const tierPill = me.member && (
     <span className={me.member.tier === "black"
-      ? "rounded-full bg-[#151515] px-3 py-1 text-[12.5px] font-semibold tracking-wide text-[#E9E9EC] ring-1 ring-[#E41E2B]/70 dark:bg-[#E9E9EC] dark:text-[#151515]"
-      : "rounded-full bg-[#E41E2B] px-3 py-1 text-[12.5px] font-semibold tracking-wide text-white"}>{me.member.name}</span>);
+      ? "whitespace-nowrap rounded-full bg-[#151515] px-2.5 py-1 text-[12.5px] font-semibold tracking-wide text-[#E9E9EC] ring-1 ring-[#E41E2B]/70 dark:bg-[#E9E9EC] dark:text-[#151515]"
+      : "whitespace-nowrap rounded-full bg-[#E41E2B] px-2.5 py-1 text-[12.5px] font-semibold tracking-wide text-white"}><span className="max-[400px]:hidden">{me.member.name}</span><span className="min-[401px]:hidden">{me.member.tier === "black" ? "Black" : "Red"}</span></span>);
   const out = async () => { await api.logout(); onOut(); };
   return (
     <>
@@ -59,7 +59,7 @@ export function Home({ me, reload, onOut }: { me: Me; reload: () => void; onOut:
             {wide && <BlurFade delay={.05} direction="up" offset={10}>{card}<StatRing me={me} wide /></BlurFade>}
             {wide && whatsOn}
             {!scanned && cards}
-            <Rewards offers={me.offers} />
+            <Rewards offers={me.offers} points={me.points} />
             {!urgent && showTab && <TabCard t={t} />}
             <ActivityFeed items={me.activity} />
           </div>

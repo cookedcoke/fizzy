@@ -13,9 +13,9 @@ export function TopBar({ right, tag }: { right?: ReactNode; tag?: ReactNode }) {
     <header className={cn("sticky top-0 z-40 transition-[background-color,box-shadow,backdrop-filter] duration-300",
       under && "bg-cream/75 shadow-[0_1px_0_var(--line)] backdrop-blur-xl backdrop-saturate-150")}>
       <div className="mx-auto flex max-w-[960px] items-center justify-between px-[18px] pt-[max(12px,env(safe-area-inset-top))] pb-3">
-        <span className="flex items-center gap-2 font-display text-[17px] font-extrabold">
+        <span className="flex min-w-0 items-center gap-2 whitespace-nowrap font-display text-[17px] font-extrabold">
           <img src="/static/logo.svg" alt="" className="size-7" />My Cooked Coke</span>
-        <span className="flex items-center gap-2">{tag}{right}</span>
+        <span className="flex flex-none items-center gap-2 whitespace-nowrap">{tag}{right}</span>
       </div>
     </header>
   );
