@@ -24,6 +24,7 @@ struct CodeScanner: View {
         return url.lastPathComponent
     }
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     /// Made once the sheet is up (in .task), not each time a parent redraws: a capture session isn't cheap.
     @State private var camera: Camera?
     @State private var pinchFrom: CGFloat?
@@ -70,6 +71,15 @@ struct CodeScanner: View {
             await camera.start()
         }
         .onDisappear { camera?.stop() }
+        // The camera and the poster reader are about the hardest work a phone does, so the scanner never runs
+        // unattended: it closes as soon as the app isn't in front, and after 90 seconds without a code. (Closing
+        // the iPhone Duo doesn't send the app to the background, it moves it to the outer screen, so a scanner left
+        // open would otherwise keep going in a pocket.)
+        .onChange(of: scenePhase) { _, now in if now != .active { dismiss() } }
+        .task {
+            try? await Task.sleep(for: .seconds(90))
+            if !Task.isCancelled { dismiss() }
+        }
     }
 
     /// Corners to line the code or poster up in. Only a guide: anything in the frame still reads.
