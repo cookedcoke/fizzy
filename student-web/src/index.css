@@ -49,6 +49,8 @@
      (superellipse(1) is a plain round corner, 2 a full squircle; 1.8 keeps the corners soft.) */
   @supports (corner-shape: squircle) {
     *:not(.rounded-full) { corner-shape: superellipse(1.8); }
+    /* the member card is a real card's shape: plain round corners, so its edge and its face match */
+    .member-card, .member-card * { corner-shape: round; }
   }
   html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
   /* clip, not hidden: full-bleed parts (the stats ring) span 100vw, which includes a desktop scrollbar */
