@@ -82,12 +82,37 @@ function useLight(target: { x: number; y: number }, still: boolean) {
   return pos;
 }
 
+/** The card's turn, 0 to 180 degrees, eased with a little overshoot. Driven here rather than by a CSS transition
+ *  so each face can be drawn only while it faces you (Safari mirrored the back when it relied on 3D nesting). */
+function useTurn(flipped: boolean, still: boolean) {
+  const [angle, set] = useState(0);
+  const cur = useRef(0);
+  useEffect(() => {
+    const to = flipped ? 180 : 0, from = cur.current;
+    if (still || from === to) { cur.current = to; set(to); return; }
+    const t0 = performance.now(), ms = 700;
+    let raf = 0;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - t0) / ms), q = p - 1;
+      const e = 1 + 2.2 * q * q * q + 1.2 * q * q;   // ease out, overshooting a touch
+      cur.current = from + (to - from) * e;
+      set(cur.current);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [flipped, still]);
+  return angle;
+}
+
 export function MemberCard({ member, holder, points, gain }: { member: Member | null; holder: string; points: number; gain: number }) {
   const tier = member?.tier ?? "white";
   const isBlack = tier === "black", isWhite = tier === "white";
   const [base, gloss] = ART[tier];
   const still = useStill();
   const [flipped, setFlipped] = useState(false);
+  const turn = useTurn(flipped, useStill());
+  const backOn = turn > 90;
   const [aim, setAim] = useState({ x: 0, y: 0 });
   const shown = useCountUp(Math.max(0, points - gain), points, still);
   const ref = useRef<HTMLButtonElement>(null);
@@ -114,7 +139,7 @@ export function MemberCard({ member, holder, points, gain }: { member: Member | 
   } : isWhite ? { color: INK, textShadow: "0 1.5px 0 rgba(255,255,255,.8)" } : { color: "#fff", textShadow: "0 3px 6px rgba(0,0,0,.18)" };
 
   const face: CSSProperties = { position: "absolute", inset: 0, borderRadius: u(58), overflow: "hidden",
-    backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", containerType: "inline-size" };
+    containerType: "inline-size" };
   const edgeAngle = Math.atan2(-0.4 - ly, -0.6 - lx) * 180 / Math.PI + 90;
   // a metal rim, as in My CCC: a band of chrome (polished red on Red Coke) whose bright side turns to the light,
   // a dark groove where it meets the face and a bright hairline outside
@@ -142,11 +167,10 @@ export function MemberCard({ member, holder, points, gain }: { member: Member | 
           transform: `rotateY(${lx * 9}deg) rotateX(${-ly * 7}deg)`,
           filter: `drop-shadow(${-lx * 6}px ${9 - ly * 4}px 9px ${isWhite ? "rgba(0,0,0,.16)" : isBlack ? "rgba(0,0,0,.32)" : "rgba(140,0,10,.28)"})`,
           animation: still ? undefined : "member-land .9s cubic-bezier(.2,1.25,.4,1) both" }}>
-        <div style={{ position: "absolute", inset: 0, transformStyle: "preserve-3d",
-          transform: `rotateY(${flipped ? 180 : 0}deg)`, transition: still ? undefined : "transform .7s cubic-bezier(.3,1.25,.45,1)" }}>
+        <div style={{ position: "absolute", inset: 0 }}>
 
           {/* front */}
-          <div style={face}>
+          <div style={{ ...face, transform: `rotateY(${turn}deg)`, visibility: backOn ? "hidden" : "visible" }}>
             <img src={base} alt="" draggable={false} className="absolute inset-0 h-full w-full select-none" />
             <img src={gloss} alt="" draggable={false} className="absolute inset-0 h-full w-full select-none"
               style={{ opacity: isBlack ? .9 : isWhite ? .7 : .45, mixBlendMode: isBlack ? "screen" : "soft-light",
@@ -175,7 +199,7 @@ export function MemberCard({ member, holder, points, gain }: { member: Member | 
           </div>
 
           {/* back */}
-          <div style={{ ...face, transform: "rotateY(180deg)" }}>
+          <div style={{ ...face, transform: `rotateY(${turn - 180}deg)`, visibility: backOn ? "visible" : "hidden" }}>
             <img src={base} alt="" draggable={false} className="absolute inset-0 h-full w-full -scale-x-100 select-none" />
             <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${isBlack ? .12 : isWhite ? .03 : .25})` }} />
             {/* the magnetic stripe: glossy, with fine edges and a sheen that follows the light */}
