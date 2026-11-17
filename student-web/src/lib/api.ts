@@ -23,7 +23,7 @@ export interface GuestCard {
 export interface Badge { icon: string; name: string; how: string; earned: boolean; points: number; progress: number; count: string }
 export interface Offer { name: string; points_cost: number; per_customer_limit: number | null; used: number; limit_hit: boolean; short: number; can_redeem: boolean }
 export interface Activity { at: string; what: string; points: number | null; money: number | null }
-export interface BoardRow { rank: number; name: string; points: number; me: boolean }
+export interface BoardRow { rank: number; name: string; points: number; me: boolean; tier?: "red" | "black" | null }
 export interface Board { title: string; rows: BoardRow[]; mine: { rank: number; points: number; of: number } | null }
 export interface Tab {
   status: string; can_charge: boolean; available_cents: Money; limit_cents: Money; min_score: number; due_days: number;

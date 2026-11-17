@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /** The bar along the top: sticks while you scroll, and frosts over the page once there's something under it. */
-export function TopBar({ right }: { right?: ReactNode }) {
+export function TopBar({ right, tag }: { right?: ReactNode; tag?: ReactNode }) {
   const [under, setUnder] = useState(false);
   useEffect(() => {
     const on = () => setUnder(scrollY > 8);
@@ -15,7 +15,7 @@ export function TopBar({ right }: { right?: ReactNode }) {
       <div className="mx-auto flex max-w-[960px] items-center justify-between px-[18px] pt-[max(12px,env(safe-area-inset-top))] pb-3">
         <span className="flex items-center gap-2 font-display text-[17px] font-extrabold">
           <img src="/static/logo.svg" alt="" className="size-7" />My Cooked Coke</span>
-        {right}
+        <span className="flex items-center gap-2">{tag}{right}</span>
       </div>
     </header>
   );

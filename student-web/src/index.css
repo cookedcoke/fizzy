@@ -88,3 +88,9 @@
   from { opacity: 0; transform: perspective(900px) rotateX(-60deg) scale(.88); transform-origin: 50% 100%; }
   to { opacity: 1; }
 }
+
+/* Members' accent (Home sets data-tier): a few details take it, the carousel's frame, progress bars and their
+   leaderboard row. Everyone else keeps the brand's red and sun. */
+:root { --tier-a: var(--sun); --tier-b: var(--red); --tier-c: #7A0804; --bar-a: #FF5A3C; --bar-b: var(--red); }
+[data-tier="red"] { --tier-a: #FF4A3D; --tier-b: #C8101A; --tier-c: #5E0308; --bar-a: #FF4A3D; --bar-b: #B00010; }
+[data-tier="black"] { --tier-a: #F2F2F4; --tier-b: #8E8E95; --tier-c: #1C1C1F; --bar-a: #B9B9C0; --bar-b: #4A4A50; }

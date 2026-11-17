@@ -107,7 +107,7 @@ export function StatRing({ me, wide }: { me: Me; wide: boolean }) {
   // - on a wider screen it fills the left column at the stage's own 720:440 shape, in a frame: a dark display
   //   window with a red-to-sun rim, like the glass front of a drinks fridge.
   if (wide) return (
-    <div className="mt-1 mb-2 rounded-[34px] bg-gradient-to-br from-sun via-red to-[#7A0804] p-[3px] shadow-[0_24px_60px_-28px_rgba(179,0,0,.75),0_0_0_1px_rgba(0,0,0,.04)]">
+    <div className="mt-1 mb-2 rounded-[34px] bg-gradient-to-br from-[var(--tier-a)] via-[var(--tier-b)] to-[var(--tier-c)] p-[3px] shadow-[0_24px_60px_-28px_rgba(179,0,0,.75),0_0_0_1px_rgba(0,0,0,.04)]">
       <div className="relative overflow-hidden rounded-[31px] bg-[#140C0A] p-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,.06)]">
         <div className="overflow-hidden rounded-[24px] shadow-[inset_0_2px_14px_rgba(0,0,0,.6)]">
           <WarpCarousel cards={cards} background="#1B110E" font={FONT} autoplay interval={4.5} step={1} ariaLabel="Your stats"

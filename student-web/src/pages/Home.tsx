@@ -28,12 +28,21 @@ export function Home({ me, reload, onOut }: { me: Me; reload: () => void; onOut:
   // what's on (double points days, hunts and the like) comes after the card and stats, as in My CCC
   const whatsOn = (me.events_on.length > 0 || me.events_soon.length > 0 || me.custom_events.length > 0) &&
     <Section title="What's on" className="-mt-2"><Events w={me} custom={me.custom_events} /></Section>;
-  const card = <MemberCard member={me.member} holder={me.name} points={me.points} gain={gain} />;
+  const card = <>
+    <MemberCard member={me.member} holder={me.name} points={me.points} gain={gain} />
+    {/* the one place a non-member is told about Red and Black Coke */}
+    {!me.member && <p className="-mt-5 mb-6 text-center text-[13px] text-muted sm:-mt-2">
+      Get 10% or 20% off everything with <b className="text-ink">Red Coke</b> or <b className="text-ink">Black Coke</b>. Ask at the stall.</p>}
+  </>;
+  const tierPill = me.member && (
+    <span className={me.member.tier === "black"
+      ? "rounded-full bg-[#151515] px-3 py-1 text-[12.5px] font-semibold tracking-wide text-[#E9E9EC] ring-1 ring-[#E41E2B]/70 dark:bg-[#E9E9EC] dark:text-[#151515]"
+      : "rounded-full bg-[#E41E2B] px-3 py-1 text-[12.5px] font-semibold tracking-wide text-white"}>{me.member.name}</span>);
   const out = async () => { await api.logout(); onOut(); };
   return (
     <>
-      <TopBar right={<Button variant="pill" onClick={out}>Sign out</Button>} />
-      <main className="mx-auto max-w-[960px] px-[18px] pb-14">
+      <TopBar tag={tierPill} right={<Button variant="pill" onClick={out}>Sign out</Button>} />
+      <main data-tier={me.member?.tier} className="mx-auto max-w-[960px] px-[18px] pb-14">
         <BlurFade direction="up" offset={10}>
           <h1 className="mt-2 mb-4 text-[32px] leading-tight font-extrabold">{greeting()} <span className="text-red">{me.first}</span></h1>
         </BlurFade>

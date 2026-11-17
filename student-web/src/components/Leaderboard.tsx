@@ -24,7 +24,8 @@ function Podium({ rows }: { rows: BoardRow[] }) {
           <span className={cn("relative grid size-11 place-items-center rounded-full font-display text-[14px] font-extrabold ring-2 ring-card",
             medal(r.rank), r.me && "ring-red")}>
             {r.rank === 1 && <Crown aria-hidden className="absolute -top-4 size-[18px] fill-sun text-[#B37A00]" strokeWidth={2} />}
-            {initials(r.name)}</span>
+            {initials(r.name)}
+            <TierDot tier={r.tier} className="absolute -right-0.5 -bottom-0.5" /></span>
           <span className="mt-1 w-full truncate text-[13px] font-semibold">{r.me ? "You" : r.name.split(" ")[0]}</span>
           <span className="font-display text-[13px] font-bold text-muted tabular-nums">{num(r.points)}</span>
           <div className={cn("mt-1.5 grid w-full place-items-center rounded-t-[12px] font-display text-[18px] font-extrabold", height(r.rank),
@@ -58,7 +59,8 @@ export function Leaderboard({ boards }: { boards: Board[] }) {
                 {rest.map(r => (
                   <li key={r.rank + r.name} className={cn("flex items-center gap-3 rounded-xl px-1.5 py-1.5", r.me && "bg-sun-wash")}>
                     <span className={cn("grid size-7 flex-none place-items-center rounded-full font-display text-[13px] font-extrabold", medal(r.rank))}>{r.rank}</span>
-                    <span className="min-w-0 flex-1 truncate">{r.name}{r.me && <span className="text-muted"> (you)</span>}</span>
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5"><span className="truncate">{r.name}{r.me && <span className="text-muted"> (you)</span>}</span>
+                      <TierDot tier={r.tier} /></span>
                     <NumberTicker value={r.points} className="font-display font-bold tracking-normal text-ink dark:text-ink" />
                   </li>))}
               </ol>
@@ -69,4 +71,11 @@ export function Leaderboard({ boards }: { boards: Board[] }) {
       </Card>
     </Section>
   );
+}
+
+/** Red Coke or Black Coke, as a small dot by a member's name (their name says it for screen readers). */
+function TierDot({ tier, className }: { tier?: "red" | "black" | null; className?: string }) {
+  if (!tier) return null;
+  return <span role="img" aria-label={tier === "black" ? "Black Coke member" : "Red Coke member"} title={tier === "black" ? "Black Coke" : "Red Coke"}
+    className={cn("inline-block size-2.5 flex-none rounded-full ring-2 ring-card", tier === "black" ? "bg-[#151515] dark:bg-[#d8d8dc]" : "bg-[#E41E2B]", className)} />;
 }

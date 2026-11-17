@@ -23,7 +23,7 @@ import anyio
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from . import badges, challenges, config, events, logic, rewards, rules, runs, square, stats
+from . import badges, challenges, config, events, logic, rewards, rules, runs, square, stats, members
 from .db import audit, now_iso
 from .web import get_conn, staff, templates, wants_json
 
@@ -503,7 +503,9 @@ def leaderboard(conn, since=None, limit=10, me=None, ties=False):
         if r["id"] == me:
             my_rank = {"rank": rank, "points": r["pts"], "of": len(rows)}
         if i <= limit or (ties and rank <= limit):
-            board.append({"rank": rank, "name": short_name(r["name"]), "points": r["pts"], "me": r["id"] == me})
+            m = members.active(conn, r["id"])   # Red / Black Coke: a dot by their name (a member's perk, and it's seen)
+            board.append({"rank": rank, "name": short_name(r["name"]), "points": r["pts"], "me": r["id"] == me,
+                          "tier": m["tier"] if m else None})
     return board, my_rank
 
 

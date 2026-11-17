@@ -24,7 +24,7 @@ export function Section({ title, small, children, className }: { title: React.Re
 export function Bar({ pct, className }: { pct: number; className?: string }) {
   return (
     <div className={cn("mt-2 h-2 overflow-hidden rounded-full bg-line", className)}>
-      <div className="h-full rounded-full bg-gradient-to-r from-[#FF5A3C] to-red transition-[width] duration-700 ease-out"
+      <div className="h-full rounded-full bg-gradient-to-r from-[var(--bar-a)] to-[var(--bar-b)] transition-[width] duration-700 ease-out"
         style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
     </div>
   );

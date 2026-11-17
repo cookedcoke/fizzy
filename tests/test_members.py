@@ -142,3 +142,15 @@ def test_the_student_app_gets_the_member_card(conn, cust):
     members.grant(conn, c["id"], "black", iso(), "Mike")
     m = portal.student_payload(conn, c)["member"]
     assert m["tier"] == "black" and m["pct"] == 20 and m["term"] == "Term 4" and "staff" not in m
+
+
+def test_the_leaderboard_shows_who_is_a_member(conn, cust):
+    from fizzy import portal
+    a, b = cust(), cust("Other Kid", "rns00000002@x", "SQ2")
+    for c in (a, b):
+        conn.execute("UPDATE customers SET passcode_enc = 'x' WHERE id = ?", (c["id"],))
+    square.process_payment(conn, pay("p1", 500, order_id="o1"), order(("Coke", 500), oid="o1"))
+    square.process_payment(conn, pay("p2", 300, cust="SQ2", order_id="o2"), order(("Coke", 300), oid="o2"))
+    members.grant(conn, a["id"], "black", iso(), "Mike")
+    rows, _ = portal.leaderboard(conn)
+    assert [r["tier"] for r in rows] == ["black", None]
