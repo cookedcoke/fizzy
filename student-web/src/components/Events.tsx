@@ -6,7 +6,7 @@ import { CalendarDays, Zap } from "lucide-react";
 
 const ic = "mr-1.5 inline size-[15px] -translate-y-px align-middle";
 
-const box = "relative mb-3 overflow-hidden rounded-[16px] px-3.5 py-2.5 text-[14px] [&_b]:font-display [&_b]:font-[750]";
+const box = "relative mb-3 overflow-hidden rounded-[20px] px-4 py-3 text-[14px] [&_b]:font-display [&_b]:font-[750]";
 const on = "bg-gradient-to-r from-red-solid to-red text-white font-medium shadow-[0_10px_22px_-14px_rgba(179,0,0,.8)]";
 const soon = "border border-sun/40 bg-sun-wash text-sun-ink";
 

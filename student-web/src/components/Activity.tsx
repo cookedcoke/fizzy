@@ -12,7 +12,7 @@ function Row({ a }: { a: A }) {
   const [Icon, tone]: [LucideIcon, string] = /^badge/i.test(a.what) ? [Medal, "sun"] : /reward|redeem/i.test(a.what) ? [Gift, "sun"]
     : /tab|repay|paid/i.test(a.what) ? [Receipt, "red"] : up ? [CupSoda, "ok"] : down ? [Gift, "sun"] : [Receipt, "red"];
   return (
-    <div className="flex w-full items-center gap-3 rounded-[14px] bg-card-2/70 px-3 py-2.5">
+    <div className="flex w-full items-center gap-3 px-4 py-3">
       <span aria-hidden className={cn("grid size-9 flex-none place-items-center rounded-full",
         tone === "sun" ? "bg-sun-wash text-[#8A6200] dark:text-sun" : tone === "ok" ? "bg-ok-wash text-ok" : "bg-red-wash text-red-deep")}>
         <Icon className="size-[18px]" strokeWidth={2.2} /></span>
@@ -31,14 +31,14 @@ export function ActivityFeed({ items }: { items: A[] }) {
   const shown = all ? items : items.slice(0, 5);
   return (
     <Section title="Recent activity">
-      <Card className="px-3 py-3">
+      <Card className="px-0 py-1">
         {items.length ? (<>
           {/* AnimatedList shows its children last-first, so they go in oldest first. */}
-          <AnimatedList key={all ? "all" : "some"} delay={all ? 40 : 140} className="gap-2">
+          <AnimatedList key={all ? "all" : "some"} delay={all ? 40 : 140} className="gap-0 divide-y divide-line/70">
             {[...shown].reverse().map((a, i) => <Row key={`${a.at}-${shown.length - 1 - i}`} a={a} />)}
           </AnimatedList>
-          {items.length > 5 && <button onClick={() => setAll(!all)} className="mt-2.5 ml-1 text-[13.5px] font-semibold text-red-deep">{all ? "Show less" : "Show more"}</button>}
-        </>) : <p className="px-1 text-[14px] text-muted">Nothing yet - grab something at the stall to start earning points.</p>}
+          {items.length > 5 && <button onClick={() => setAll(!all)} className="w-full border-t border-line/70 px-4 py-3 text-left text-[13.5px] font-semibold text-red-deep">{all ? "Show less" : "Show more"}</button>}
+        </>) : <p className="px-4 py-3 text-[14px] text-muted">Nothing yet - grab something at the stall to start earning points.</p>}
       </Card>
     </Section>
   );

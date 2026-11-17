@@ -34,8 +34,8 @@ export function Rewards({ offers }: { offers: Offer[] }) {
       <div className="grid gap-2.5">
         {sorted.map((o, i) => (
           <motion.div key={o.name} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * .05 }}>
-            <Card className={cn("relative flex items-center gap-3.5", o.can_redeem && "bg-gradient-to-br from-card from-55% to-sun-wash ring-1 ring-sun/60")}>
-              {o.can_redeem && <ShineBorder borderWidth={2} duration={8} shineColor={["#FFC23D", "#FE0001", "#FFC23D"]} />}
+            <Card className="relative flex items-center gap-3.5">
+              {o.can_redeem && <ShineBorder borderWidth={1.5} duration={10} shineColor={["#FFC23D", "#FFE7A3", "#FFC23D"]} />}
               <div aria-hidden className={cn("grid size-11 flex-none place-items-center rounded-full", o.can_redeem ? "bg-sun text-[#3D2800]" : "bg-sun-wash text-[#8A6200] dark:text-sun")}>
                 {o.can_redeem ? <PartyPopper className="size-[22px]" strokeWidth={2.2} /> : <CupSoda className="size-[22px]" strokeWidth={2.2} />}</div>
               <div className="min-w-0 flex-1">

@@ -92,7 +92,7 @@ export function MemberCard({ member, holder, points, gain }: { member: Member | 
   );
 
   return (
-    <div className="member-card mb-3" style={{ perspective: 1100 }}>
+    <div className="member-card mb-8 sm:mb-5" style={{ perspective: 1100 }}>
       <button ref={ref} type="button" onClick={() => setFlipped(f => !f)} onPointerMove={move} onPointerLeave={rest} onPointerUp={e => e.pointerType !== "mouse" && rest()}
         aria-label={isWhite ? `Your card. ${num(points)} points. Turn it over.` : `${member!.name} member card. ${num(points)} points. ${pct} off everything until ${until}. Turn it over.`}
         className="relative block w-full cursor-pointer text-left rounded-[3.8cqw] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red"
