@@ -2,6 +2,7 @@ import { api, type Me } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { TopBar } from "@/components/TopBar";
+import { Section } from "@/components/ui/card";
 import { Events } from "@/components/Events";
 import { ScanResultCard } from "@/components/Hunt";
 import { ChallengeCard } from "@/components/Challenge";
@@ -24,6 +25,9 @@ export function Home({ me, reload, onOut }: { me: Me; reload: () => void; onOut:
   const cards = me.cards.map(k => <ChallengeCard key={k.id} k={k} name={me.name} sid={me.sid} scanned={scanned} onChange={reload} />);
   const wide = useWide();
   const gain = useGain(me.points, me.sid || me.name);
+  // what's on (double points days, hunts and the like) comes after the card and stats, as in My CCC
+  const whatsOn = (me.events_on.length > 0 || me.events_soon.length > 0 || me.custom_events.length > 0) &&
+    <Section title="What's on" className="-mt-2"><Events w={me} custom={me.custom_events} /></Section>;
   const card = <MemberCard member={me.member} holder={me.name} points={me.points} gain={gain} />;
   const out = async () => { await api.logout(); onOut(); };
   return (
@@ -38,12 +42,13 @@ export function Home({ me, reload, onOut }: { me: Me; reload: () => void; onOut:
           {scanned && <><ScanResultCard r={scanned} />{cards}</>}
           {urgent && <TabCard t={t} />}
           {me.note && !scanned && <div role="status" className="mb-3 rounded-[14px] bg-red-solid px-3.5 py-2.5 text-[14px] font-medium text-white">{me.note.message}</div>}
-          <Events w={me} custom={me.custom_events} />
         </div>
         {!wide && <BlurFade delay={.05} direction="up" offset={10}>{card}<StatRing me={me} wide={false} /></BlurFade>}
+        {!wide && whatsOn}
         <div className="md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,360px)] md:gap-7">
           <div>
             {wide && <BlurFade delay={.05} direction="up" offset={10}>{card}<StatRing me={me} wide /></BlurFade>}
+            {wide && whatsOn}
             {!scanned && cards}
             <Rewards offers={me.offers} />
             {!urgent && showTab && <TabCard t={t} />}
