@@ -14,12 +14,13 @@ struct HuntHero: View {
         let finished = card.done.bool || run.finished.bool
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 10) {
-                Text(card.title.string).font(.title3.weight(.heavy)).lineLimit(2)
+                Text(card.title.string).font(.title3.weight(.heavy)).lineLimit(2).minimumScaleFactor(0.8)
                 Spacer(minLength: 8)
                 if !run.isNull && !finished && run.started_ms.double > 0 {
                     Clock(startMs: run.started_ms.double)
                 } else if finished, let time = run.elapsed.optString {
                     HStack(spacing: 5) { Image(systemName: "stopwatch.fill"); Text(time) }.font(.headline.monospacedDigit())
+                        .lineLimit(1).fixedSize().layoutPriority(1)
                 }
             }
             if let prize = card.prize.optString {
@@ -63,9 +64,12 @@ struct HuntHero: View {
                     Text(s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60))
                 }
                     .font(.headline.monospacedDigit())
+                    .lineLimit(1)
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(.black.opacity(0.18), in: Capsule())
             }
+            .fixedSize()            // never wraps or squashes: "1:39" stays on one line, the title gives way
+            .layoutPriority(1)
         }
     }
 }

@@ -85,6 +85,7 @@ private struct PointsSection: View {
                 }
                 Text(Fmt.number(points))
                     .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.5)   // a long balance shrinks to fit, never wraps
                     .contentTransition(.numericText())
             }
             .padding(.vertical, 4)

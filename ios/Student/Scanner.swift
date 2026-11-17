@@ -36,7 +36,7 @@ struct CodeScanner: View {
                         ContentUnavailableView("Can't use the camera", systemImage: "camera.fill",
                                                description: Text("Allow camera access in Settings, then try again."))
                     } else {
-                        CameraPreview(session: camera.session)
+                        CameraPreview(session: camera.session, device: camera.lens)
                             .ignoresSafeArea()
                             .gesture(MagnifyGesture()
                                 .onChanged { g in
@@ -166,6 +166,8 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
     /// which the camera's own reader manages.
     @ObservationIgnored private let posters: Bool
     @ObservationIgnored private var device: AVCaptureDevice?
+    /// The camera in use, once there is one, so the preview can keep its picture upright.
+    private(set) var lens: AVCaptureDevice?
     /// The zoom factor where a multi-lens camera hands over from ultra wide to the main lens.
     @ObservationIgnored private var mainLens: CGFloat = 1
     @ObservationIgnored private var done = false
@@ -197,6 +199,7 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
         guard let device = AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .video, position: .back).devices.first,
               let input = try? AVCaptureDeviceInput(device: device) else { denied = true; return }
         self.device = device
+        lens = device
         let mainLens = device.deviceType == .builtInDualCamera ? 1 : (device.virtualDeviceSwitchOverVideoZoomFactors.first.map { CGFloat(truncating: $0) } ?? 1)
         self.mainLens = mainLens
         hasTorch = device.hasTorch
@@ -308,10 +311,31 @@ final class Camera: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureV
 
 private struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    let device: AVCaptureDevice?
 
+    /// The picture is turned by the system's rotation coordinator, which works out the angle from the camera and
+    /// how the screen is held, so it's upright on every phone in every position, the iPhone Duo open included
+    /// (left alone, the preview keeps the sensor's own orientation, which only suits an ordinary phone upright).
     final class Preview: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var preview: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+        var coordinator: AVCaptureDevice.RotationCoordinator?
+        var watch: NSKeyValueObservation?
+
+        func follow(_ device: AVCaptureDevice) {
+            guard coordinator?.device != device else { return }
+            let c = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: preview)
+            coordinator = c
+            let apply = { [weak self] in
+                guard let self, let conn = self.preview.connection else { return }
+                let angle = c.videoRotationAngleForHorizonLevelPreview
+                if conn.isVideoRotationAngleSupported(angle) { conn.videoRotationAngle = angle }
+            }
+            apply()
+            watch = c.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.new]) { _, _ in
+                DispatchQueue.main.async { apply() }
+            }
+        }
     }
 
     func makeUIView(context: Context) -> Preview {
@@ -319,10 +343,13 @@ private struct CameraPreview: UIViewRepresentable {
         view.backgroundColor = .black
         view.preview.session = session
         view.preview.videoGravity = .resizeAspectFill
+        if let device { view.follow(device) }
         return view
     }
 
-    func updateUIView(_ view: Preview, context: Context) {}
+    func updateUIView(_ view: Preview, context: Context) {
+        if let device { view.follow(device) }
+    }
 }
 
 /// Four L-shaped corners round a rectangle, like the Camera app's code guide.

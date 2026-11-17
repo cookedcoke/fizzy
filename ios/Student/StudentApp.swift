@@ -145,16 +145,20 @@ struct RootView: View {
     }
 }
 
-/// Me: one page, or on a wide screen (the iPhone Duo open) two columns in the system's split view, so iOS puts
-/// the split on the hinge when the phone is half folded.
+/// Me: one page, or on a wide screen held sideways (the iPhone Duo open in landscape) two columns in the system's
+/// split view, so iOS puts the split on the hinge when the phone is half folded. The Duo open in portrait is
+/// regular width too, but taller than wide: two columns there come out cramped, so it keeps the one page.
 struct MeTab: View {
     @Environment(\.horizontalSizeClass) private var size
     var body: some View {
-        if size == .regular {
-            SplitColumns { MeView(part: .left) } right: { MeView(part: .right) }
-        } else {
-            NavigationStack { MeView() }
+        GeometryReader { geo in
+            if size == .regular && geo.size.width > geo.size.height {
+                SplitColumns { MeView(part: .left) } right: { MeView(part: .right) }
+            } else {
+                NavigationStack { MeView() }.readableWidth()
+            }
         }
+        .ignoresSafeArea(.keyboard)
     }
 }
 
