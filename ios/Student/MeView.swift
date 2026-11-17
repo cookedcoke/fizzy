@@ -9,9 +9,10 @@ struct MeView: View {
     @State private var result: String?
     @State private var failed = false
     @State private var cheer = 0
-    /// All of the page, or one column of the iPhone Duo's two (see MeTab).
+    /// All of the page, or one column of the iPhone Duo's two (see MeTab): the card and what's on in the big
+    /// column, rewards, tab and activity in the narrow one.
     var part: Part = .all
-    enum Part { case all, left, right }
+    enum Part { case all, main, side }
 
     var body: some View {
         let p = model.page, tab = p.tab
@@ -31,7 +32,7 @@ struct MeView: View {
                     if !urgent && showTab { TabSection(tab: tab) }
                     ActivitySection(items: p.activity.array)
                 }
-            case .left:
+            case .main:
                 List {
                     if urgent { TabSection(tab: tab) }
                     PointsSection(points: p.points.int, owner: p.name.string, page: p)
@@ -39,7 +40,7 @@ struct MeView: View {
                     StreakSection(streak: p.streak)
                     ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
                 }
-            case .right:
+            case .side:
                 List {
                     if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
                     if !urgent && showTab { TabSection(tab: tab) }
@@ -50,7 +51,7 @@ struct MeView: View {
         .overlay { ConfettiBurst(trigger: cheer).ignoresSafeArea() }
         .onAppear { cheerIfNewlyReady() }
         .onChange(of: model.page.offers) { _, _ in cheerIfNewlyReady() }
-        .navigationTitle(part == .right ? "Rewards and tab" : "Hey \(p.first.string)")
+        .navigationTitle(part == .side ? "Rewards and tab" : "Hey \(p.first.string)")
         .pageChrome()
         .sheet(isPresented: Binding(get: { scanFor != nil }, set: { if !$0 { scanFor = nil } })) {
             CodeScanner(title: scanFor ?? "", guide: .poster) { code in scanFor = nil; Task { await send(code) } }
@@ -62,7 +63,7 @@ struct MeView: View {
 
     /// Confetti the first time this phone sees a reward ready, not every visit.
     private func cheerIfNewlyReady() {
-        guard part != .left else { return }
+        guard part != .main else { return }   // rewards are in the other column
         let ready = model.page.offers.array.filter { $0.can_redeem.bool }.map(\.name.string).sorted()
         guard !ready.isEmpty else { return }
         let key = "ready-" + model.page.name.string
@@ -101,7 +102,7 @@ private struct PointsSection: View {
                 MemberCard(member: page.member, holder: owner, points: shown, gain: gain)
                     .padding(.vertical, 4)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 10, leading: 18, bottom: 16, trailing: 18))   // room for the shadow: the row clips it
+                    .listRowInsets(EdgeInsets(top: 0, leading: 2, bottom: 4, trailing: 2))   // the card keeps its own room for its shadow
             }
             Section {
                 if !page.isNull { stats }

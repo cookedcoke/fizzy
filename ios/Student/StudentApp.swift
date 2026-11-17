@@ -153,7 +153,7 @@ struct MeTab: View {
     var body: some View {
         GeometryReader { geo in
             if size == .regular && geo.size.width > geo.size.height {
-                SplitColumns { MeView(part: .left) } right: { MeView(part: .right) }
+                SplitColumns { MeView(part: .side) } right: { MeView(part: .main) }   // the card gets the big column
             } else {
                 NavigationStack { MeView() }.readableWidth()
             }

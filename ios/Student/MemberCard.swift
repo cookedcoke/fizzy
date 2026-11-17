@@ -66,7 +66,7 @@ struct MemberCard: View {
 
     var body: some View {
         // The card's own sizes are those of the 1536-wide artwork, scaled to however wide it's shown.
-        VStack(spacing: 10) {
+        VStack(spacing: 4) {
         GeometryReader { geo in
             let k = geo.size.width / 1536
             // where the light is: the phone's tilt, or a finger dragging the card
@@ -113,6 +113,9 @@ struct MemberCard: View {
                             : "\(member.name.string) member card. \(Fmt.number(points)) points. \(pct) off everything until \(Fmt.when(member.ends_on.string, "d MMMM")).")
         .accessibilityHint("Turns the card over.")
         .accessibilityAddTraits(.isButton)
+        // room round the card for its shadow and its lean, inside its own frame: a list row clips whatever
+        // spills out of it, which cut the shadow off square at the card's sides
+        .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 6)
 
             Label(flipped ? "Tap to turn back" : "Tap to turn over", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
                 .font(.footnote.weight(.medium)).foregroundStyle(.secondary)
