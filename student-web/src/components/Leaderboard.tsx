@@ -1,3 +1,4 @@
+import { Crown } from "lucide-react";
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { Board, BoardRow } from "@/lib/api";
@@ -22,7 +23,7 @@ function Podium({ rows }: { rows: BoardRow[] }) {
           className="flex min-w-0 flex-col items-center text-center">
           <span className={cn("relative grid size-11 place-items-center rounded-full font-display text-[14px] font-extrabold ring-2 ring-card",
             medal(r.rank), r.me && "ring-red")}>
-            {r.rank === 1 && <span aria-hidden className="absolute -top-3.5 text-[16px]">👑</span>}
+            {r.rank === 1 && <Crown aria-hidden className="absolute -top-4 size-[18px] fill-sun text-[#B37A00]" strokeWidth={2} />}
             {initials(r.name)}</span>
           <span className="mt-1 w-full truncate text-[13px] font-semibold">{r.me ? "You" : r.name.split(" ")[0]}</span>
           <span className="font-display text-[13px] font-bold text-muted tabular-nums">{num(r.points)}</span>

@@ -31,7 +31,7 @@ export function Home({ me, reload, onOut }: { me: Me; reload: () => void; onOut:
       <TopBar right={<Button variant="pill" onClick={out}>Sign out</Button>} />
       <main className="mx-auto max-w-[960px] px-[18px] pb-14">
         <BlurFade direction="up" offset={10}>
-          <h1 className="mt-2 mb-4 text-[32px] leading-tight font-extrabold">{greeting()} <span className="text-red">{me.first}</span> 👋</h1>
+          <h1 className="mt-2 mb-4 text-[32px] leading-tight font-extrabold">{greeting()} <span className="text-red">{me.first}</span></h1>
         </BlurFade>
         {/* what needs them now comes first: a poster just scanned, a tab to pay, a message, what's on */}
         <div className="md:max-w-[calc(100%-388px)]">

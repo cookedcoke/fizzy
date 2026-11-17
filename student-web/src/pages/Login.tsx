@@ -1,3 +1,4 @@
+import { CupSoda } from "lucide-react";
 import { useState } from "react";
 import { motion } from "motion/react";
 import { api, type WhatsOn } from "@/lib/api";
@@ -67,6 +68,6 @@ export function Login({ w, onIn }: { w: WhatsOn; onIn: () => void }) {
 function Chip({ name, cost }: { name: string; cost: number }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-line/70 bg-card px-3.5 py-1.5 text-[14px] shadow-card">
-      <span aria-hidden>🥤</span><b className="font-display">{name}</b><span className="text-muted">· {num(cost)} pts</span></span>
+      <CupSoda aria-hidden className="size-4 text-red" strokeWidth={2.2} /><b className="font-display">{name}</b><span className="text-muted">· {num(cost)} pts</span></span>
   );
 }

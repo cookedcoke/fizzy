@@ -1,3 +1,4 @@
+import { CupSoda, PartyPopper } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import type { Offer } from "@/lib/api";
@@ -35,7 +36,8 @@ export function Rewards({ offers }: { offers: Offer[] }) {
           <motion.div key={o.name} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * .05 }}>
             <Card className={cn("relative flex items-center gap-3.5", o.can_redeem && "bg-gradient-to-br from-card from-55% to-sun-wash ring-1 ring-sun/60")}>
               {o.can_redeem && <ShineBorder borderWidth={2} duration={8} shineColor={["#FFC23D", "#FE0001", "#FFC23D"]} />}
-              <div aria-hidden className="grid size-11 flex-none place-items-center rounded-full bg-sun-wash text-[22px]">{o.can_redeem ? "🎉" : "🥤"}</div>
+              <div aria-hidden className={cn("grid size-11 flex-none place-items-center rounded-full", o.can_redeem ? "bg-sun text-[#3D2800]" : "bg-sun-wash text-[#8A6200] dark:text-sun")}>
+                {o.can_redeem ? <PartyPopper className="size-[22px]" strokeWidth={2.2} /> : <CupSoda className="size-[22px]" strokeWidth={2.2} />}</div>
               <div className="min-w-0 flex-1">
                 <b className="font-display">{o.name}</b><span className="ml-2 text-[13px] text-muted">{num(o.points_cost)} pts</span>
                 {o.can_redeem && <span className="ml-2 rounded-full bg-sun px-2 py-0.5 text-[11.5px] font-bold text-[#3D2800]">Ready</span>}
