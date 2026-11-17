@@ -23,6 +23,7 @@ struct MeView: View {
             case .all:
                 List {
                     if urgent { TabSection(tab: tab) }
+                    if !p.member.isNull { MemberSection(member: p.member, holder: p.name.string) }
                     WhatsOnSection(page: p)
                     ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
                     PointsSection(points: p.points.int, owner: p.name.string, page: p)
@@ -34,6 +35,7 @@ struct MeView: View {
             case .left:
                 List {
                     if urgent { TabSection(tab: tab) }
+                    if !p.member.isNull { MemberSection(member: p.member, holder: p.name.string) }
                     WhatsOnSection(page: p)
                     PointsSection(points: p.points.int, owner: p.name.string, page: p)
                     StreakSection(streak: p.streak)

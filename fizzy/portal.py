@@ -278,6 +278,7 @@ def student_payload(conn, c):
                               if config.APPLE_PAY and config.SQUARE_APP_ID and led["owing_cents"] > 0 else None),
                 "score": {"score": sc["score"], "limit_cents": sc["limit_cents"], "next": sc["next"],
                           "factors": [{"label": label, "points": pts} for label, pts in sc["factors"]], "tips": sc["tips"]}},
+        "member": _member(conn, s["member"]),
         "streak": {"days": me["streak"], "best": me["best"], "today": me["today"]},
         "offers": [{"name": o["reward"]["name"], "points_cost": o["reward"]["points_cost"],
                     "per_customer_limit": o["reward"]["per_customer_limit"], "used": o["used"], "limit_hit": o["limit_hit"],
@@ -293,6 +294,14 @@ def student_payload(conn, c):
         **_whats_on(conn),
         "tz": str(config.TZ),
     }
+
+
+def _member(conn, m):
+    """Red / Black Coke for the student's member card: the tier, its discount, and the term it runs to."""
+    if not m:
+        return None
+    term = next((label for a, b, label in rules.terms(conn) if b == m["ends_on"]), None)
+    return {"tier": m["tier"], "name": m["name"], "pct": m["pct"], "ends_on": m["ends_on"], "term": term}
 
 
 def _url(path):

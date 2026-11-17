@@ -132,3 +132,13 @@ def test_a_missed_discount_shows_on_the_customer_page(client):  # noqa: F811
     conn.commit()
     page = client.get("/customers/1").text
     assert "No Red Coke discount: owed $0.40 back" in page and "1× Coke" in page and "built-in" not in page
+
+
+def test_the_student_app_gets_the_member_card(conn, cust):
+    from fizzy import portal
+    c = cust()
+    set_term(conn)
+    assert portal.student_payload(conn, c)["member"] is None
+    members.grant(conn, c["id"], "black", iso(), "Mike")
+    m = portal.student_payload(conn, c)["member"]
+    assert m["tier"] == "black" and m["pct"] == 20 and m["term"] == "Term 4" and "staff" not in m

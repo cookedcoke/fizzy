@@ -420,7 +420,8 @@ def diag(size, stops, angle_deg=-35):
     return g.crop(((big - w) // 2, (big - h) // 2, (big - w) // 2 + w, (big - h) // 2 + h))
 
 
-def black_bg():
+def black_bg(app=False):
+    """app=True leaves out the gloss band and the edge: the app draws those itself, moving with the phone."""
     # 1. anodised black: barely-there facets, lit softly from the top left
     def colour(cx, cy, shade, rnd):
         light = max(0, 1 - math.hypot(cx * 0.9, cy * 1.2) / 1.3)
@@ -434,7 +435,8 @@ def black_bg():
     band = diag((W, H), [(0, (0, 0, 0)), (0.30, (0, 0, 0)), (0.42, (150, 150, 150)), (0.47, (210, 210, 210)),
                          (0.56, (60, 60, 60)), (0.72, (0, 0, 0)), (1, (0, 0, 0))], -28).convert("L")
     glossy.putalpha(band.filter(ImageFilter.GaussianBlur(40)))
-    card.alpha_composite(glossy)
+    if not app:
+        card.alpha_composite(glossy)
 
     # 3. brushed metal: fine horizontal streaks
     n = Image.effect_noise((W // 2, H), 60).resize((W * 3, H)).filter(ImageFilter.BoxBlur(0))
@@ -461,12 +463,13 @@ def black_bg():
 
     grain(card, 5)
 
-    # 5. polished chamfer round the edge: bright top-left, dark bottom-right
-    ring = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(ring).rounded_rectangle([0, 0, W - 1, H - 1], R, outline=255, width=5)
-    edge = diag((W, H), [(0, (235, 235, 240)), (0.35, (120, 120, 126)), (0.6, (40, 40, 44)), (1, (90, 90, 96))], -33).convert("RGBA")
-    edge.putalpha(ring.point(lambda v: int(v * 0.8)))
-    card.alpha_composite(edge)
+    if not app:
+        # 5. polished chamfer round the edge: bright top-left, dark bottom-right
+        ring = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(ring).rounded_rectangle([0, 0, W - 1, H - 1], R, outline=255, width=5)
+        edge = diag((W, H), [(0, (235, 235, 240)), (0.35, (120, 120, 126)), (0.6, (40, 40, 44)), (1, (90, 90, 96))], -33).convert("RGBA")
+        edge.putalpha(ring.point(lambda v: int(v * 0.8)))
+        card.alpha_composite(edge)
 
     return card
 
@@ -474,12 +477,13 @@ def black_bg():
 
 # ---- Round 4: Red made simpler, and the type tried in different fonts ----------------------------
 
-def red_bg():
+def red_bg(app=False):
     def colour(cx, cy, shade, rnd):
         light = max(0, 1 - math.hypot(cx * 0.9, cy * 1.1) / 1.25)
         return mix((128, 6, 12), (206, 20, 28), min(1, 0.25 + shade * 0.35 + light * 0.4))
     card = facets(colour, seed=5)
-    gloss(card, 0.06)
+    if not app:
+        gloss(card, 0.06)
     return card
 
 
@@ -530,8 +534,29 @@ AVENIR = [   # thicker takes on Avenir Next for the name (and the %), small type
 # The chosen look: Avenir Next Medium for the name and the %, SF Mono for everything under it.
 FINAL = ("Final", F("Avenir Next.ttc", 5), 90, 20, F("SFNSMono.ttf"), F("SFNSMono.ttf"), 38, F("Avenir Next.ttc", 5))
 
+def export_app(dest):
+    """The card art for My CCC: each tier's base (with the logo) and its gloss layer, which the app
+    reveals with a band of light that follows the phone's tilt. Type is drawn by the app."""
+    size = (1200, round(1200 * H / W))
+    for tier in ("black", "red"):
+        base = black_bg(app=True) if tier == "black" else red_bg(app=True)
+        shadowed(base, tier_logo(tier, 380), (90, 86), alpha=0.7 if tier == "black" else 0.35)
+        lo, hi = ((30, 30, 33), (110, 110, 118)) if tier == "black" else ((170, 20, 28), (255, 120, 120))
+        shine = facets(lambda cx, cy, shade, rnd: mix(lo, hi, shade ** 0.8 * rnd.uniform(0.7, 1.0)), seed=5)
+        for name, im in ((f"Member{tier.title()}", base), (f"Member{tier.title()}Gloss", shine)):
+            folder = dest / f"{name}.imageset"
+            folder.mkdir(parents=True, exist_ok=True)
+            im.convert("RGB").resize(size, Image.LANCZOS).save(folder / f"{name}.jpg", quality=88, optimize=True)
+            (folder / "Contents.json").write_text('{"images":[{"filename":"%s.jpg","idiom":"universal","scale":"1x"}],'
+                                                  '"info":{"author":"xcode","version":1}}' % f"{name}.jpg")
+    print("wrote app art to", dest)
+
+
 if __name__ == "__main__":
     import sys
+    if "app" in sys.argv:
+        export_app(Path(sys.argv[-1]))
+        sys.exit()
     if "final" in sys.argv:
         bgs = {"black": black_bg(), "red": red_bg()}
         pair = [dress(bgs[t], t, FINAL) for t in ("black", "red")]
