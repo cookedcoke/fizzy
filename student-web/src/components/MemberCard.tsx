@@ -50,13 +50,45 @@ function useCountUp(from: number, to: number, still: boolean) {
   return n;
 }
 
+/** Where the light is, moving towards `target` on a soft spring every frame: it follows the mouse with a little
+ *  lag and glides back to the middle when the mouse leaves, instead of jumping. */
+function useLight(target: { x: number; y: number }, still: boolean) {
+  const [pos, set] = useState({ x: 0, y: 0 });
+  const st = useRef({ x: 0, y: 0, vx: 0, vy: 0, raf: 0, last: 0 });
+  const goal = useRef(target);
+  goal.current = target;
+  useEffect(() => {
+    if (still) { set({ x: 0, y: 0 }); return; }
+    const s = st.current;
+    const tick = (t: number) => {
+      const dt = Math.min(0.05, s.last ? (t - s.last) / 1000 : 1 / 60);
+      s.last = t;
+      // a gently damped spring: about 0.7 s to settle, no wobble to speak of
+      const k = 38, c = 11;
+      s.vx += (k * (goal.current.x - s.x) - c * s.vx) * dt;
+      s.vy += (k * (goal.current.y - s.y) - c * s.vy) * dt;
+      s.x += s.vx * dt; s.y += s.vy * dt;
+      const settled = Math.abs(goal.current.x - s.x) + Math.abs(goal.current.y - s.y) + Math.abs(s.vx) + Math.abs(s.vy) < 0.002;
+      if (settled) { s.x = goal.current.x; s.y = goal.current.y; s.vx = s.vy = 0; }
+      set({ x: s.x, y: s.y });
+      s.raf = settled ? 0 : requestAnimationFrame(tick);
+    };
+    // (re)started on every new target; the motion carries on from where it is, since it lives in the ref
+    cancelAnimationFrame(s.raf);
+    s.last = 0;
+    s.raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(s.raf); s.raf = 0; };
+  }, [target.x, target.y, still]);
+  return pos;
+}
+
 export function MemberCard({ member, holder, points, gain }: { member: Member | null; holder: string; points: number; gain: number }) {
   const tier = member?.tier ?? "white";
   const isBlack = tier === "black", isWhite = tier === "white";
   const [base, gloss] = ART[tier];
   const still = useStill();
   const [flipped, setFlipped] = useState(false);
-  const [light, setLight] = useState({ x: 0, y: 0, live: false });
+  const [aim, setAim] = useState({ x: 0, y: 0 });
   const shown = useCountUp(Math.max(0, points - gain), points, still);
   const ref = useRef<HTMLButtonElement>(null);
 
@@ -65,10 +97,10 @@ export function MemberCard({ member, holder, points, gain }: { member: Member | 
     const r = ref.current.getBoundingClientRect();
     const x = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
     const y = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height) * 2 - 1));
-    setLight({ x, y, live: true });
+    setAim({ x, y });
   };
-  const rest = () => setLight({ x: 0, y: 0, live: false });
-  const { x: lx, y: ly } = light;
+  const rest = () => setAim({ x: 0, y: 0 });
+  const { x: lx, y: ly } = useLight(aim, still);
 
   const pct = member ? `${member.pct}%` : "";
   const until = member ? new Date(member.ends_on + "T00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }).toUpperCase() : "";
@@ -98,7 +130,6 @@ export function MemberCard({ member, holder, points, gain }: { member: Member | 
         className="relative block w-full cursor-pointer text-left rounded-[3.8cqw] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red"
         style={{ aspectRatio: "1536 / 969", containerType: "inline-size", touchAction: "pan-y",
           transform: `rotateY(${lx * 9}deg) rotateX(${-ly * 7}deg)`,
-          transition: light.live ? "transform .12s ease-out" : "transform .7s cubic-bezier(.2,1.4,.4,1)",
           filter: `drop-shadow(${-lx * 6}px ${9 - ly * 4}px 9px ${isWhite ? "rgba(0,0,0,.16)" : isBlack ? "rgba(0,0,0,.32)" : "rgba(140,0,10,.28)"})`,
           animation: still ? undefined : "member-land .9s cubic-bezier(.2,1.25,.4,1) both" }}>
         <div style={{ position: "absolute", inset: 0, transformStyle: "preserve-3d",
