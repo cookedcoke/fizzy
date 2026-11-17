@@ -136,22 +136,8 @@ struct MemberCard: View {
             if black {
                 Rectangle().fill(Color(red: 0.84, green: 0.09, blue: 0.12)).frame(width: 118 * k, height: 4 * k).padding(.top, 10 * k)
             }
-            Text(line).font(.system(size: 27 * k, design: .monospaced)).tracking(5 * k)
-                .foregroundStyle(.white.opacity(black ? 0.6 : 0.78))
-                .lineLimit(1).minimumScaleFactor(0.5)
-                .padding(.top, (black ? 26 : 40) * k)
-            HStack(alignment: .lastTextBaseline) {
-                metal(Text(holder.uppercased()).font(.system(size: 38 * k, design: .monospaced)).tracking(5 * k), lx: lx, soft: true)
-                    .lineLimit(1).minimumScaleFactor(0.5)
-                Spacer(minLength: 20 * k)
-                Text("VALID TO  \(Fmt.when(member.ends_on.string, "d MMM yyyy").uppercased())")
-                    .font(.system(size: 28 * k, design: .monospaced)).tracking(3 * k)
-                    .foregroundStyle(.white.opacity(black ? 0.55 : 0.78))
-                    .lineLimit(1).fixedSize()
-            }
-            .padding(.top, 34 * k)
         }
-        .padding(.leading, 92 * k).padding(.trailing, 96 * k).padding(.bottom, 64 * k)
+        .padding(.leading, 92 * k).padding(.trailing, 96 * k).padding(.bottom, (black ? 96 : 110) * k)
     }
 
     private var line: String {
@@ -187,13 +173,21 @@ struct MemberCard: View {
             VStack(alignment: .leading, spacing: 18 * k) {
                 Spacer()
                 Text("\(pct) off everything at the stall, all term.")
-                    .font(.custom("AvenirNext-Medium", size: 50 * k)).foregroundStyle(.white)
+                    .font(.custom("AvenirNext-Medium", size: 48 * k)).foregroundStyle(.white)
                 Text("Say you're \(member.name.string) when you pay, and the discount comes off before anything goes on your tab. Free rewards stay free.")
-                    .font(.system(size: 30 * k, design: .monospaced)).foregroundStyle(.white.opacity(0.75))
+                    .font(.system(size: 28 * k, design: .monospaced)).foregroundStyle(.white.opacity(0.75))
                     .fixedSize(horizontal: false, vertical: true)
-                Text("VALID TO  \(Fmt.when(member.ends_on.string, "d MMM yyyy").uppercased())  ·  COOKED COKE CO")
-                    .font(.system(size: 26 * k, design: .monospaced)).tracking(3 * k).foregroundStyle(.white.opacity(0.55))
+                Text(line).font(.system(size: 26 * k, design: .monospaced)).tracking(4 * k)
+                    .foregroundStyle(.white.opacity(0.6)).lineLimit(1).minimumScaleFactor(0.5)
                     .padding(.top, 12 * k)
+                HStack(alignment: .lastTextBaseline) {
+                    metal(Text(holder.uppercased()).font(.system(size: 36 * k, design: .monospaced)).tracking(5 * k), lx: lx, soft: true)
+                        .lineLimit(1).minimumScaleFactor(0.5)
+                    Spacer(minLength: 20 * k)
+                    Text("VALID TO  \(Fmt.when(member.ends_on.string, "d MMM yyyy").uppercased())")
+                        .font(.system(size: 26 * k, design: .monospaced)).tracking(3 * k)
+                        .foregroundStyle(.white.opacity(0.6)).lineLimit(1).fixedSize()
+                }
             }
             .padding(.horizontal, 92 * k).padding(.bottom, 70 * k)
             .frame(maxWidth: .infinity, alignment: .leading)
