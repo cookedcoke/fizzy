@@ -254,21 +254,32 @@ struct MemberCard: View {
 
     // MARK: edge
 
-    /// A polished edge: bright where the light is, dark opposite; on Black Coke a faint spectrum runs along it.
+    /// A metal rim round the card, like a metal bank card's: a band of chrome whose bright side turns towards the
+    /// light, a dark groove where it meets the face and a bright hairline on its outside edge.
     private func edge(k: CGFloat, lx: Double, ly: Double) -> some View {
         let shape = RoundedRectangle(cornerRadius: 58 * k, style: .continuous)
         let angle = Angle.radians(atan2(-0.4 - ly, -0.6 - lx))
+        let rim = max(3, 18 * k)
+        // chrome for Black Coke and the white card, a polished red for Red Coke
+        let (hi, mid, lo): (Color, Color, Color) = tier == "red"
+            ? (Color(red: 1, green: 0.72, blue: 0.72), Color(red: 0.72, green: 0.06, blue: 0.1), Color(red: 0.32, green: 0, blue: 0.03))
+            : white ? (.white, Color(white: 0.78), Color(white: 0.55))
+            : (Color(white: 0.96), Color(white: 0.5), Color(white: 0.16))
         return ZStack {
             shape.strokeBorder(AngularGradient(stops: [
-                .init(color: .white.opacity(black ? 0.85 : 0.6), location: 0), .init(color: .white.opacity(0.08), location: 0.25),
-                .init(color: .black.opacity(white ? 0.14 : 0.3), location: 0.5), .init(color: .white.opacity(0.08), location: 0.75),
-                .init(color: .white.opacity(black ? 0.85 : 0.6), location: 1)],
-                center: .center, angle: angle), lineWidth: max(1.2, 4 * k))
+                .init(color: hi, location: 0), .init(color: mid, location: 0.12), .init(color: lo, location: 0.3),
+                .init(color: mid, location: 0.45), .init(color: hi.opacity(0.9), location: 0.55), .init(color: lo, location: 0.72),
+                .init(color: mid, location: 0.88), .init(color: hi, location: 1)],
+                center: .center, angle: angle), lineWidth: rim)
             if black {
-                shape.strokeBorder(AngularGradient(colors: ([.red, .orange, .yellow, .green, .cyan, .blue, .purple, .red] as [Color]).map { $0.opacity(0.22) },
-                                                   center: .center, angle: angle * 2), lineWidth: max(0.8, 2 * k))
+                shape.strokeBorder(AngularGradient(colors: ([.red, .orange, .yellow, .green, .cyan, .blue, .purple, .red] as [Color]).map { $0.opacity(0.16) },
+                                                   center: .center, angle: angle * 2), lineWidth: rim)
                     .blendMode(.plusLighter)
             }
+            // the groove inside the rim, and the hairline outside it
+            shape.inset(by: rim).strokeBorder(.black.opacity(white ? 0.18 : 0.45), lineWidth: max(0.6, 2 * k))
+            shape.inset(by: rim - max(0.6, 2 * k)).strokeBorder(.white.opacity(0.25), lineWidth: max(0.5, 1.2 * k))
+            shape.strokeBorder(.white.opacity(white ? 0.9 : 0.55), lineWidth: max(0.5, 1.2 * k))
         }
         .allowsHitTesting(false)
     }
