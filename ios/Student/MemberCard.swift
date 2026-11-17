@@ -68,16 +68,11 @@ struct MemberCard: View {
             // where the light is: the phone's tilt, or a finger dragging the card
             let lx = still ? 0 : max(-1, min(1, tilt.x + drag.width / 160))
             let ly = still ? 0 : max(-1, min(1, tilt.y + drag.height / 160))
-            ZStack {
-                front(k: k, lx: lx, ly: ly)
-                    .opacity(flipped ? 0 : 1)
-                back(k: k, lx: lx, ly: ly)
-                    .rotation3DEffect(.degrees(180), axis: (0, 1, 0))
-                    .opacity(flipped ? 1 : 0)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 58 * k, style: .continuous))
-            .overlay { edge(k: k, lx: lx, ly: ly) }
-            .rotation3DEffect(.degrees((flipped ? 180 : 0) + lx * 9), axis: (0, 1, 0), perspective: 0.45)
+            let shape = RoundedRectangle(cornerRadius: 58 * k, style: .continuous)
+            Flip(angle: flipped ? 180 : 0,
+                 front: front(k: k, lx: lx, ly: ly).clipShape(shape).overlay { edge(k: k, lx: lx, ly: ly) },
+                 back: back(k: k, lx: lx, ly: ly).clipShape(shape).overlay { edge(k: k, lx: lx, ly: ly) })
+            .rotation3DEffect(.degrees(lx * 9), axis: (0, 1, 0), perspective: 0.45)
             .rotation3DEffect(.degrees(-ly * 7), axis: (1, 0, 0), perspective: 0.45)
             .rotation3DEffect(.degrees(landed || still ? 0 : -70), axis: (1, 0, 0), anchor: .bottom, perspective: 0.6)
             .scaleEffect(landed || still ? 1 : 0.86)
@@ -265,5 +260,28 @@ struct MemberCard: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// Turns a card over: whichever face is towards you is the only one drawn, swapping the instant the card is
+/// edge-on (so neither face shows through the other, mirrored, part-way round).
+private struct Flip<Front: View, Back: View>: View, Animatable {
+    var angle: Double
+    let front: Front
+    let back: Back
+
+    var animatableData: Double {
+        get { angle }
+        set { angle = newValue }
+    }
+
+    var body: some View {
+        let a = (angle.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360)
+        let showsBack = a > 90 && a < 270
+        ZStack {
+            front.opacity(showsBack ? 0 : 1)
+            back.rotation3DEffect(.degrees(180), axis: (0, 1, 0)).opacity(showsBack ? 1 : 0)
+        }
+        .rotation3DEffect(.degrees(angle), axis: (0, 1, 0), perspective: 0.45)
     }
 }
