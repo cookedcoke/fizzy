@@ -209,6 +209,12 @@ form > :first-child, .tool-body > :first-child { margin-top: 0 }
 .verdict span { font-size: 13px; color: var(--muted) }
 .verdict.yes { border-color: var(--ok-line); border-left-color: var(--ok); background: var(--ok-wash) } .verdict.yes .mark { background: var(--ok) } .verdict.yes b { color: var(--ok) }
 .verdict.wait { border-color: var(--line-strong); border-left-color: var(--muted) } .verdict.wait .mark { background: var(--muted) } .verdict.wait b { color: var(--fg) }
+.verdict.member-red, .verdict.member-black { padding-top: var(--s2); padding-bottom: var(--s2) } .verdict[class*=member] .mark { font-size: 11px; width: 36px; height: 36px }
+.verdict.member-red { border-color: var(--red-line); border-left-color: #e41e2b } .verdict.member-red .mark { background: #e41e2b; color: #fff } .verdict.member-red b { color: var(--fg) }
+.verdict.member-black { border-color: var(--line-strong); border-left-color: #111 } .verdict.member-black .mark { background: #111; color: #fff } .verdict.member-black b { color: var(--fg) }
+.tag.member-red { color: #fff; background: #e41e2b; border-color: #e41e2b } .tag.member-red::before { background: #fff }
+.tag.member-black { color: #fff; background: #111; border-color: #111 } .tag.member-black::before { background: #e41e2b }
+@media (prefers-color-scheme: dark) { .verdict.member-black { border-left-color: #fff } .verdict.member-black .mark { background: #fff; color: #111 } .tag.member-black { border-color: #555 } }
 .verdict.no { border-color: var(--red-line); border-left-color: var(--red); background: var(--red-wash) } .verdict.no .mark { background: var(--red) } .verdict.no b { color: var(--red-ink) }
 
 /* ---- disclosure ---- */

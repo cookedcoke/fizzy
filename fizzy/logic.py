@@ -564,6 +564,7 @@ def search_index(conn):
 
 
 def customer_summary(conn, customer, cfg=None):
+    from . import members  # (members uses this module)
     cfg = cfg or settings(conn)
     ledger = tab_ledger(conn, customer["id"])
     return {
@@ -571,6 +572,7 @@ def customer_summary(conn, customer, cfg=None):
         "ledger": ledger,
         "status": tab_status(conn, customer, ledger, cfg),
         "points": points_balance(conn, customer["id"]),
+        "member": members.active(conn, customer["id"]),   # Red / Black Coke, or None
     }
 
 

@@ -50,6 +50,8 @@ ACTIONS = [
      [("POST", r"^/square/sync$"), ("POST", r"^/tools/sync_now$"), ("POST", r"^/profit/refresh$")], "open"),
     ("warnings", "Dismiss warnings, back up now", [("POST", r"^/breach/"), ("POST", r"^/settings/backup$")], "open"),
     ("points", "Give or take points", [("POST", r"^/customers/\d+/points$"), ("POST", r"^/tools/(bulk_points|transfer_points)$")], "pin"),
+    ("memberships", "Give or cancel Red / Black Coke memberships by hand (ones sold in Square need nothing)",
+     [("POST", r"^/customers/\d+/membership(/\d+/cancel)?$")], "pin"),
     ("redeem", "Redeem rewards, and undo them", [("POST", r"^/customers/\d+/redeem/"), ("POST", r"^/redemptions/")], "pin"),
     ("rewards", "Set up and end rewards", [("POST", r"^/rewards")], "pin"),
     ("events", "Double points days", [("POST", r"^/events")], "pin"),

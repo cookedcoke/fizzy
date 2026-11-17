@@ -10,7 +10,7 @@ import re
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
@@ -25,7 +25,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import config, customers, db, devices, events, logic, pin, portal, rewards, square, stats, tools
 from . import money as money_pages
-from . import ask, badges, challenges, display, jobs, passkeys, pwa, rules, security, transactions, updater
+from . import ask, badges, challenges, display, jobs, members, passkeys, pwa, rules, security, transactions, updater
 from .web import (HERE, LoginRequired, back, cents, claim_bar, get_conn, is_phone, local, money, render, sale_amounts, sale_time,
                   session_gen, staff, take, templates, wants_json)
 
@@ -958,7 +958,7 @@ def register(app):
             out.append({
                 "id": c["id"], "name": c["name"], "email": c["email"], "points": s["points"],
                 "owing": money(s["ledger"]["owing_cents"]), "status": s["status"]["label"],
-                "status_key": s["status"]["status"],
+                "status_key": s["status"]["status"], "member": s["member"],
             })
         return JSONResponse(out)
 
@@ -995,7 +995,37 @@ def register(app):
                       display_msg={"type": "show", "customer": display.payload(conn, c, s, offers)},
                       recent_redemptions=rewards.recent_redemptions(conn, cid), public_host=config.PUBLIC_HOST,
                       passcode_readable=portal.reveal_passcode(c["passcode_enc"]) is not None, tool_ctx=tools.form_ctx(conn),
-                      prizes=challenges.prizes_for(conn, cid), hunts_on=bool(rules.active(conn, "challenge")))
+                      prizes=challenges.prizes_for(conn, cid), hunts_on=bool(rules.active(conn, "challenge")),
+                      memberships=members.history(conn, cid), member_issues=members.issues(conn, cid), tiers=members.TIERS,
+                      term_end=members.term_end(conn, datetime.now(config.TZ).date()))
+
+    @app.post("/customers/{cid:int}/membership")
+    def give_membership(request: Request, cid: int, tier: str = Form(...), note: str = Form(""),
+                        who=Depends(staff), conn=Depends(get_conn)):
+        """A Red or Black Coke membership given by hand: paid outside Square (cash in the jar), or a gift.
+        One rung up in Square is granted by itself when the sale is theirs."""
+        c = load_customer(conn, cid)
+        if tier not in members.TIERS:
+            return back(request, f"/customers/{cid}", "Pick Red Coke or Black Coke.", "bad")
+        have = members.active(conn, cid)
+        if have and members.RANK[have["tier"]] >= members.RANK[tier]:
+            return back(request, f"/customers/{cid}", f"{c['name'].split(' ')[0]} already has {have['name']} until "
+                                                      f"{date.fromisoformat(have['ends_on']):%-d %b}.", "bad")
+        members.grant(conn, cid, tier, db.now_iso(), who, note=note.strip()[:200] or "Given in Fizzy")
+        conn.commit()
+        m = members.active(conn, cid)
+        return back(request, f"/customers/{cid}", f"{c['name']} is {m['name']} until {date.fromisoformat(m['ends_on']):%-d %b}.")
+
+    @app.post("/customers/{cid:int}/membership/{mid:int}/cancel")
+    def cancel_membership(request: Request, cid: int, mid: int, who=Depends(staff), conn=Depends(get_conn)):
+        """Takes a membership away from now on. One bought in Square should be refunded there too."""
+        load_customer(conn, cid)
+        m = conn.execute("SELECT * FROM memberships WHERE id = ? AND customer_id = ?", (mid, cid)).fetchone()
+        if m is None or not members.cancel(conn, mid, who, f"Cancelled by {who}"):
+            return back(request, f"/customers/{cid}", "That membership is already cancelled.", "bad")
+        conn.commit()
+        extra = " Refund it in Square too if they paid for it." if m["square_payment_id"] else ""
+        return back(request, f"/customers/{cid}", f"Cancelled {members.TIERS[m['tier']]['name']}.{extra}")
 
     @app.get("/customers/{cid:int}/claim", response_class=HTMLResponse)
     def claim_page(request: Request, cid: int, who=Depends(staff), conn=Depends(get_conn)):

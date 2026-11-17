@@ -395,6 +395,24 @@ CREATE TABLE IF NOT EXISTS incidents (
 
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
+-- Red Coke / Black Coke (members.py): a percentage off every sale until the end of a term.
+CREATE TABLE IF NOT EXISTS memberships (
+    id INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    tier TEXT NOT NULL,              -- red | black
+    starts_at TEXT NOT NULL,
+    ends_on TEXT NOT NULL,           -- last day it counts (a local date: the end of term)
+    fee_cents INTEGER NOT NULL DEFAULT 0,
+    fee_refunded_cents INTEGER NOT NULL DEFAULT 0,
+    square_payment_id TEXT,          -- the sale that bought it; NULL when staff gave it by hand
+    square_order_id TEXT UNIQUE,     -- one membership per Square order, however it was paid
+    staff TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    cancelled_at TEXT,
+    cancelled_by TEXT
+);
+
 CREATE INDEX IF NOT EXISTS ix_charges_customer ON tab_charges(customer_id);
 CREATE INDEX IF NOT EXISTS ix_repay_customer ON tab_repayments(customer_id);
 CREATE INDEX IF NOT EXISTS ix_points_customer ON points_ledger(customer_id);
@@ -402,6 +420,7 @@ CREATE INDEX IF NOT EXISTS ix_sqpay_customer ON square_payments(customer_id);
 CREATE INDEX IF NOT EXISTS ix_audit_customer ON audit_log(customer_id);
 CREATE INDEX IF NOT EXISTS ix_claim_waits_status ON claim_waits(status, done_at);
 CREATE INDEX IF NOT EXISTS ix_incidents_time ON incidents(happened_at);
+CREATE INDEX IF NOT EXISTS ix_members_customer ON memberships(customer_id);
 """
 
 DEFAULT_SETTINGS = {

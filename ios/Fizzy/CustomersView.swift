@@ -20,7 +20,7 @@ struct CustomersView: View {
                 ForEach(hits, id: \.self) { hit in
                     NavigationLink(value: CustomerID(id: hit.id.int)) {
                         Row(name: hit.name.string, email: hit.email.optString, points: hit.points.int,
-                            owing: hit.owing.string, status: hit.status.string, statusKey: hit.status_key.string, reward: false)
+                            owing: hit.owing.string, status: hit.status.string, statusKey: hit.status_key.string, reward: false, member: hit.member)
                     }
                 }
             }
@@ -71,7 +71,7 @@ struct CustomersView: View {
                     NavigationLink(value: CustomerID(id: c.id.int)) {
                         Row(name: c.name.string, email: c.email.optString, points: s.points.int, owing: Fmt.money(s.ledger.owing_cents.int),
                             status: s.status.label.string, statusKey: s.status.status.string,
-                            reward: d.can_reward.array.contains { $0.int == c.id.int })
+                            reward: d.can_reward.array.contains { $0.int == c.id.int }, member: s.member)
                     }
                 }
             } header: {
@@ -124,6 +124,7 @@ struct CustomersView: View {
         let status: String
         let statusKey: String
         let reward: Bool
+        var member: J = .null
         var body: some View {
             // Initials, then the name on one line with their id and tags under it; points (and any debt) on the right.
             HStack(spacing: 12) {
@@ -131,6 +132,19 @@ struct CustomersView: View {
                     .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                     .frame(width: 38, height: 38)
                     .background(tint.gradient, in: Circle())
+                    // A Red or Black Coke member: their percentage on a cap in the corner (a pill on the
+                    // second line pushed the row off the narrow screen).
+                    .overlay(alignment: .bottomTrailing) {
+                        if !member.isNull {
+                            Text("\(member.pct.int)%")
+                                .font(.system(size: 8, weight: .heavy, design: .rounded)).foregroundStyle(.white)
+                                .padding(.horizontal, 3).frame(minWidth: 20, minHeight: 16)
+                                .background(MemberTag.color(member.tier.string), in: Capsule())
+                                .overlay { Capsule().strokeBorder(Color(.systemBackground), lineWidth: 1.5) }
+                                .offset(x: 6, y: 4)
+                                .accessibilityLabel("\(member.name.string) member")
+                        }
+                    }
                 // Two full-width lines (not two columns, which squeezed each other): who and their points,
                 // then their id, tab and any debt.
                 VStack(alignment: .leading, spacing: 4) {

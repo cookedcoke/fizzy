@@ -195,6 +195,22 @@ struct Tag: View {
     }
 }
 
+/// Red Coke or Black Coke, as a solid pill (they're the brand's colours, not a status).
+struct MemberTag: View {
+    let member: J
+    static func color(_ tier: String) -> Color { tier == "black" ? Color(white: 0.12) : Color(red: 0.89, green: 0.12, blue: 0.17) }
+    var body: some View {
+        Text(member.name.string)
+            .font(.caption2.weight(.bold))
+            .lineLimit(1).fixedSize()
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Self.color(member.tier.string), in: Capsule())
+            .overlay { if member.tier.string == "black" { Capsule().strokeBorder(Color(red: 0.89, green: 0.12, blue: 0.17), lineWidth: 1) } }
+            .foregroundStyle(.white)
+            .accessibilityLabel("\(member.name.string) member")
+    }
+}
+
 /// The colour for a tab status like "approved" or "blocked_overdue".
 func statusColor(_ key: String) -> Color {
     switch key {

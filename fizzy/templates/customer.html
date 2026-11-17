@@ -43,7 +43,7 @@
 {% set st = s.status %}{% set led = s.ledger %}
 <div class="pagehead">
   <div>
-    <h1>{{ c.name }} <span class="tag {{ st.status }}">{{ st.label }}</span>{% if c.archived_at %} <span class="tag">Archived</span>{% endif %}{% if c.kind == 'admin' %} <span class="tag kind-admin" title="One of us. Changes to this account need the level set under Who can do what.">Admin</span>{% elif c.kind == 'test' %} <span class="tag kind-test" title="Test account: left out of leaderboards, reports and exports.">Test</span>{% endif %}</h1>
+    <h1>{{ c.name }} <span class="tag {{ st.status }}">{{ st.label }}</span>{% if c.archived_at %} <span class="tag">Archived</span>{% endif %}{% if c.kind == 'admin' %} <span class="tag kind-admin" title="One of us. Changes to this account need the level set under Who can do what.">Admin</span>{% elif c.kind == 'test' %} <span class="tag kind-test" title="Test account: left out of leaderboards, reports and exports.">Test</span>{% endif %}{% if s.member %} <span class="tag member-{{ s.member.tier }}" title="{{ s.member.pct }}% off every sale until {{ s.member.ends_on|ymd('%-d %b') }}">{{ s.member.name }}</span>{% endif %}</h1>
     <div class="meta"><span class="mono">{{ c.email.split('@')[0] }}</span> · {{ 'Linked to Square' if c.square_customer_id else 'Test account' if c.kind == 'test' else 'Not in Square yet' }}</div>
   </div>
   <div class="actions" style="margin:0">
@@ -72,6 +72,11 @@
 </span></div></div>
 {% endif %}
 
+{% if s.member %}
+<div class="verdict member-{{ s.member.tier }}"><div class="mark">{{ s.member.pct }}%</div><div><b>{{ s.member.name }} – {{ s.member.pct }}% off everything</b>
+  <span>In Square: apply the <strong>{{ s.member.name }} {{ s.member.pct }}%</strong> discount to the whole sale (not to free rewards or the membership itself), before the Fizzy Tab discount. Until {{ s.member.ends_on|ymd('%-d %b') }}.</span></div></div>
+{% endif %}
+
 {# What needs doing for this person, most urgent first. Only what applies shows. #}
 {% set first = c.name.split(' ')[0] %}
 {% set owing_panel = led.owing_cents or led.balance_cents < 0 %}
@@ -87,6 +92,8 @@
     <b>{{ 'No student site passcode yet.' if not c.passcode_set_at else 'Passcode needs setting again.' }}</b>
     <span class="inline-set"><input type="text" name="passcode" placeholder="New passcode" title="4 or more characters" aria-label="New passcode for {{ first }}"
       autocomplete="off" autocapitalize="off" spellcheck="false" minlength="4" maxlength="64" required><button class="sm">Set</button></span></form>{% endif %}
+  {% for i in member_issues %}{% set _ = todos.append(1) %}<div class="todo {{ 'bad' if i.kind != 'missed' }}"><b>{{ i.text }}</b>
+    <span>{{ i.at|local('%a %-d %b, %H:%M') }} · {{ i.what }}</span></div>{% endfor %}
   {% if not c.square_customer_id and c.kind != 'test' %}{% set _ = todos.append(1) %}<div class="todo"><b>Not in Square yet.</b>
     <span>Their sales won't link by themselves - <a href="/export/square-customers.csv?only=new" data-turbo="false">get the import file</a>, or claim their sales with <b>Claim sale</b>.</span></div>{% endif %}
 </div>
@@ -189,6 +196,17 @@
 </div>{% endif %}
 
 <div class="panel more">
+  <details id="membership"><summary>Red / Black Coke <span class="muted">({{ s.member.name ~ ' until ' ~ s.member.ends_on|ymd('%-d %b') if s.member else 'not a member' }})</span></summary>
+    <p class="small muted">Sold in Square as <b>Red Coke membership</b> ($5, 10% off) and <b>Black Coke membership</b> ($12, 20% off): it's theirs as soon as the sale is. Give one here only when it was paid some other way, or as a gift. Either lasts until the end of term ({{ term_end|ymd('%-d %b') }}).</p>
+    {% if not c.archived_at %}<form class="inline" method="post" action="/customers/{{ c.id }}/membership">
+      <select name="tier" aria-label="Membership">{% for k, t in tiers.items() %}<option value="{{ k }}">{{ t.name }} ({{ t.pct }}% off)</option>{% endfor %}</select>
+      <input type="text" name="note" placeholder="Note (e.g. paid cash)" maxlength="200" aria-label="Note">
+      <button class="sm">Give</button></form>{% endif %}
+    {% if memberships %}<table>{% for m in memberships %}<tr><td class="when">{{ m.starts_at|local('%-d %b') }}</td><td>{{ m.name }}</td>
+      <td>{% if m.cancelled_at %}Cancelled{% elif m.current %}Until {{ m.ends_on|ymd('%-d %b') }}{% else %}Ended {{ m.ends_on|ymd('%-d %b') }}{% endif %}</td>
+      <td class="small">{{ 'Square' if m.from_square else (m.staff or '') }}{% if m.note %} · {{ m.note }}{% endif %}</td>
+      <td>{% if m.current %}<form method="post" action="/customers/{{ c.id }}/membership/{{ m.id }}/cancel"><button class="sm" data-confirm="Cancel {{ m.name }} for {{ c.name }}?">Cancel</button></form>{% endif %}</td></tr>{% endfor %}</table>{% endif %}
+  </details>
   {% if not owing_panel %}<details><summary>Repayment without Square <span class="muted">(nothing owing)</span></summary>{{ repay_form(false) }}</details>{% endif %}
   <details><summary>Tab history <span class="muted">({{ decisions|length }})</span></summary>
     {% if decisions %}<table>{% for d in decisions %}<tr><td class="when">{{ d.created_at|local }}</td><td>{{ d.decision }}</td><td>{{ d.note or '' }}</td><td>{{ d.staff }}</td></tr>{% endfor %}</table>

@@ -35,6 +35,7 @@ struct CustomerView: View {
     var body: some View {
         PageList(page: page, title: customer.name.string) { d in
             summary(d)
+            member(d)
             actions(d)
             prizes(d)
             todos(d)
@@ -44,6 +45,7 @@ struct CustomerView: View {
             byHand(d)
             history(d)
             movePoints(d)
+            membership(d)
             payments(d)
             score(d)
             more(d)
@@ -100,8 +102,65 @@ struct CustomerView: View {
                 if c.kind.string == "admin" { Tag(text: "Admin", color: .purple) }
                 if c.kind.string == "test" { Tag(text: "Test", color: .orange) }
                 if led.late_count.int > 0 { Tag(text: "\(led.late_count.int) late", color: .red) }
+                if !d.s.member.isNull { MemberTag(member: d.s.member) }
             }
             .textCase(nil)
+        }
+    }
+
+    /// A Red or Black Coke member: what to give them in Square, right under the tab verdict.
+    @ViewBuilder private func member(_ d: J) -> some View {
+        let m = d.s.member
+        if !m.isNull {
+            Section {
+                HStack(alignment: .top, spacing: 12) {
+                    Text("\(m.pct.int)%")
+                        .font(.system(.subheadline, design: .rounded).weight(.heavy)).foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(MemberTag.color(m.tier.string).gradient, in: Circle())
+                        .overlay { Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1) }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(m.name.string) – \(m.pct.int)% off everything").font(.headline)
+                        Text("In Square: apply the \(m.name.string) \(m.pct.int)% discount to the whole sale (not free rewards or the membership), before the Fizzy Tab discount. Until \(Fmt.when(m.ends_on.string, "d MMM")).")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    /// Red / Black Coke: who's had one, and giving one by hand (paid outside Square, or a gift).
+    @ViewBuilder private func membership(_ d: J) -> some View {
+        let list = d.memberships.array
+        Section {
+            ForEach(list, id: \.self) { m in
+                let state = !m.cancelled_at.isNull ? "Cancelled" : m.current.bool ? "Until \(Fmt.when(m.ends_on.string, "d MMM"))" : "Ended \(Fmt.when(m.ends_on.string, "d MMM"))"
+                Line(left: m.name.string, sub: [Fmt.when(m.starts_at.string, "d MMM"), m.from_square.bool ? "Square" : m.staff.optString, m.note.optString].compactMap { $0 }.joined(separator: " · "), right: state)
+                    .swipeActions(edge: .trailing) {
+                        if m.current.bool {
+                            Button("Cancel", role: .destructive) {
+                                ask = ConfirmAsk(message: "Cancel \(m.name.string) for \(d.c.name.string)?" + (m.from_square.bool ? " Refund it in Square too if they paid for it." : ""),
+                                                 confirmLabel: "Cancel it") { page.act("customers/\(id)/membership/\(m.id.int)/cancel") }
+                            }
+                        }
+                    }
+            }
+            if d.c.archived_at.optString == nil && d.s.member.tier.string != "black" {
+                Menu {
+                    ForEach(["red", "black"].filter { d.s.member.tier.string != $0 }, id: \.self) { k in
+                        let t = d.tiers[k]
+                        Button("\(t.name.string) (\(t.pct.int)% off)") {
+                            ask = ConfirmAsk(message: "Give \(d.c.name.string) \(t.name.string) until \(Fmt.when(d.term_end.string, "d MMM"))? Only if they paid outside Square, or as a gift: one rung up in Square is added by itself.",
+                                             confirmLabel: "Give", role: nil) { page.act("customers/\(id)/membership", [("tier", k), ("note", "Given in the app")]) }
+                        }
+                    }
+                } label: { Label("Give a membership", systemImage: "plus.circle") }
+            }
+        } header: {
+            Text("Red / Black Coke")
+        } footer: {
+            Text("Sold in Square as Red Coke membership ($5, 10% off) and Black Coke membership ($12, 20% off). It's theirs as soon as the sale is, until the end of term.")
         }
     }
 
@@ -121,8 +180,18 @@ struct CustomerView: View {
             let overdue = led.has_overdue.bool, owes = led.owing_cents.int > 0
             let needsPasscode = c.passcode_set_at.optString == nil
             let notInSquare = c.square_customer_id.isNull && c.kind.string != "test"
-            if overdue || owes || needsPasscode || notInSquare {
+            let issues = d.member_issues.array
+            if overdue || owes || needsPasscode || notInSquare || !issues.isEmpty {
                 Section("To do") {
+                    ForEach(issues, id: \.self) { i in
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(i["text"].string)
+                                Text("\(Fmt.when(i.at.string, "EEE d MMM, HH:mm")) · \(i.what.string)").font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: i.kind.string == "missed" ? "percent" : "exclamationmark.triangle.fill") }
+                        .foregroundStyle(i.kind.string == "missed" ? .orange : .red)
+                    }
                     if overdue {
                         Label("\(Fmt.money(led.overdue_cents.int)) overdue. Ask \(first) to pay it off - ring it up as Tab repayment in Square.", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
                     } else if owes {

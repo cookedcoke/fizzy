@@ -133,6 +133,37 @@ for c in tabbers[1:5]:
         if sum(p for _, p, _, _ in items) <= logic.tab_status(conn, c)["available_cents"]:
             owing[c["id"]] += tab_sale(c, when(day), items)
 
+# This term, and Red / Black Coke memberships bought in Square: Amelia is Black Coke and got her 20% on the
+# drink in the same sale; a few regulars are Red Coke, and one of them was rung up without the discount.
+db.set_setting(conn, "terms", json.dumps([[(T - timedelta(days=36)).isoformat(), (T + timedelta(days=24)).isoformat(), "Term 4"]]))
+
+
+def member_sale(c, ts, tier, drink=None, discount=True):
+    global seq
+    seq += 1
+    oid, pid, iso = f"o{seq}", f"p{seq}", ts.isoformat(timespec="seconds")
+    fee, name, pct = (1200, "Black Coke", 20) if tier == "black" else (500, "Red Coke", 10)
+    items = [{"name": f"{name} membership", "quantity": "1", "total_money": {"amount": fee}}]
+    off = 0
+    if drink:
+        off = round(drink[1] * pct / 100) if discount else 0
+        items.append({"name": drink[0], "quantity": "1", "gross_sales_money": {"amount": drink[1]}, "total_money": {"amount": drink[1] - off}})
+    order = {"id": oid, "customer_id": c["square_customer_id"], "line_items": items,
+             "discounts": [{"name": f"{name} {pct}%", "applied_money": {"amount": off}}] if off else []}
+    square.process_payment(conn, {"id": pid, "status": "COMPLETED", "amount_money": {"amount": sum(li["total_money"]["amount"] for li in items)},
+                                  "source_type": "CARD", "customer_id": c["square_customer_id"], "created_at": iso, "order_id": oid}, order)
+
+
+# (Bought just now, after the made-up history, which has no discounts on it.)
+member_sale(custs[0], NOW - timedelta(minutes=50), "black", MENU[0])
+reds = [r for r in regulars if r["id"] != custs[0]["id"]][:3]
+for i, c in enumerate(reds):
+    member_sale(c, NOW - timedelta(minutes=45 - i), "red", MENU[1])
+seq += 1   # and a later sale where the counter forgot the first one's 10%
+square.process_payment(conn, {"id": f"p{seq}", "status": "COMPLETED", "amount_money": {"amount": 350}, "source_type": "CARD",
+                              "customer_id": reds[0]["square_customer_id"], "created_at": (NOW - timedelta(minutes=20)).isoformat(timespec="seconds"),
+                              "order_id": f"o{seq}"}, {"id": f"o{seq}", "line_items": lines([MENU[4]])})
+
 # Student site passcodes: most students have signed up. Amelia Williams' (the first) is the one App Review uses.
 for c in custs:
     if c["id"] == custs[0]["id"]:

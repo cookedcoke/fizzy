@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from . import config, logic
+from . import config, logic, members
 from .db import audit, get_setting, now_iso, set_setting
 
 log = logging.getLogger("fizzy.square")
@@ -281,11 +281,13 @@ def apply_payment_effects(conn, sp):
     if amt <= 0:
         return  # e.g. the $0 cash "payment" that completes a fully tabbed sale - nothing to record
     if kind == "sale":
-        conn.execute(
-            "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, square_payment_id, staff, created_at) "
-            "VALUES (?, ?, ?, 'purchase', ?, ?, 'square', ?)",
-            (customer["id"], amt, amt, sp["items"] or "Purchase", pid, sp["created_at"]),
-        )
+        amt -= members.on_sale(conn, sp, amt)  # a Red or Black Coke membership in it: granted, and the fee earns no points
+        if amt > 0:
+            conn.execute(
+                "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, square_payment_id, staff, created_at) "
+                "VALUES (?, ?, ?, 'purchase', ?, ?, 'square', ?)",
+                (customer["id"], amt, amt, sp["items"] or "Purchase", pid, sp["created_at"]),
+            )
     elif kind == "tab_charge":
         # If staff added this same charge by hand around the same time (Tools), link to it rather
         # than charge twice. Kept to a short window so a genuinely separate sale isn't swallowed.
@@ -327,6 +329,7 @@ def sp_raw(sp):
 def undo_payment_effects(conn, sp):
     pid = sp["square_payment_id"]
     conn.execute("DELETE FROM points_ledger WHERE square_payment_id = ? AND reason IN ('purchase', 'refund', 'tab_refund', 'credit_used')", (pid,))
+    members.on_undo(conn, pid)
     conn.execute("DELETE FROM tab_charges WHERE square_payment_id = ? AND staff IS NULL", (pid,))
     # A hand-entered charge linked to this payment is kept, but the refunds this payment applied
     # to it come off again (they're re-applied wherever the payment ends up).
@@ -349,11 +352,13 @@ def apply_refund_effects(conn, sp, amount, created_at):
         return
     pid, cid = sp["square_payment_id"], sp["customer_id"]
     if sp["kind"] == "sale":
-        conn.execute(
-            "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, square_payment_id, staff, created_at) "
-            "VALUES (?, ?, ?, 'refund', 'Square refund', ?, 'square', ?)",
-            (cid, -amount, -amount, pid, created_at),
-        )
+        pts = amount - members.on_refund(conn, pid, amount)  # a membership bought in it is refunded first, and earned no points
+        if pts > 0:
+            conn.execute(
+                "INSERT INTO points_ledger(customer_id, delta, spend_cents, reason, note, square_payment_id, staff, created_at) "
+                "VALUES (?, ?, ?, 'refund', 'Square refund', ?, 'square', ?)",
+                (cid, -pts, -pts, pid, created_at),
+            )
         audit(conn, "square", "refund", cid, f"-${amount / 100:.2f} sale refunded")
     elif sp["kind"] == "tab_charge":
         charge = conn.execute("SELECT * FROM tab_charges WHERE square_payment_id = ?", (pid,)).fetchone()

@@ -62,7 +62,7 @@ ACTION_LABELS = {
     "reward_end": "Ended a reward", "reward_start": "Started a reward", "settings": "Changed settings",
     "sign_out_all": "Signed everyone out", "square_resync": "Re-synced Square", "tab_charge_refund": "Refunded a tab charge",
     "tab_on": "Turned a tab back on", "tab_revoked": "Turned a tab off", "tab_rejected": "Turned a tab off",
-    "score_adjust": "Changed a tab score",
+    "score_adjust": "Changed a tab score", "membership": "Gave a membership", "membership_cancelled": "Cancelled a membership",
     "no_account": "Marked a sale No account", "no_account_undo": "Undid No account on a sale",
     "tabs_paused": "Paused or unpaused tabs", "test_accounts": "Made test accounts", "test_accounts_deleted": "Deleted test accounts",
 }
