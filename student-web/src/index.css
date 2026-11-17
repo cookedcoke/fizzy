@@ -82,3 +82,9 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-marquee, .animate-shimmer-slide, .animate-spin-around, .animate-shiny-text, .animate-shine { animation: none !important; }
 }
+
+/* The member card swings up into place the first time it's drawn (MemberCard). */
+@keyframes member-land {
+  from { opacity: 0; transform: perspective(900px) rotateX(-60deg) scale(.88); transform-origin: 50% 100%; }
+  to { opacity: 1; }
+}

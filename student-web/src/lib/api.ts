@@ -32,11 +32,13 @@ export interface Tab {
   score: { score: number; limit_cents: Money; next: { score: number; limit_cents: Money } | null; factors: { label: string; points: number }[]; tips: string[] };
 }
 export interface CustomEvent { name: string; summary: string; soon: boolean; start: string | null }
+/** Red Coke / Black Coke: a discount on everything until the end of term. */
+export interface Member { tier: "red" | "black"; name: string; pct: number; ends_on: string; term: string | null }
 export interface Me extends WhatsOn {
   signed_in: true; name: string; first: string; sid: string; points: number; tab: Tab;
   streak: { days: number; best: number; today: boolean };
   offers: Offer[]; activity: Activity[]; boards: Board[]; badges: Badge[]; badges_earned: number;
-  cards: Card[]; custom_events: CustomEvent[]; tz: string;
+  cards: Card[]; custom_events: CustomEvent[]; tz: string; member: Member | null;
   note?: { message: string; ok: boolean; result: ScanResult | null };
 }
 export type Home = Me | (WhatsOn & { signed_in: false });

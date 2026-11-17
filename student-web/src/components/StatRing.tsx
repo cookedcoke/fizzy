@@ -51,7 +51,7 @@ export function useWide() {
 }
 
 /** "+120 since last time": what this phone saw on its last visit, remembered per student. */
-function useGain(points: number, who: string) {
+export function useGain(points: number, who: string) {
   const [gain, setGain] = useState(0);
   useEffect(() => {
     const key = "cc-pts-" + who;
@@ -66,11 +66,10 @@ function useGain(points: number, who: string) {
 
 const FONT = '"Bricolage", ui-rounded, system-ui, -apple-system, sans-serif';
 
-/** The top of the home page: points, streak, this month's place, badges and the next reward, on a ring of
- *  cards that turns in 3D through a wide lens (Warp Carousel, WebGL). */
+/** Under the member card (which shows the points): streak, this month's place, badges and the next reward, on a
+ *  ring of cards that turns in 3D through a wide lens (Warp Carousel, WebGL). */
 export function StatRing({ me, wide }: { me: Me; wide: boolean }) {
   const page = usePageColour();
-  const gain = useGain(me.points, me.sid || me.name);
   const s = me.streak;
   const month = me.boards[0];
   const mine = month?.rows.find(x => x.me);
@@ -80,12 +79,6 @@ export function StatRing({ me, wide }: { me: Me; wide: boolean }) {
   const todo = me.badges.find(b => !b.earned && b.count);
 
   const cards: WarpCard[] = [
-    // no unit here: a five-digit balance plus "pts" is wider than the card
-    // ("16,200" just fits; from 100,000 it's shortened to "102k")
-    { title: "Your\npoints", value: me.points >= 100000 ? `${Math.floor(me.points / 1000)}k` : num(me.points), unit: me.points < 1000 ? "pts" : undefined, detail: "wave",
-      footer: gain > 0 ? `+${num(gain)} since last time` : "1 point for every cent",
-      numeral: ["#FFF7EE", "#FFD27A"], accent: "#FFC23D", glow: "#FE0001",
-      mesh: mesh("#7A0804", "#E3110B", "#3A0503", "#B30000", "#FF6A3C", 0.78, 0.35) },
     { title: s.days ? "Day\nstreak" : "No streak\nyet", value: String(s.days), unit: s.days === 1 ? "day" : "days", detail: "ring",
       footer: s.today ? "Bought today, nice" : s.days ? "Buy today to keep it" : `Best so far: ${s.best}`,
       numeral: ["#FFFFFF", "#FFF1C4"], accent: "#FFF3D1", glow: "#FFC23D",
