@@ -9,6 +9,9 @@ struct SignInView: View {
     @State private var problem: String?
     @State private var scanning = false
     @State private var settings = false
+    @State private var landed = false
+    @State private var tries = 0
+    private var ready: Bool { !who.trimmingCharacters(in: .whitespaces).isEmpty && !passcode.isEmpty }
     @FocusState private var field: Field?
 
     enum Field { case who, passcode }
@@ -19,6 +22,8 @@ struct SignInView: View {
                 Section {
                     VStack(spacing: 10) {
                         Image("Logo").resizable().scaledToFit().frame(width: 72, height: 72)
+                            .scaleEffect(landed ? 1 : 0.5).rotationEffect(.degrees(landed ? 0 : -14)).opacity(landed ? 1 : 0)
+                            .onAppear { withAnimation(.spring(duration: 0.7, bounce: 0.45)) { landed = true } }
                         Text("My CCC").font(.largeTitle.bold())
                         Text("Your Cooked Coke Co. points, tab and badges.").foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
@@ -38,14 +43,25 @@ struct SignInView: View {
                 }
                 if let problem {
                     Section { Label(problem, systemImage: "exclamationmark.circle.fill").foregroundStyle(.red) }
+                        .keyframeAnimator(initialValue: 0.0, trigger: tries) { v, x in v.offset(x: x) } keyframes: { _ in
+                            KeyframeTrack { SpringKeyframe(10, duration: 0.07); SpringKeyframe(-8, duration: 0.07); SpringKeyframe(5, duration: 0.07); SpringKeyframe(0, duration: 0.1) }
+                        }
                 }
                 Section {
                     Button {
                         Task { await signIn() }
                     } label: {
-                        HStack { Spacer(); if busy { ProgressView() } else { Text("Let me in").bold() }; Spacer() }
+                        HStack { Spacer(); if busy { ProgressView().tint(.white) } else { Text("Let me in").font(.headline) }; Spacer() }
+                            .padding(.vertical, 14)
+                            .foregroundStyle(.white)
+                            .background { Shimmer(base: Color("Brand")) }
+                            .clipShape(Capsule())
+                            .shadow(color: Color("Brand").opacity(0.35), radius: 10, y: 5)
                     }
-                    .disabled(busy || who.trimmingCharacters(in: .whitespaces).isEmpty || passcode.isEmpty)
+                    .buttonStyle(.plain)
+                    .opacity(ready ? 1 : 0.55)
+                    .disabled(busy || !ready)
+                    .listRowBackground(Color.clear).listRowInsets(EdgeInsets())
                 }
                 Section {
                     Button {
@@ -82,6 +98,7 @@ struct SignInView: View {
             passcode = ""
         } catch {
             problem = isOffline(error) ? "No signal. Try again when there is." : error.localizedDescription
+            tries += 1
         }
     }
 
@@ -91,6 +108,7 @@ struct SignInView: View {
         defer { busy = false }
         do { try await model.useCode(token) } catch {
             problem = isOffline(error) ? "No signal. Try again when there is." : error.localizedDescription
+            tries += 1
         }
     }
 }

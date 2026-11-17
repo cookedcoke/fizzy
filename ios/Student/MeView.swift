@@ -8,6 +8,7 @@ struct MeView: View {
     @State private var scanFor: String?
     @State private var result: String?
     @State private var failed = false
+    @State private var cheer = 0
     /// All of the page, or one column of the iPhone Duo's two (see MeTab).
     var part: Part = .all
     enum Part { case all, left, right }
@@ -24,7 +25,7 @@ struct MeView: View {
                     if urgent { TabSection(tab: tab) }
                     WhatsOnSection(page: p)
                     ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
-                    PointsSection(points: p.points.int, owner: p.name.string)
+                    PointsSection(points: p.points.int, owner: p.name.string, page: p)
                     StreakSection(streak: p.streak)
                     if !p.offers.array.isEmpty { RewardsSection(offers: p.offers.array) }
                     if !urgent && showTab { TabSection(tab: tab) }
@@ -34,7 +35,7 @@ struct MeView: View {
                 List {
                     if urgent { TabSection(tab: tab) }
                     WhatsOnSection(page: p)
-                    PointsSection(points: p.points.int, owner: p.name.string)
+                    PointsSection(points: p.points.int, owner: p.name.string, page: p)
                     StreakSection(streak: p.streak)
                     ForEach(p.cards.array, id: \.id.string) { card in CardSection(card: card) { scanFor = card.title.string } }
                 }
@@ -46,6 +47,9 @@ struct MeView: View {
                 }
             }
         }
+        .overlay { ConfettiBurst(trigger: cheer).ignoresSafeArea() }
+        .onAppear { cheerIfNewlyReady() }
+        .onChange(of: model.page.offers) { _, _ in cheerIfNewlyReady() }
         .navigationTitle(part == .right ? "Rewards and tab" : "Hey \(p.first.string)")
         .pageChrome()
         .sheet(isPresented: Binding(get: { scanFor != nil }, set: { if !$0 { scanFor = nil } })) {
@@ -54,6 +58,19 @@ struct MeView: View {
         .alert(ScanTitle.of(result ?? "", ok: !failed), isPresented: Binding(get: { result != nil }, set: { if !$0 { result = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(result ?? "") }
+    }
+
+    /// Confetti the first time this phone sees a reward ready, not every visit.
+    private func cheerIfNewlyReady() {
+        guard part != .left else { return }
+        let ready = model.page.offers.array.filter { $0.can_redeem.bool }.map(\.name.string).sorted()
+        guard !ready.isEmpty else { return }
+        let key = "ready-" + model.page.name.string
+        let seen = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        UserDefaults.standard.set(ready, forKey: key)
+        if ready.contains(where: { !seen.contains($0) }) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { cheer += 1 }
+        }
     }
 
     private func send(_ code: String) async {
@@ -68,36 +85,91 @@ struct MeView: View {
     }
 }
 
+/// The fizzy can: the balance on a red card with bubbles rising through it, counting up from what this phone saw
+/// last time ("+120 since last time"), with the streak, badges and this month's place along the bottom.
 private struct PointsSection: View {
     let points: Int
     let owner: String
+    var page: J = .null
     @State private var gain = 0
+    @State private var shown = 0
 
     var body: some View {
         Section {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Your points").font(.subheadline).foregroundStyle(.secondary)
-                    Spacer()
-                    if gain > 0 {
-                        Text("+\(Fmt.number(gain)) since last time").font(.subheadline.bold()).foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Your points").font(.subheadline.weight(.semibold)).opacity(0.85)
+                        Spacer()
+                        if gain > 0 {
+                            Text("+\(Fmt.number(gain)) since last time").font(.caption.bold())
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(.white.opacity(0.22), in: Capsule())
+                                .transition(.scale.combined(with: .opacity))
+                        }
                     }
+                    Text(Fmt.number(shown))
+                        .font(.system(size: 54, weight: .heavy, design: .rounded)).monospacedDigit()
+                        .lineLimit(1).minimumScaleFactor(0.5)   // a long balance shrinks to fit, never wraps
+                        .contentTransition(.numericText(value: Double(shown)))
+                    Text("1 point for every cent you spend. Tab buys earn theirs when you pay them off.")
+                        .font(.footnote).opacity(0.85)
                 }
-                Text(Fmt.number(points))
-                    .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.5)   // a long balance shrinks to fit, never wraps
-                    .contentTransition(.numericText())
+                .padding(20)
+                if !page.isNull { stats }
             }
-            .padding(.vertical, 4)
-        } footer: {
-            Text("1 point for every cent you spend. Tab buys earn theirs when you pay them off.")
+            .foregroundStyle(.white)
+            .background {
+                ZStack {
+                    LinearGradient(colors: [Color(red: 1, green: 0.17, blue: 0.1), Color("Brand"), Color(red: 0.62, green: 0, blue: 0)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Fizz()
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: Color("Brand").opacity(0.35), radius: 16, y: 8)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
         }
         .onAppear {
-            // "+120 since last time": counted from what this phone saw last time.
+            // "+120 since last time": counted from what this phone saw last time, and the number counts up from there.
             let key = "points-" + owner
-            if let before = UserDefaults.standard.object(forKey: key) as? Int, points > before { gain = points - before }
+            let before = UserDefaults.standard.object(forKey: key) as? Int
             UserDefaults.standard.set(points, forKey: key)
+            if let before, points > before {
+                shown = before
+                withAnimation(.spring(duration: 1.2).delay(0.3)) { shown = points; gain = points - before }
+            } else {
+                shown = points
+            }
         }
+        .onChange(of: points) { _, p in withAnimation(.spring(duration: 0.9)) { shown = p } }
+    }
+
+    /// Streak, badges and this month's place, in a strip along the bottom of the card.
+    private var stats: some View {
+        let month = page.boards[0]
+        let mine = month.rows.array.first { $0.me.bool }
+        let rank = mine?.rank.int ?? (month.mine.isNull ? 0 : month.mine.rank.int)
+        let items: [(String, String)] = [
+            ("Streak", "\(page.streak.days.int)d"),
+            ("Badges", "\(page.badges_earned.int)/\(page.badges.count)"),
+            (month.title.optString ?? "This month", rank > 0 ? "#\(rank)" : "-"),
+        ]
+        return HStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.offset) { i, item in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.0.uppercased()).font(.caption2.weight(.semibold)).opacity(0.75)
+                    Text(item.1).font(.system(.title3, design: .rounded).weight(.heavy)).monospacedDigit()
+                        .contentTransition(.numericText())
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, i == 0 ? 20 : 12).padding(.vertical, 10)
+                .overlay(alignment: .leading) { if i > 0 { Rectangle().fill(.white.opacity(0.18)).frame(width: 1) } }
+            }
+        }
+        .background(.black.opacity(0.12))
+        .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.15)).frame(height: 1) }
     }
 }
 
@@ -116,7 +188,8 @@ private struct StreakSection: View {
                 }
             } icon: {
                 Image(systemName: days > 0 ? "flame.fill" : "snowflake").font(.title2)
-                    .foregroundStyle(days > 0 ? Color.orange : Color.cyan)
+                    .foregroundStyle(days > 0 ? AnyShapeStyle(LinearGradient(colors: [.yellow, .orange, .red], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(Color.cyan))
+                    .symbolEffect(.pulse, options: .repeating, isActive: days > 0)
             }
         }
     }
@@ -133,8 +206,10 @@ private struct RewardsSection: View {
                         Text(o.name.string).bold()
                         Spacer()
                         if o.can_redeem.bool {
-                            Text("Ready").font(.caption.bold()).padding(.horizontal, 8).padding(.vertical, 2)
-                                .background(.green.opacity(0.18), in: Capsule()).foregroundStyle(.green)
+                            Label("Ready", systemImage: "sparkles").font(.caption.bold()).padding(.horizontal, 8).padding(.vertical, 2)
+                                .background(.yellow.opacity(0.3), in: Capsule())
+                                .foregroundStyle(Color(UIColor { $0.userInterfaceStyle == .dark ? .systemYellow : UIColor(red: 0.45, green: 0.3, blue: 0, alpha: 1) }))
+                                .symbolEffect(.pulse, options: .repeating)
                         }
                         Text("\(Fmt.number(o.points_cost.int)) pts").foregroundStyle(.secondary).monospacedDigit()
                     }
@@ -151,8 +226,19 @@ private struct RewardsSection: View {
                     }
                 }
                 .padding(.vertical, 2)
+                .listRowBackground(o.can_redeem.bool ? AnyView(ReadyGlow()) : AnyView(Color(.secondarySystemGroupedBackground)))
             }
         }
+        .tint(Color("Brand"))
+    }
+}
+
+/// Behind a reward that's ready: warm light and a band running round its edge.
+private struct ReadyGlow: View {
+    var body: some View {
+        LinearGradient(colors: [Color(.secondarySystemGroupedBackground), Color.yellow.opacity(0.22)], startPoint: .leading, endPoint: .trailing)
+            .shineBorder(width: 2, radius: 12)
+            .padding(1)
     }
 }
 
@@ -254,10 +340,7 @@ private struct ScoreRow: View {
             }
         } label: {
             HStack(spacing: 12) {
-                Text("\(score)").font(.title2.bold()).monospacedDigit()
-                    .frame(width: 48, height: 48)
-                    .background((score >= 80 ? Color.green : score >= min ? Color.orange : Color.red).opacity(0.18), in: Circle())
-                    .foregroundStyle(score >= 80 ? Color.green : score >= min ? Color.orange : Color.red)
+                ScoreRing(value: score, color: score >= 80 ? .green : score >= min ? .orange : .red, size: 52)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Your tab score").bold()
                     Text(tab.status.string == "approved"
@@ -292,16 +375,26 @@ private struct ActivitySection: View {
     }
 
     private func row(_ a: J) -> some View {
-        HStack {
-            Text(Fmt.when(a.at.string, "d MMM")).font(.subheadline).foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
-            Text(a.what.string).lineLimit(2)
+        let what = a.what.string, pts = a.points.isNull ? nil : a.points.int
+        let (icon, tint): (String, Color) = what.lowercased().hasPrefix("badge") ? ("rosette", .orange)
+            : what.lowercased().contains("reward") ? ("gift.fill", .pink)
+            : pts == nil ? ("creditcard.fill", .blue)
+            : (pts ?? 0) > 0 ? ("cup.and.saucer.fill", Color("Brand")) : ("minus.circle.fill", .secondary)
+        return HStack(spacing: 12) {
+            Image(systemName: icon).font(.subheadline.bold()).foregroundStyle(tint)
+                .frame(width: 34, height: 34).background(tint.opacity(0.14), in: Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(what).lineLimit(2)
+                Text(Fmt.when(a.at.string, "d MMM")).font(.caption).foregroundStyle(.secondary)
+            }
             Spacer()
-            if !a.points.isNull {
-                Text(Fmt.points(a.points.int) + " pts").monospacedDigit().foregroundStyle(a.points.int > 0 ? .green : .primary)
+            if let pts {
+                Text(Fmt.points(pts)).font(.system(.body, design: .rounded).bold()).monospacedDigit().foregroundStyle(pts > 0 ? .green : .primary)
             } else {
-                Text(Fmt.money(a.money.int)).monospacedDigit()
+                Text(Fmt.money(a.money.int)).font(.system(.body, design: .rounded).bold()).monospacedDigit()
             }
         }
+        .scrollReveal()
     }
 }
 
